@@ -30,6 +30,7 @@ stages:
   - notify
 
 variables:
+  # Build and test variables
   BUILD_DIR: build
   BUILD_TARGET: install
   BUILD_TYPE: Release
@@ -41,7 +42,11 @@ variables:
   WIN_CUDA_TOOLKIT: "/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v${CUDA}"
   WIN_CMAKE_GENERATOR: "\"Visual Studio 17 2022\""
   MTL_DEBUG_LAYER: 1
+
+  # Gitlab runner variables
   FF_TIMESTAMPS: true
+  FF_USE_FASTZIP: true
+  TRANSFER_METER_FREQUENCY: 5s
 
 # Build stage components
 
