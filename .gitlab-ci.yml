@@ -205,6 +205,10 @@ variables:
 
 .build_dorado_archive:
   stage: build
+  variables:
+    # All of the archive jobs produce an archive, so there's no point
+    # in trying to compress it further.
+    ARTIFACT_COMPRESSION_LEVEL: "fastest"
   script:
     - !reference [.create_venv]
     - !reference [.run_dorado_cmake_build]
