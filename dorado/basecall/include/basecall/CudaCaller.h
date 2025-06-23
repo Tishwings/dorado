@@ -55,12 +55,16 @@ public:
 
     static int get_batch_size_granularity(const config::BasecallModelConfig &model_config);
     static int64_t get_gpu_mem_limit(c10::Device device, float memory_limit_fraction);
+    static int get_max_safe_batch_size(c10::Device device,
+                                       float memory_limit_fraction,
+                                       const config::BasecallModelConfig &model_config);
 
 private:
     struct GPUTaskQueue;
     GPUTaskQueue &get_task_queue();
 
-    std::pair<int64_t, int64_t> calculate_memory_requirements() const;
+    static std::pair<int64_t, int64_t> calculate_memory_requirements(
+            const config::BasecallModelConfig &model_config);
     void determine_batch_dims(const BasecallerCreationParams &params);
 
     void start_threads();
