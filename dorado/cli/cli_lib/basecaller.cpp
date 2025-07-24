@@ -285,6 +285,91 @@ ModBaseBatchParams validate_modbase_params(const std::vector<std::filesystem::pa
     return params;
 }
 
+auto create_runners(const BasecallModelConfig& model_config,
+                    const std::vector<std::filesystem::path>& modbase_models,
+                    const std::string& device,
+                    size_t num_runners,
+                    const ModBaseBatchParams& modbase_params,
+                    bool run_batchsize_benchmarks,
+                    bool emit_batchsize_benchmarks,
+                    [[maybe_unused]] bool variable_chunk_sizes) {
+#if DORADO_CUDA_BUILD
+    auto initial_device_info = utils::get_cuda_device_info(device, false);
+    cli::log_requested_cuda_devices(initial_device_info);
+#endif
+
+    // create modbase runners first so basecall runners can pick batch sizes based on available memory
+    auto modbase_runners = api::create_modbase_runners(
+            modbase_models, device, modbase_params.runners_per_caller, modbase_params.batchsize);
+
+    std::vector<basecall::RunnerPtr> runners;
+    size_t num_devices = 0;
+#if DORADO_CUDA_BUILD
+    if (device != "cpu") {
+        // Iterate over the separate devices to create the basecall runners.
+        // We may have multiple GPUs with different amounts of free memory left after the modbase runners were created.
+        // This allows us to set a different memory_limit_fraction in case we have a heterogeneous GPU setup
+        auto updated_device_info = utils::get_cuda_device_info(device, false);
+        std::vector<std::pair<std::string, float>> gpu_fractions;
+        std::vector<int> device_ids;
+        for (size_t i = 0; i < updated_device_info.size(); ++i) {
+            auto device_id = "cuda:" + std::to_string(updated_device_info[i].device_id);
+            auto fraction = static_cast<float>(updated_device_info[i].free_mem) /
+                            static_cast<float>(initial_device_info[i].free_mem);
+            gpu_fractions.push_back(std::make_pair(device_id, fraction));
+            device_ids.push_back(updated_device_info[i].device_id);
+        }
+
+        if (variable_chunk_sizes &&
+            !api::check_variable_chunk_sizes_supported(model_config, device_ids)) {
+            variable_chunk_sizes = false;
+        }
+
+        cxxpool::thread_pool pool{gpu_fractions.size()};
+        struct BasecallerRunners {
+            std::vector<dorado::basecall::RunnerPtr> runners;
+            size_t num_devices{};
+        };
+
+        std::vector<std::future<BasecallerRunners>> futures;
+        auto create_device_runners = [&](const std::string& device_id, float fraction) {
+            BasecallerRunners basecaller_runners;
+            std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
+                    api::create_basecall_runners(
+                            {model_config, device_id, fraction, api::PipelineType::simplex, 0.f,
+                             run_batchsize_benchmarks, emit_batchsize_benchmarks,
+                             variable_chunk_sizes},
+                            num_runners, 0);
+            return basecaller_runners;
+        };
+
+        futures.reserve(gpu_fractions.size());
+        for (const auto& [device_id, fraction] : gpu_fractions) {
+            futures.push_back(pool.push(create_device_runners, std::cref(device_id), fraction));
+        }
+
+        for (auto& future : futures) {
+            auto data = future.get();
+            runners.insert(runners.end(), std::make_move_iterator(data.runners.begin()),
+                           std::make_move_iterator(data.runners.end()));
+            num_devices += data.num_devices;
+        }
+
+        if (num_devices == 0) {
+            throw std::runtime_error("CUDA device requested but no devices found.");
+        }
+    } else
+#endif
+    {
+        std::tie(runners, num_devices) = api::create_basecall_runners(
+                {model_config, device, 1.f, api::PipelineType::simplex, 0.f,
+                 run_batchsize_benchmarks, emit_batchsize_benchmarks, false},
+                num_runners, 0);
+    }
+
+    return std::make_tuple(num_devices, std::move(runners), std::move(modbase_runners));
+}
+
 void terminate_runners(std::vector<dorado::basecall::RunnerPtr>& runners,
                        std::vector<dorado::modbase::RunnerPtr>& modbase_runners) {
     for (auto& runner : runners) {
@@ -359,87 +444,15 @@ void setup(const std::vector<std::string>& args,
 
     ProgressTracker tracker(ProgressTracker::SIMPLEX, num_reads);
 
-    const bool enable_aligner = !ref.empty();
-
-#if DORADO_CUDA_BUILD
-    auto initial_device_info = utils::get_cuda_device_info(device, false);
-    cli::log_requested_cuda_devices(initial_device_info);
-#endif
-
-    // create modbase runners first so basecall runners can pick batch sizes based on available memory
-    auto modbase_runners = api::create_modbase_runners(models.get_modbase_model_paths(), device,
-                                                       modbase_params.runners_per_caller,
-                                                       modbase_params.batchsize);
-
-    std::vector<basecall::RunnerPtr> runners;
-    size_t num_devices = 0;
-#if DORADO_CUDA_BUILD
-    if (device != "cpu") {
-        // Iterate over the separate devices to create the basecall runners.
-        // We may have multiple GPUs with different amounts of free memory left after the modbase runners were created.
-        // This allows us to set a different memory_limit_fraction in case we have a heterogeneous GPU setup
-        auto updated_device_info = utils::get_cuda_device_info(device, false);
-        std::vector<std::pair<std::string, float>> gpu_fractions;
-        std::vector<int> device_ids;
-        for (size_t i = 0; i < updated_device_info.size(); ++i) {
-            auto device_id = "cuda:" + std::to_string(updated_device_info[i].device_id);
-            auto fraction = static_cast<float>(updated_device_info[i].free_mem) /
-                            static_cast<float>(initial_device_info[i].free_mem);
-            gpu_fractions.push_back(std::make_pair(device_id, fraction));
-            device_ids.push_back(updated_device_info[i].device_id);
-        }
-
-        if (variable_chunk_sizes &&
-            !api::check_variable_chunk_sizes_supported(model_config, device_ids)) {
-            variable_chunk_sizes = false;
-        }
-
-        cxxpool::thread_pool pool{gpu_fractions.size()};
-        struct BasecallerRunners {
-            std::vector<dorado::basecall::RunnerPtr> runners;
-            size_t num_devices{};
-        };
-
-        std::vector<std::future<BasecallerRunners>> futures;
-        auto create_runners = [&](const std::string& device_id, float fraction) {
-            BasecallerRunners basecaller_runners;
-            std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
-                    api::create_basecall_runners(
-                            {model_config, device_id, fraction, api::PipelineType::simplex, 0.f,
-                             run_batchsize_benchmarks, emit_batchsize_benchmarks,
-                             variable_chunk_sizes},
-                            num_runners, 0);
-            return basecaller_runners;
-        };
-
-        futures.reserve(gpu_fractions.size());
-        for (const auto& [device_id, fraction] : gpu_fractions) {
-            futures.push_back(pool.push(create_runners, std::cref(device_id), fraction));
-        }
-
-        for (auto& future : futures) {
-            auto data = future.get();
-            runners.insert(runners.end(), std::make_move_iterator(data.runners.begin()),
-                           std::make_move_iterator(data.runners.end()));
-            num_devices += data.num_devices;
-        }
-
-        if (num_devices == 0) {
-            throw std::runtime_error("CUDA device requested but no devices found.");
-        }
-    } else
-#endif
-    {
-        std::tie(runners, num_devices) = api::create_basecall_runners(
-                {model_config, device, 1.f, api::PipelineType::simplex, 0.f,
-                 run_batchsize_benchmarks, emit_batchsize_benchmarks, false},
-                num_runners, 0);
-    }
+    auto [num_devices, runners, modbase_runners] = create_runners(
+            model_config, models.get_modbase_model_paths(), device, num_runners, modbase_params,
+            run_batchsize_benchmarks, emit_batchsize_benchmarks, variable_chunk_sizes);
 
     auto read_groups = file_info::load_read_groups(
             pod5_folder_info.files().get(), models.get_simplex_config().stride,
             models.get_simplex_model_name(), utils::join(models.get_modbase_model_names(), ","));
 
+    const bool enable_aligner = !ref.empty();
     const bool adapter_trimming_enabled =
             (adapter_info && (adapter_info->trim_adapters || adapter_info->trim_primers));
     const auto thread_allocations = utils::default_thread_allocations(
