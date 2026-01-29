@@ -43,64 +43,69 @@ static ko_longopt_t longopts[] = {
 
 int sancheck_cliopt(cliopt_t &clio) {
     if (clio.fn_bam.native().empty()) {
-        spdlog::error("[{}] Missing input: must provide bam.", __func__);
+        spdlog::error("[kdys::{}] Missing input: must provide bam.", __func__);
         return 1;
     }
     if (!std::filesystem::exists(clio.fn_bam) || !std::filesystem::is_regular_file(clio.fn_bam)) {
-        spdlog::error("[{}] Bad input: provided bam not found or is not a regular file.", __func__);
+        spdlog::error("[kdys::{}] Bad input: provided bam not found or is not a regular file.",
+                      __func__);
         return 1;
     }
 
     if (clio.fn_ref.native().empty()) {
-        spdlog::error("[{}] Missing input: must provide the reference genome.\n", __func__);
+        spdlog::error("[kdys::{}] Missing input: must provide the reference genome.\n", __func__);
         return 1;
     }
     if (!std::filesystem::exists(clio.fn_ref) || !std::filesystem::is_regular_file(clio.fn_ref)) {
         spdlog::error(
-                "[{}] Bad input: provided reference genome file not found or is not a regular "
+                "[kdys::{}] Bad input: provided reference genome file not found or is not a "
+                "regular "
                 "file.",
                 __func__);
         return 1;
     }
 
     if (clio.n_threads < 1) {
-        spdlog::warn("[{}] clamping # threads to 1\n", __func__);
+        spdlog::warn("[kdys::{}] clamping # threads to 1\n", __func__);
         clio.n_threads = 1;
     }
     if (clio.chunk_l < 10000) {
-        spdlog::warn("[{}] clamping chunk size to 10kb\n", __func__);
+        spdlog::warn("[kdys::{}] clamping chunk size to 10kb\n", __func__);
         clio.chunk_l = 10000;
     }
     if (clio.chunk_stride < 100) {
-        spdlog::warn("[{}] clamping chunk stride to 100bp\n", __func__);
+        spdlog::warn("[kdys::{}] clamping chunk stride to 100bp\n", __func__);
         clio.chunk_stride = 100;
     }
     if (clio.pp.min_base_quality < 0) {
-        spdlog::warn("[{}] min base qual was negative; clamping to 0\n", __func__);
+        spdlog::warn("[kdys::{}] min base qual was negative; clamping to 0\n", __func__);
         clio.pp.min_base_quality = 0;
     }
     if (clio.pp.min_varcall_coverage < 1) {
-        spdlog::warn("[{}] min informative site coverage was set to <1; clamping to 1\n", __func__);
+        spdlog::warn("[kdys::{}] min informative site coverage was set to <1; clamping to 1\n",
+                     __func__);
         clio.pp.min_varcall_coverage = 1;
     }
     if (clio.pp.min_varcall_fraction < 0) {
         spdlog::warn(
-                "[{}] min informative site coverage (ratio) was set to negative; clamping to "
+                "[kdys::{}] min informative site coverage (ratio) was set to negative; clamping to "
                 "0\n",
                 __func__);
         clio.pp.min_varcall_fraction = 0;
     }
     if (clio.pp.min_varcall_fraction > 1) {
-        spdlog::warn("[{}] min informative site coverage (ratio) was set to >1; clamping to 1\n",
-                     __func__);
+        spdlog::warn(
+                "[kdys::{}] min informative site coverage (ratio) was set to >1; clamping to 1\n",
+                __func__);
         clio.pp.min_varcall_fraction = 1;
     }
     if (clio.write_dbg_bam && clio.one_region_str.empty()) {
-        spdlog::error("[{}] debug option --write-dbg-bam must be used with --region\n", __func__);
+        spdlog::error("[kdys::{}] debug option --write-dbg-bam must be used with --region\n",
+                      __func__);
         return 1;
     }
     if (clio.pp.max_clipping < 0) {
-        spdlog::warn("[{}] max clipping size was negative; clamping to 0\n", __func__);
+        spdlog::warn("[kdys::{}] max clipping size was negative; clamping to 0\n", __func__);
         clio.pp.max_clipping = 0;
     }
     return 0;
@@ -184,22 +189,24 @@ cliopt_t parse_cli(int argc, char *argv[]) {
         } else if (c == 301) {
             clio.fn_vcf = std::filesystem::path(opt.arg);
             spdlog::info(
-                    "[{}] supplied vcf, will disable integrated varcall and use vcf variants "
+                    "[kdys::{}] supplied vcf, will disable integrated varcall and use vcf variants "
                     "instead.\n",
                     __func__);
         } else if (c == 302) {
             clio.write_vcf = 1;
         } else if (c == 303) {
             clio.fn_bed = std::filesystem::path(opt.arg);
-            spdlog::info("[{}] supplied bed, will do phasing only in these regions.\n", __func__);
+            spdlog::info("[kdys::{}] supplied bed, will do phasing only in these regions.\n",
+                         __func__);
         } else if (c == 304) {
             clio.slice_in_bed = 1;
-            spdlog::info("[{}] will use window & stride in bed regions.\n", __func__);
+            spdlog::info("[kdys::{}] will use window & stride in bed regions.\n", __func__);
         } else if (c == 306) {
             clio.fn_tsv = std::filesystem::path(opt.arg);
         } else if (c == 308) {
             clio.one_region_str = opt.arg;
-            spdlog::info("[{}] debug option - will only look at region {}\n", __func__, opt.arg);
+            spdlog::info("[kdys::{}] debug option - will only look at region {}\n", __func__,
+                         opt.arg);
         } else if (c == 309) {
             clio.fn_ref = std::filesystem::path(opt.arg);
         } else if (c == 310) {
@@ -210,8 +217,8 @@ cliopt_t parse_cli(int argc, char *argv[]) {
             clio.pp.max_clipping = atoi(opt.arg);
         } else if (c == 313) {
             clio.one_chrom_str = opt.arg;
-            spdlog::info("[{}] debug option - will only look within reference: {}\n", __func__,
-                         opt.arg);
+            spdlog::info("[kdys::{}] debug option - will only look within reference: {}\n",
+                         __func__, opt.arg);
         } else if (c == 401) {
             clio.pp.min_base_quality = atoi(opt.arg);
         } else if (c == 402) {
@@ -220,7 +227,7 @@ cliopt_t parse_cli(int argc, char *argv[]) {
             clio.pp.min_varcall_fraction = static_cast<float>(atof(opt.arg));
         } else if (c == 405) {
             clio.use_simple = 1;
-            spdlog::info("[{}] using simple phasing\n", __func__);
+            spdlog::info("[kdys::{}] using simple phasing\n", __func__);
         } else if (c == 998) {
             kadayashi::KDY_VERBOSE = true;
         } else if (c == 999) {
@@ -228,17 +235,19 @@ cliopt_t parse_cli(int argc, char *argv[]) {
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
-            spdlog::error("[{}] unknown option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] unknown option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         } else if (c == ':') {
-            spdlog::error("[{}] missing option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] missing option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         }
     }
     if (argc - opt.ind > 1) {
-        spdlog::error("[{}] invalid number of positional arguments ({})\n", __func__,
+        spdlog::error("[kdys::{}] invalid number of positional arguments ({})\n", __func__,
                       argc - opt.ind);
         print_help_cliopt_t(clio);
         clio.is_valid = false;
@@ -296,17 +305,19 @@ cliopt_t parse_cli_tsv2bin(int argc, char *argv[]) {
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
-            spdlog::error("[{}] unknown option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] unknown option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         } else if (c == ':') {
-            spdlog::error("[{}] missing option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] missing option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         }
     }
     if (argc - opt.ind > 1) {
-        spdlog::error("[{}] invalid number of positional arguments ({})\n", __func__,
+        spdlog::error("[kdys::{}] invalid number of positional arguments ({})\n", __func__,
                       argc - opt.ind);
         print_help_cliopt_t(clio);
         clio.is_valid = false;
@@ -356,17 +367,19 @@ cliopt_t parse_cli_bin2bam(int argc, char *argv[]) {
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
-            spdlog::error("[{}] unknown option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] unknown option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         } else if (c == ':') {
-            spdlog::error("[{}] missing option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] missing option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         }
     }
     if (argc - opt.ind != 2) {
-        spdlog::error("[{}] invalid number of positional arguments ({})\n", __func__,
+        spdlog::error("[kdys::{}] invalid number of positional arguments ({})\n", __func__,
                       argc - opt.ind);
         print_help_cliopt_t(clio);
         clio.is_valid = false;
@@ -376,7 +389,7 @@ cliopt_t parse_cli_bin2bam(int argc, char *argv[]) {
     clio.fn_bin = std::filesystem::path(argv[opt.ind + 1]);
     // simple sanchecks
     if (clio.one_region_str.empty()) {
-        spdlog::error("[{}] need to provide interval string\n", __func__);
+        spdlog::error("[kdys::{}] need to provide interval string\n", __func__);
         clio.is_valid = false;
         return clio;
     }
@@ -429,17 +442,19 @@ cliopt_phaseglobal_t parse_cli_phaseglobal(int argc, char *argv[]) {
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
-            spdlog::error("[{}] unknown option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] unknown option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         } else if (c == ':') {
-            spdlog::error("[{}] missing option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] missing option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         }
     }
     if (argc - opt.ind != 2) {
-        spdlog::error("[{}] invalid number of positional arguments ({})\n", __func__,
+        spdlog::error("[kdys::{}] invalid number of positional arguments ({})\n", __func__,
                       argc - opt.ind);
         print_help_phaseglobal_cli(clio);
         clio.is_valid = false;
@@ -450,7 +465,7 @@ cliopt_phaseglobal_t parse_cli_phaseglobal(int argc, char *argv[]) {
 
     // simple sanchecks
     if (clio.fn_ref.native().empty()) {
-        spdlog::error("[{}] need to provide the reference genome\n", __func__);
+        spdlog::error("[kdys::{}] need to provide the reference genome\n", __func__);
         clio.is_valid = false;
         return clio;
     }
@@ -523,61 +538,66 @@ void print_help_varcall_cli(cliopt_varcall_t &clio) {
 
 int sancheck_cliopt_varcall(cliopt_varcall_t &clio) {
     if (clio.fn_bam.native().empty()) {
-        spdlog::error("[{}] Missing input: must provide bam.\n", __func__);
+        spdlog::error("[kdys::{}] Missing input: must provide bam.\n", __func__);
         return 1;
     }
     if (!std::filesystem::exists(clio.fn_bam) || !std::filesystem::is_regular_file(clio.fn_bam)) {
-        spdlog::error("[{}] Bad input: provided bam not found or is not a regular file.", __func__);
+        spdlog::error("[kdys::{}] Bad input: provided bam not found or is not a regular file.",
+                      __func__);
         return 1;
     }
 
     if (clio.fn_ref.native().empty()) {
-        spdlog::error("[{}] Missing input: must provide the reference genome.\n", __func__);
+        spdlog::error("[kdys::{}] Missing input: must provide the reference genome.\n", __func__);
         return 1;
     }
     if (!std::filesystem::exists(clio.fn_ref) || !std::filesystem::is_regular_file(clio.fn_ref)) {
         spdlog::error(
-                "[{}] Bad input: provided reference genome file not found or is not a regular "
+                "[kdys::{}] Bad input: provided reference genome file not found or is not a "
+                "regular "
                 "file.",
                 __func__);
         return 1;
     }
 
     if (clio.n_threads < 1) {
-        spdlog::warn("[{}] clamping # threads to 1\n", __func__);
+        spdlog::warn("[kdys::{}] clamping # threads to 1\n", __func__);
         clio.n_threads = 1;
     }
     if (clio.pp.min_base_quality < 0) {
-        spdlog::warn("[{}] min base qual was negative; clamping to 0\n", __func__);
+        spdlog::warn("[kdys::{}] min base qual was negative; clamping to 0\n", __func__);
         clio.pp.min_base_quality = 0;
     }
     if (clio.pp.min_varcall_coverage < 1) {
-        spdlog::warn("[{}] min informative site coverage was set to <1; clamping to 1\n", __func__);
+        spdlog::warn("[kdys::{}] min informative site coverage was set to <1; clamping to 1\n",
+                     __func__);
         clio.pp.min_varcall_coverage = 1;
     }
     if (clio.pp.min_varcall_fraction < 0) {
         spdlog::warn(
-                "[{}] min informative site coverage (ratio) was set to negative; clamping to "
+                "[kdys::{}] min informative site coverage (ratio) was set to negative; clamping to "
                 "0\n",
                 __func__);
         clio.pp.min_varcall_fraction = 0;
     }
     if (clio.pp.min_varcall_fraction > 1) {
-        spdlog::warn("[{}] min informative site coverage (ratio) was set to >1; clamping to 1\n",
-                     __func__);
+        spdlog::warn(
+                "[kdys::{}] min informative site coverage (ratio) was set to >1; clamping to 1\n",
+                __func__);
         clio.pp.min_varcall_fraction = 1;
     }
     if (clio.pp.max_clipping < 0) {
-        spdlog::warn("[{}] max clipping size was negative; clamping to 0\n", __func__);
+        spdlog::warn("[kdys::{}] max clipping size was negative; clamping to 0\n", __func__);
         clio.pp.max_clipping = 0;
     }
     if (clio.varcall_w < 10000) {
-        spdlog::warn("[{}] window size too small, setting to 10kb instead\n", __func__);
+        spdlog::warn("[kdys::{}] window size too small, setting to 10kb instead\n", __func__);
         clio.varcall_w = 10000;
     }
     if (clio.bed_flanking <= 0) {
-        spdlog::warn("[{}] flanking size for output BED is too small, setting to 1 instead.\n",
-                     __func__);
+        spdlog::warn(
+                "[kdys::{}] flanking size for output BED is too small, setting to 1 instead.\n",
+                __func__);
         clio.bed_flanking = 1;
     }
     return 0;
@@ -613,10 +633,11 @@ cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]) {
             clio.bed_flanking = std::max(0, atoi(opt.arg));
         } else if (c == 302) {
             clio.pp.disable_region_expansion = true;
-            spdlog::info("[{}] will not expand intervals during phasing\n", __func__);
+            spdlog::info("[kdys::{}] will not expand intervals during phasing\n", __func__);
         } else if (c == 303) {
             clio.varcall_use_dvr = true;
-            spdlog::info("[{}] will use deepvariant replica phasing for read phasing\n", __func__);
+            spdlog::info("[kdys::{}] will use deepvariant replica phasing for read phasing\n",
+                         __func__);
         } else if (c == 304) {
             clio.vcf_write_allow_refbase_N = false;
             fprintf(stderr,
@@ -637,17 +658,19 @@ cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]) {
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
-            spdlog::error("[{}] unknown option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] unknown option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         } else if (c == ':') {
-            spdlog::error("[{}] missing option argument in \"{}\"\n", __func__, argv[opt.i - 1]);
+            spdlog::error("[kdys::{}] missing option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
             clio.is_valid = false;
             return clio;
         }
     }
     if (argc - opt.ind != 2) {
-        spdlog::error("[{}] invalid number of positional arguments ({})\n", __func__,
+        spdlog::error("[kdys::{}] invalid number of positional arguments ({})\n", __func__,
                       argc - opt.ind);
         print_help_varcall_cli(clio);
         clio.is_valid = false;

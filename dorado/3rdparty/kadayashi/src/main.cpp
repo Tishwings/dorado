@@ -86,7 +86,8 @@ int main(int argc, char *argv[]) {
 
         ret = main_phase(clio);
         if (ret != 0) {
-            spdlog::error("[{}] phasing failed; not generating bin file from tsv output", __func__);
+            spdlog::error("[kdys::{}] phasing failed; not generating bin file from tsv output",
+                          __func__);
             print_end_summary(argc, argv, T);
             return ret;
         }
@@ -99,9 +100,10 @@ int main(int argc, char *argv[]) {
                     clio.fn_bam, fn_out_binary, clio.one_region_str, fn_out_bam, clio.n_threads,
                     BAM_THREAD_MULT);
             if (writebam_err) {
-                spdlog::error("[{}] failed to write debug haptagged bam, check code!", __func__);
+                spdlog::error("[kdys::{}] failed to write debug haptagged bam, check code!",
+                              __func__);
             } else {
-                spdlog::info("[{}] wrote debug haptagged bam", __func__);
+                spdlog::info("[kdys::{}] wrote debug haptagged bam", __func__);
             }
         }
     } else if (subcommand == "modifytag") {
@@ -110,7 +112,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         if (clio.fn_tsv.empty()) {
-            spdlog::error("[{}] must provide read-haptag mapping file (2-col tsv, 0-index)",
+            spdlog::error("[kdys::{}] must provide read-haptag mapping file (2-col tsv, 0-index)",
                           __func__);
             return 1;
         }
@@ -124,7 +126,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (clio.fn_tsv.empty()) {
-            spdlog::error("[{}] must provide tsv file name", __func__);
+            spdlog::error("[kdys::{}] must provide tsv file name", __func__);
         }
 
         kadayashi::write_binary_given_tsv(clio.fn_tsv, clio.output_name);
@@ -143,16 +145,16 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        spdlog::info("[{}] start phasing with {} threads...", __func__, clio.n_threads);
+        spdlog::info("[kdys::{}] start phasing with {} threads...", __func__, clio.n_threads);
         auto qname2hp = kadayashi::kadayashi_global_phasing_simple_modify_vcf(
                 clio.fn_ref, clio.fn_bam, clio.fn_vcf, clio.output_name, clio.n_threads);
 
         if (!clio.fn_out_bam.empty()) {
-            spdlog::info("[{}] To write haptagged bam...", __func__);
+            spdlog::info("[kdys::{}] To write haptagged bam...", __func__);
             double T = kadayashi::Get_T();
             kadayashi::write_haptagged_bam_given_hashtable_and_itvl(
                     clio.fn_bam, ".", clio.fn_out_bam, qname2hp, clio.n_threads);
-            spdlog::info("[{}] haptagged bam written, used %.1fs", __func__,
+            spdlog::info("[kdys::{}] haptagged bam written, used %.1fs", __func__,
                          kadayashi::Get_T() - T);
         }
         ret = 0;
@@ -171,7 +173,7 @@ int main(int argc, char *argv[]) {
                 clio.pp.min_strand_cov, clio.pp.min_strand_cov_frac,
                 clio.pp.max_gapcompressed_seqdiv, clio.vcf_write_allow_refbase_N,
                 clio.pp.disable_region_expansion, clio.varcall_use_dvr, clio.bed_flanking);
-        spdlog::info("[{}] varcall main routine done, used %.1fs", __func__,
+        spdlog::info("[kdys::{}] varcall main routine done, used %.1fs", __func__,
                      kadayashi::Get_T() - T);
 
         if (clio.write_dbg_bam) {
@@ -179,7 +181,7 @@ int main(int argc, char *argv[]) {
             std::string fn_out_bam = clio.output_prefix.string() + ".kadayashi.bam";
             kadayashi::write_haptagged_bam_given_hashtable_and_multiple_itvls(
                     clio.fn_bam, clio.varcall_regions, fn_out_bam, qname2hp, clio.n_threads);
-            spdlog::info("[{}] haptagged bam written, used %.1fs", __func__,
+            spdlog::info("[kdys::{}] haptagged bam written, used %.1fs", __func__,
                          kadayashi::Get_T() - T);
         }
         ret = 0;

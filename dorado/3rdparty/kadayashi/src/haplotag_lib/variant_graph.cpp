@@ -223,7 +223,7 @@ bool normalize_readtaggings(std::vector<std::vector<uint8_t>> &data) {
     for (int64_t i = 0; i < std::ssize(data) - 1; i++) {
         if (data[i].size() != data[i + 1].size()) {
             spdlog::error(
-                    "[{}] data entries have at least 1 pair of unequal lengths, should not "
+                    "[kdys::{}] data entries have at least 1 pair of unequal lengths, should not "
                     "happen. Will do nothing.",
                     __func__);
             return false;
@@ -299,7 +299,7 @@ void variant_graph_get_edge_values(chunk_t &ck,
                 i2 = r.vars[i2].allele_idx;
                 if ((i1 != 0 && i1 != 1) || (i2 != 0 && i2 != 1)) {
                     spdlog::error(
-                            "[{}] 2-allele diploid sancheck failed, impossible, check code. "
+                            "[kdys::{}] 2-allele diploid sancheck failed, impossible, check code. "
                             "Results may be wrong.",
                             __func__);
                     continue;
@@ -367,7 +367,7 @@ int variant_graph_init_scores_for_a_location(chunk_t &ck, const uint32_t var_idx
             } else {
                 if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                     LOG_TRACE(
-                            "[{}] *maybe* not wiping; edge counts are {} {} {} {}; var idx "
+                            "[kdys::{}] *maybe* not wiping; edge counts are {} {} {} {}; var idx "
                             "are {} and {}",
                             __func__, counter[0], counter[1], counter[2], counter[3], i, var_idx);
                 }
@@ -578,7 +578,8 @@ bool variant_graph_gen(chunk_t &ck) {
                 const uint8_t i2 = static_cast<uint8_t>(r.vars[i + 1].allele_idx);
                 if (((i1 != 0) && (i1 != 1)) || ((i2 != 0) && (i2 != 1))) {
                     spdlog::error(
-                            "[{}] 2-allele diploid assumption violated? Should not happen. Not "
+                            "[kdys::{}] 2-allele diploid assumption violated? Should not happen. "
+                            "Not "
                             "incrementing edge weight.",
                             __func__);
                 } else {
@@ -715,7 +716,8 @@ void variant_graph_haptag_reads(chunk_t &ck) {
             }
             if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                 std::string tmp = fmt::format(
-                        "[{}] (now using [s={} e={}] ({} blocks available; read has {} vars):",
+                        "[kdys::{}] (now using [s={} e={}] ({} blocks available; read has {} "
+                        "vars):",
                         __func__, var_i_start, var_i_end, buf.size(), r->vars.size());
                 for (uint32_t i = var_i_start; i < var_i_end; i++) {
                     tmp += std::to_string(ck.varcalls[i].pos);
@@ -762,7 +764,7 @@ void variant_graph_haptag_reads(chunk_t &ck) {
                 votes[1]++;
             } else {
                 spdlog::error(
-                        "[{}] {} qn={} impossible (combo={} idx={}), check code. This read "
+                        "[kdys::{}] {} qn={} impossible (combo={} idx={}), check code. This read "
                         "will "
                         "be untagged.",
                         __func__, ck.qnames[i_read], r->vars[i_pos].pos, combo, idx);
@@ -803,7 +805,7 @@ void variant_graph_haptag_reads(chunk_t &ck) {
     }
     if (DEBUG_LOCAL_HAPLOTAGGING) {
         LOG_TRACE(
-                "[{}] n_reads {}, hap0={} hap1={} no_variant={} ambiguous={} "
+                "[kdys::{}] n_reads {}, hap0={} hap1={} no_variant={} ambiguous={} "
                 "unphased_due_conflict={}",
                 __func__, ck.reads.size(), sancheck_cnt[0], sancheck_cnt[1], sancheck_cnt[2],
                 sancheck_cnt[3], sancheck_cnt[4]);
@@ -886,7 +888,7 @@ void normalize_readtaggings_ht(std::vector<std::unordered_map<uint32_t, uint8_t>
                 breakpoint_reads[firstreadID] = 1;
             } else {
                 spdlog::error(
-                        "[{}] should not happen: failed to get first read ID at phasing "
+                        "[kdys::{}] should not happen: failed to get first read ID at phasing "
                         "breakpoint? Giving up haptag normalization.",
                         __func__);
                 return;
@@ -932,7 +934,8 @@ void normalize_readtaggings_ht(std::vector<std::unordered_map<uint32_t, uint8_t>
                     }
                 }
                 spdlog::trace(
-                        "[{}] flip iter#{} (ref: iter#{}, n_comparable={}, sample qn: {} , pos is "
+                        "[kdys::{}] flip iter#{} (ref: iter#{}, n_comparable={}, sample qn: {} , "
+                        "pos is "
                         ": {}-{})",
                         __func__, i, i_ref, count_ref, ck.qnames[sampleqID], left_pos, right_pos);
             }
@@ -983,7 +986,7 @@ void variant_graph_do_simple_haptag(chunk_t &ck, const uint32_t n_iter_requested
 
         if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
             LOG_TRACE(
-                    "[{}] collected a seed (iter# {}/{}), qn {}, range {}:{}-{}, max_var = "
+                    "[kdys::{}] collected a seed (iter# {}/{}), qn {}, range {}:{}-{}, max_var = "
                     "{} var_size={}",
                     __func__, i_iter, n_iter, ck.qnames[i_max_var], ck.refname,
                     ck.reads[i_max_var].start_pos, ck.reads[i_max_var].end_pos, max_var,
@@ -1212,7 +1215,7 @@ std::unordered_map<uint32_t, uint8_t> variant_graph_do_simple_haptag1_give_ht(
                 infer_readhp_stat_t stat =
                         variant_graph_infer_readhp_given_vars_ht(ck, pos2counter, i_best, 1);
                 spdlog::trace(
-                        "[{}] updated qn {} (i={} pos {}-{}) as hp {}, score={:.5f}, "
+                        "[kdys::{}] updated qn {} (i={} pos {}-{}) as hp {}, score={:.5f}, "
                         "updated={} (stat: {:.2f}, {}, {})",
                         __func__, ck.qnames[i_best], i_best, ck.reads[i_best].start_pos,
                         ck.reads[i_best].end_pos, hp_best, score_best, updated_best,

@@ -98,7 +98,8 @@ void write_binary_given_tsv(const std::filesystem::path &fn_tsv,
             } else if (cols[0] == "R" && pass == 0) {  // collect size of storages
                 const std::string &qn = cols[2];
                 if (qn.size() > std::numeric_limits<uint8_t>::max()) {
-                    spdlog::error("[{}] read name too long (l={})\n", __func__, (int)qn.size());
+                    spdlog::error("[kdys::{}] read name too long (l={})\n", __func__,
+                                  (int)qn.size());
                     exit(1);
                 }
                 int size = sizeof(uint8_t) /*length of qname*/ +
@@ -126,7 +127,8 @@ void write_binary_given_tsv(const std::filesystem::path &fn_tsv,
         // and let second pass write storages.
         if (pass == 0) {
             LOG_TRACE(
-                    "[{}] to write header: {} refs, {} chunks (sancheck: chunkinfo buf length "
+                    "[kdys::{}] to write header: {} refs, {} chunks (sancheck: chunkinfo buf "
+                    "length "
                     "{})\n",
                     __func__, tot_refs, static_cast<int>(chunkID),
                     static_cast<int>(chunkinfos.size()));
@@ -182,7 +184,7 @@ void write_binary_given_tsv(const std::filesystem::path &fn_tsv,
             assert(ftell(fp_bin) == (header_offset1 + header_offset2));
         }  // end of header write
     }
-    spdlog::info("[{}] wrote bin file\n", __func__);
+    spdlog::info("[kdys::{}] wrote bin file\n", __func__);
     fclose(fp_bin);
 }
 
@@ -200,7 +202,7 @@ std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
     uint32_t n_ref;
     size_t fret = fread(&n_ref, sizeof(uint32_t), 1, fp);
     if (fret != 1) {
-        spdlog::error("[{}] fread failed", __func__);
+        spdlog::error("[kdys::{}] fread failed", __func__);
         exit(1);
     }
 
@@ -211,19 +213,19 @@ std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
         uint8_t tn_l;
         fret = fread(&tn_l, 1, 1, fp);
         if (fret != 1) {
-            spdlog::error("[{}] fread failed", __func__);
+            spdlog::error("[kdys::{}] fread failed", __func__);
             exit(1);
         }
         if (ref_i < 0) {  // haven't found the chrom yet
             refname.resize(tn_l);
             fret = fread(&refname[0], 1, tn_l, fp);
             if (fret != tn_l) {
-                spdlog::error("[{}] fread failed", __func__);
+                spdlog::error("[kdys::{}] fread failed", __func__);
                 exit(1);
             }
             if (refname == chrom) {  // done; don't break
                 if (debug_print) {
-                    LOG_TRACE("[{}] found ref {}\n", __func__, refname);
+                    LOG_TRACE("[kdys::{}] found ref {}\n", __func__, refname);
                 }
                 ref_i = i;
             }
@@ -240,7 +242,7 @@ std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
         fret = fread(&pos_intervals_start, sizeof(uint64_t), 1, fp);
         fret += fread(&n_intervals, sizeof(uint32_t), 1, fp);
         if (fret != 2) {
-            spdlog::error("[{}] fread failed", __func__);
+            spdlog::error("[kdys::{}] fread failed", __func__);
             exit(1);
         }
         fret = fseek(fp, pos_intervals_start, SEEK_SET);
@@ -260,12 +262,12 @@ std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
             fret += fread(&pos_chunk_start, sizeof(uint64_t), 1, fp);
             fret += fread(&n_reads, sizeof(uint32_t), 1, fp);
             if (fret != 4) {
-                spdlog::error("[{}] fread failed", __func__);
+                spdlog::error("[kdys::{}] fread failed", __func__);
                 exit(1);
             }
             if (ref_end >= start && ref_start < end) {
                 if (debug_print) {
-                    LOG_TRACE("[{}] checking {}-{}\n", __func__, start, end);
+                    LOG_TRACE("[kdys::{}] checking {}-{}\n", __func__, start, end);
                 }
                 uint32_t l = 0;
                 if (start < ref_start) {
@@ -275,8 +277,10 @@ std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
                 }
                 if (l > best_ovlp_len) {
                     if (debug_print) {
-                        LOG_TRACE("[{}] update best hit to: {}-{} with {} reads (l: {} => {})\n",
-                                  __func__, start, end, n_reads, (int)best_ovlp_len, (int)l);
+                        LOG_TRACE(
+                                "[kdys::{}] update best hit to: {}-{} with {} reads (l: {} => "
+                                "{})\n",
+                                __func__, start, end, n_reads, (int)best_ovlp_len, (int)l);
                     }
                     best_ovlp_len = l;
                     best_ovlp_chunk_start = pos_chunk_start;
@@ -285,8 +289,8 @@ std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
                     best_ovlp_end = end;
                 } else {
                     if (debug_print) {
-                        LOG_TRACE("[{}] hit (worse): {}-{} with {} reads\n", __func__, start, end,
-                                  n_reads);
+                        LOG_TRACE("[kdys::{}] hit (worse): {}-{} with {} reads\n", __func__, start,
+                                  end, n_reads);
                     }
                 }
             } else if (start > ref_end) {
@@ -295,7 +299,8 @@ std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
         }
         if (best_ovlp_chunk_start > 0) {
             fseek(fp, best_ovlp_chunk_start, SEEK_SET);
-            spdlog::info("[{}] use interval {}-{}\n", __func__, best_ovlp_start, best_ovlp_end);
+            spdlog::info("[kdys::{}] use interval {}-{}\n", __func__, best_ovlp_start,
+                         best_ovlp_end);
 
             // read the chunk
             uint8_t qn_l, haptag;
@@ -312,30 +317,30 @@ std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
 
                 fret += fread(&haptag, 1, 1, fp);
                 if (fret != 3) {
-                    spdlog::error("[{}] fread failed", __func__);
+                    spdlog::error("[kdys::{}] fread failed", __func__);
                     exit(1);
                 }
 
                 if (qname2hp.find(qn) != qname2hp.end()) {
                     if (debug_print) {
-                        LOG_TRACE("[{}] qn {} already seen\n", __func__, qn);
+                        LOG_TRACE("[kdys::{}] qn {} already seen\n", __func__, qn);
                     }
                 } else {
                     qname2hp[qn] = haptag;
                     if (debug_print > 1) {
-                        LOG_TRACE("[{}] insert qn {} tag {}\n", __func__, qn, haptag);
+                        LOG_TRACE("[kdys::{}] insert qn {} tag {}\n", __func__, qn, haptag);
                     }
                 }
             }
             found = 1;
         }
         if (!found) {
-            spdlog::warn("[{}] ref found, but requested interval not found ({}:{}-{})\n", __func__,
-                         chrom, ref_start, ref_end);
+            spdlog::warn("[kdys::{}] ref found, but requested interval not found ({}:{}-{})\n",
+                         __func__, chrom, ref_start, ref_end);
         }
     } else {
         if (!silent) {
-            spdlog::warn("[{}] ref {} not found in bin's header\n", __func__, chrom);
+            spdlog::warn("[kdys::{}] ref {} not found in bin's header\n", __func__, chrom);
         }
     }
 

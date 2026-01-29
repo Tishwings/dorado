@@ -319,7 +319,7 @@ std::vector<uint64_t> TRF_heuristic(std::string_view seq, const int ref_start) {
             || intervals_buf.empty()) {
             if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                 LOG_TRACE(
-                        "[{}] failed parsing mers (failed={}) or intervals_buf is empty "
+                        "[kdys::{}] failed parsing mers (failed={}) or intervals_buf is empty "
                         "({})",
                         __func__, failed ? "true" : "false", intervals_buf.size());
             }
@@ -583,7 +583,7 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
             suf_alt >= MIN_COV_ONE && tot_cov_alt / tot_cov_any > MIN_ALT_FRAC) {
             if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                 LOG_DEBUG(
-                        "[{}] let pos {} set to unsure although flag is bad, due to its "
+                        "[kdys::{}] let pos {} set to unsure although flag is bad, due to its "
                         "many alleles & sufficient coverage in alt ({}/{})",
                         __func__, pos, tot_cov_alt, tot_cov_any);
             }
@@ -593,7 +593,7 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
         } else {
             if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                 LOG_DEBUG(
-                        "[{}] straight ignore pos {} (flag is bad; size is {}, tot cov is "
+                        "[kdys::{}] straight ignore pos {} (flag is bad; size is {}, tot cov is "
                         "{})",
                         __func__, pos, var.alleles.size(), tot_cov_alt);
             }
@@ -668,7 +668,8 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
                     var.type = FLAG_VAR_HOM;
                     if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                         LOG_DEBUG(
-                                "[{}] set pos {} as unsure (due to unphased) tot_all_non_refs={} "
+                                "[kdys::{}] set pos {} as unsure (due to unphased) "
+                                "tot_all_non_refs={} "
                                 "totcov={}",
                                 __func__, pos, tot_all_non_refs, tot_cov);
                     }
@@ -686,7 +687,7 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
                         &fisher_twosided_p_nounphased);
         if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
             LOG_DEBUG(
-                    "[{}] pos {} in prefiltering fisher: phased-only, twosided p: {:.4f} ({} "
+                    "[kdys::{}] pos {} in prefiltering fisher: phased-only, twosided p: {:.4f} ({} "
                     "{}, {} {})",
                     __func__, pos, fisher_twosided_p_nounphased, a0.cov.cov_hap0, a0.cov.cov_hap1,
                     a1.cov.cov_hap0, a1.cov.cov_hap1);
@@ -745,7 +746,7 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
                     is_hom = 1;
                     if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                         LOG_DEBUG(
-                                "[{}] set pos {} as hom (2c; allel0all={}, tot_cov2={}, "
+                                "[kdys::{}] set pos {} as hom (2c; allel0all={}, tot_cov2={}, "
                                 "totallnonref={})",
                                 __func__, pos, hap_all, tot_cov2, tot_all_non_refs);
                     }
@@ -761,7 +762,8 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
                 var.is_accepted = FLAG_VARSTAT_UNSURE;
                 if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                     LOG_DEBUG(
-                            "[{}] pos {} was set to accepted hom, but flipping this to unsure "
+                            "[kdys::{}] pos {} was set to accepted hom, but flipping this to "
+                            "unsure "
                             "due to nearby repeat; type flag is now {}",
                             __func__, pos, var.type);
                 }
@@ -774,7 +776,8 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
                 var.is_accepted = FLAG_VARSTAT_UNSURE;
                 if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                     LOG_DEBUG(
-                            "[{}] set pos {} unsure (1a: weird coverage (top1={} top2={}; all "
+                            "[kdys::{}] set pos {} unsure (1a: weird coverage (top1={} top2={}; "
+                            "all "
                             "alts={}))",
                             __func__, pos, top_cov_1, top_cov_2, tot_all_non_refs);
                 }
@@ -782,7 +785,8 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
                 var.is_accepted = FLAG_VARSTAT_REJECTED;
                 if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                     LOG_DEBUG(
-                            "[{}] reject pos {} (1a: weird coverage ({} alleles) and they are "
+                            "[kdys::{}] reject pos {} (1a: weird coverage ({} alleles) and they "
+                            "are "
                             "low: {} (base_int={}) and {} (base_int={}) while top2 cov={}, tot cov "
                             "is {} )",
                             __func__, pos, var.alleles.size(), top_cov_1, var.alleles[0].allele[0],
@@ -1121,7 +1125,7 @@ var_classify_t classify_variant_phased(vc_variants1_val_t &var,
 
     if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
         LOG_DEBUG(
-                "[{}] pos={} is_accepted={} type={} code={}; fisher_p={}; is_at_repeat={}; "
+                "[kdys::{}] pos={} is_accepted={} type={} code={}; fisher_p={}; is_at_repeat={}; "
                 "a0({}{})=[{} {}] a1({}{})=[{} {}] "
                 "proper: {} {}; strand covs: {} {} {} {}",
                 __func__, pos, ret.is_accepted, ret.type, ret.code, fisher_twosided_p_nounphased,
@@ -1494,7 +1498,8 @@ void fix_variant_fullinfo_genotype_snp_in_del(std::vector<variant_fullinfo_t> &v
         if (should_set_to_hom) {
             if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                 LOG_DEBUG(
-                        "[{}] substitution het candidate at pos {} shadowed by del ({:d} {}->{}), "
+                        "[kdys::{}] substitution het candidate at pos {} shadowed by del ({:d} "
+                        "{}->{}), "
                         "setting to hom.",
                         __func__, static_cast<int>(var.pos0) + 1,
                         static_cast<int>(prev_var.pos0) + 1, prev_var.ref_allele_seq0,
@@ -1761,9 +1766,10 @@ chunk_t variant_pileup_ht(BamFileView &hf,
     }  // iterate through read alignments
 
     if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
-        spdlog::debug("[{}] ht size is {}, ck size {} (downsample={}, filtered={}), n_reads={}",
-                      __func__, ht.size(), ck.reads.size(), enable_downsample, downsample_filtered,
-                      n_reads);
+        spdlog::debug(
+                "[kdys::{}] ht size is {}, ck size {} (downsample={}, filtered={}), n_reads={}",
+                __func__, ht.size(), ck.reads.size(), enable_downsample, downsample_filtered,
+                n_reads);
     }
 
     if (pileup_failed) {
@@ -1775,7 +1781,7 @@ chunk_t variant_pileup_ht(BamFileView &hf,
 
     if (ck.qnames.size() != ck.reads.size()) {
         spdlog::error(
-                "[{}] ck qnames and reads buffers have different lenghts ({} and {}), "
+                "[kdys::{}] ck qnames and reads buffers have different lenghts ({} and {}), "
                 "impossible, check code",
                 __func__, static_cast<int>(ck.qnames.size()), static_cast<int>(ck.reads.size()));
         return {};
@@ -2005,7 +2011,8 @@ chunk_t variant_pileup_ht(BamFileView &hf,
             }
             if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
                 LOG_DEBUG(
-                        "[{}] unphased pileup pos {} : c0={} ({:c}) c1={} ({:c}) ratio={:.2f} -> "
+                        "[kdys::{}] unphased pileup pos {} : c0={} ({:c}) c1={} ({:c}) "
+                        "ratio={:.2f} -> "
                         "type={} "
                         "is_accepted={}",
                         __func__, pos, c0, "ACGT_R"[q.alleles[0].allele[0]], c1,
