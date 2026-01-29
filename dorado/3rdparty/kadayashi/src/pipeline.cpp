@@ -11,7 +11,6 @@
 #include "types.h"
 #include "variant_graph.h"
 
-#include <assert.h>
 #include <htslib/bgzf.h>
 #include <htslib/faidx.h>
 #include <htslib/hts.h>
@@ -20,14 +19,15 @@
 #include <htslib/sam.h>
 #include <spdlog/fmt/bundled/format.h>
 #include <spdlog/spdlog.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
 #include <zlib.h>
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -85,18 +85,41 @@ bool parse_region_integer(std::string_view s,
         } else {
             if (s[i] == ',') {
                 continue;
-            } else if (s[i] == 'g' || s[i] == 'G') {
-                pos += std::stoll(tmp) * 1'000'000'000;
-                tmp.clear();
-            } else if (s[i] == 'm' || s[i] == 'M') {
-                pos += std::stoll(tmp) * 1'000'000;
-                tmp.clear();
-            } else if (s[i] == 'k' || s[i] == 'K') {
-                pos += std::stoll(tmp) * 1000;
-                tmp.clear();
             } else {
-                spdlog::error("[kdys::{}] fail to parse int; note: '.' not allowed", __func__);
-                return false;
+                uint32_t multiplier = 1;
+                if (s[i] == 'g' || s[i] == 'G') {
+                    multiplier = 1'000'000'000;
+                } else if (s[i] == 'm' || s[i] == 'M') {
+                    multiplier = 1'000'000;
+                } else if (s[i] == 'k' || s[i] == 'K') {
+                    multiplier = 1'000;
+                } else {
+                    spdlog::error("[kdys::{}] malformated: {}", __func__, s);
+                    return false;
+                }
+
+                if (tmp.empty() && multiplier > 1) {
+                    spdlog::error(
+                            "[kdys::{}] invalid: {} (note: we do not allow interval string like "
+                            "chr1:g which should be either a chr1:1g or chr1:0)",
+                            __func__, s);
+                    return false;
+                }
+
+                const uint64_t num = std::stoll(tmp);
+                if (num > std::numeric_limits<uint32_t>::max() / multiplier) {
+                    spdlog::error("[kdys::{}] too large #1: {}", __func__, s);
+                    return false;
+                }
+
+                const uint32_t tmp_pos = num * multiplier;
+                if (tmp_pos > std::numeric_limits<uint32_t>::max() - pos) {
+                    spdlog::error("[kdys::{}] too large #2: {}", __func__, s);
+                    return false;
+                }
+
+                pos += tmp_pos;
+                tmp.clear();
             }
         }
     }
@@ -117,8 +140,8 @@ void insert_bed_line(const std::string &line, std::string_view chrom, std::vecto
         return;
     }
     if (chrom == cols[col_chrom]) {
-        uint32_t s = strtoul(cols[col_s].c_str(), NULL, 10);
-        uint32_t e = strtoul(cols[col_e].c_str(), NULL, 10);
+        uint32_t s = std::stoul(cols[col_s].c_str(), NULL, 10);
+        uint32_t e = std::stoul(cols[col_e].c_str(), NULL, 10);
         intvls.push_back(u32p_t{.s = s, .e = e});
     }
 }
@@ -166,7 +189,15 @@ int insert_variant_positions_from_a_vcf_line(const std::string &line,
             return -1;
         }
         if (chrom == cols[0]) {
-            const uint32_t pos = strtoul(cols[1].c_str(), NULL, 10) - 1;
+            uint32_t pos = strtoul(cols[1].c_str(), NULL, 10);
+            if (pos == 0) {
+                spdlog::error(
+                        "[kdys::{}] VCF line position is 0, should not happen, check input. "
+                        "Offending line: {}",
+                        __func__, line);
+            } else {
+                pos -= 1;  // convert to 0-index
+            }
             if ((pos >= ref_start) && (pos < ref_end)) {
                 const std::vector<std::string> tags = split_deli_line(cols[8], ':');
                 const std::vector<std::string> values = split_deli_line(cols[9], ':');
@@ -330,7 +361,7 @@ struct worker_2a2p_pl {  // pipeline
     int n_threads;
     int n_chunks_per_batch;
     pileup_pars_t pp;
-    int use_simple_phasing;
+    bool use_simple_phasing;
     std::filesystem::path fn_bam;  // hts_itr_query needs lock when multithreading.
                                    // easier way is to just let each thread open the
                                    // bam file. This means the input cannot be
@@ -351,13 +382,13 @@ struct worker_2a2p_pl {  // pipeline
 
 struct worker_2a2p_st {  // step
     worker_2a2p_pl *pl;
-    int chunkID_start;
-    int n_chunks;
-    std::vector<std::vector<std::string>> qnames;          // per job buffer
-    std::vector<std::vector<uint8_t>> haptags;             // per job buffer
-    std::vector<std::vector<u32p_t>> votes_diploid;        // per job buffer
-    std::vector<std::vector<uint32_t>> informative_sites;  // per job buffer
-    std::vector<uint8_t> success;                          // fixed length
+    int chunkID_start = 0;
+    int n_chunks = 0;
+    std::vector<std::vector<std::string>> qnames{};          // per job buffer
+    std::vector<std::vector<uint8_t>> haptags{};             // per job buffer
+    std::vector<std::vector<u32p_t>> votes_diploid{};        // per job buffer
+    std::vector<std::vector<uint32_t>> informative_sites{};  // per job buffer
+    std::vector<uint8_t> success{};                          // fixed length
 };
 
 static void local_haplotagging_callback(void *data, long job_i, int thread_i) {
@@ -478,7 +509,7 @@ reference_variants_t load_frozen_variants_from_vcf_2ad(const std::filesystem::pa
     }
 
     // TODO: to support gzip'd input
-    unsigned char gz_magic[2];
+    unsigned char gz_magic[2] = {0, 0};
     file.read(reinterpret_cast<char *>(gz_magic), 2);
     if (gz_magic[0] == 0x1F && gz_magic[1] == 0x8B) {
         spdlog::error(
@@ -487,6 +518,7 @@ reference_variants_t load_frozen_variants_from_vcf_2ad(const std::filesystem::pa
                 __func__);
         exit(1);
     }
+    file.seekg(0, std::ios::beg);
 
     int wrote_multisample_warning = 0;
 
@@ -638,7 +670,7 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
                                              const int n_threads,
                                              std::unordered_map<uint32_t, uint8_t> &breakpoints) {
     constexpr bool DEBUG_PRINT = false;
-    double T = Get_T();
+    double T = kadayashi::get_timestamp();
     double T2 = T;
     worker_simple_2a2p_st st = {.ck = ck, .seedreadID = {}, .arr_read2hp = {}};
 
@@ -648,7 +680,7 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
 
     // get seed readIDs
     std::vector<uint32_t> &seedreadIDs = st.seedreadID;
-    const uint32_t stride = (int)ck.reads.size() / n_iter;
+    const uint32_t stride = std::max<uint32_t>(1, ck.reads.size() / n_iter);
 
     std::unordered_set<uint32_t> knownseeds;
     std::vector<std::pair<size_t, uint32_t>> buf_readvarcnt;
@@ -659,7 +691,8 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
         // the current bin
         uint32_t max_var = 0;
         uint32_t i_max_var = i_iter * stride;
-        for (uint32_t j = i_iter * stride; j < (i_iter + 1) * stride; j++) {
+        for (uint32_t j = i_iter * stride;
+             j < std::min<uint32_t>((i_iter + 1) * stride, ck.reads.size()); j++) {
             uint32_t n_valid_vars = 0;
             for (qa_t &_ : ck.reads[j].vars) {
                 if (ck.varcalls[_.var_idx].is_used == TA_STAT_ACCEPTED) {
@@ -696,17 +729,18 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
 
     if constexpr (DEBUG_PRINT) {
         spdlog::info("[kdys::{}] collected {} seed reads (requested: {} ; used {:.1f} s)", __func__,
-                     (int)st.seedreadID.size(), (int)n_iter, Get_T() - T2);
+                     (int)st.seedreadID.size(), (int)n_iter, kadayashi::get_timestamp() - T2);
     }
-    T2 = Get_T();
+    T2 = kadayashi::get_timestamp();
 
     // iterate
     st.arr_read2hp.resize(st.seedreadID.size());
     kt_for(n_threads, variant_graph_simple_haptag1_worker, &st, st.seedreadID.size());
     if constexpr (DEBUG_PRINT) {
-        spdlog::info("[kdys::{}] all iterations done, used {:.1f} s", __func__, Get_T() - T2);
+        spdlog::info("[kdys::{}] all iterations done, used {:.1f} s", __func__,
+                     kadayashi::get_timestamp() - T2);
     }
-    T2 = Get_T();
+    T2 = kadayashi::get_timestamp();
 
     // do concensus and log breakpoints
     if constexpr (DEBUG_PRINT) {
@@ -724,9 +758,9 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
     }
     if constexpr (DEBUG_PRINT) {
         spdlog::info("[kdys::{}] normalized, used {:.1f} s. Haptagging reads...", __func__,
-                     Get_T() - T2);
+                     kadayashi::get_timestamp() - T2);
     }
-    T2 = Get_T();
+    T2 = kadayashi::get_timestamp();
 
     std::vector<std::array<float, 3>> cnts(ck.reads.size(), {0.0f, 0.0f, 0.0f});
     for (const auto &read2hp : st.arr_read2hp) {
@@ -757,8 +791,10 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
                   ck.reads[i_read].hp, cnt[0], cnt[1], cnt[2]);
     }
 
-    spdlog::info("[kdys::{}] reads tagged, used {:.1f} s", __func__, Get_T() - T2);
-    spdlog::info("[kdys::{}] haptag callback all done, used  {:.1f} s", __func__, Get_T() - T);
+    spdlog::info("[kdys::{}] reads tagged, used {:.1f} s", __func__,
+                 kadayashi::get_timestamp() - T2);
+    spdlog::info("[kdys::{}] haptag callback all done, used  {:.1f} s", __func__,
+                 kadayashi::get_timestamp() - T);
 }
 
 chunk_t kadayashi_global_phasing_simple1(BamFileView &hf_view,
@@ -770,13 +806,13 @@ chunk_t kadayashi_global_phasing_simple1(BamFileView &hf_view,
                                          const int n_threads,
                                          const pileup_pars_t &pp) {
     // Phase one chromosome.
-    double T = Get_T();
+    double T = kadayashi::get_timestamp();
 
     // parse bam and collect variants on the reads
     spdlog::info("[kdys::{}] pileup... (ref {}, len {})", __func__, refname, (int)ref_len);
     chunk_t ck = variant_pileup_ht(hf_view, variants, fai_view, nullptr, refname, 1, ref_len, pp);
     spdlog::info("[kdys::{}] pileup done, has {} variants, used {:.1f} s", __func__,
-                 (int)ck.varcalls.size(), Get_T() - T);
+                 (int)ck.varcalls.size(), kadayashi::get_timestamp() - T);
 
     // phase
     if (ck.is_valid) {
@@ -992,7 +1028,7 @@ void vcfio_alter_phasings(
         const std::unordered_map<std::string, std::unordered_map<uint32_t, uint8_t>>
                 &phase_breakpoints) {
     constexpr bool DEBUG_PRINT = false;
-    double T = Get_T();
+    double T = kadayashi::get_timestamp();
 
     std::ifstream fp_in(fn_vcf);
     if (!fp_in.is_open()) {
@@ -1149,7 +1185,7 @@ void vcfio_alter_phasings(
             } else if (i_col == 9) {  //  SAMPLE
                 std::istringstream sample(col);
                 std::string col_sample;
-                newline.push_back("");
+                std::string &col_sample_new = newline.emplace_back("");
                 int j = 0;
                 while (std::getline(sample, col_sample, ':')) {
                     if (j == i_GT) {
@@ -1160,71 +1196,71 @@ void vcfio_alter_phasings(
 
                             if (hp != HAPTAG_UNPHASED || phaseblockID >= 0) {
                                 // new genotype
-                                if (newline.back().size() != 0) {
-                                    newline.back() += ":";
+                                if (col_sample_new.size() != 0) {
+                                    col_sample_new += ":";
                                 }
                                 if (hp == 0) {
                                     if (col_sample[0] == col_sample[2]) {
                                         if (col_sample[0] == '0') {
-                                            newline.back() += "0/0";
+                                            col_sample_new += "0/0";
                                         } else {
-                                            newline.back() += "1/1";
+                                            col_sample_new += "1/1";
                                         }
                                     } else {
-                                        newline.back() += "0|1";
+                                        col_sample_new += "0|1";
                                     }
                                 } else if (hp == 1) {
                                     if (col_sample[0] == col_sample[2]) {
                                         if (col_sample[0] == '0') {
-                                            newline.back() += "1|1";
+                                            col_sample_new += "1|1";
                                         } else {
-                                            newline.back() += "0|0";
+                                            col_sample_new += "0|0";
                                         }
                                     } else {
-                                        newline.back() += "1|0";
+                                        col_sample_new += "1|0";
                                     }
                                 } else {
-                                    newline.back() += col_sample[0];
-                                    newline.back() += "/";
-                                    newline.back() += col_sample[2];
+                                    col_sample_new += col_sample[0];
+                                    col_sample_new += "/";
+                                    col_sample_new += col_sample[2];
                                 }
                             } else {
-                                if (newline.back().size() != 0) {
-                                    newline.back() += ":";
+                                if (col_sample_new.size() != 0) {
+                                    col_sample_new += ":";
                                 }
-                                newline.back() += std::string(1, col_sample[0]);
-                                newline.back() += "/";
-                                newline.back() += std::string(1, col_sample[2]);
+                                col_sample_new += std::string(1, col_sample[0]);
+                                col_sample_new += "/";
+                                col_sample_new += std::string(1, col_sample[2]);
                             }
                         } else {  // no change to the GT field
-                            newline.back() += col_sample;
+                            col_sample_new += col_sample;
                         }
                     } else if (j == i_PS) {
-                        if (newline.back().size() != 0) {
-                            newline.back() += ":";
+                        if (col_sample_new.size() != 0) {
+                            col_sample_new += ":";
                         }
                         if (hp == HAPTAG_UNPHASED) {
-                            newline.back() += ".";
+                            col_sample_new += ".";
                         } else {
-                            newline.back() += std::to_string(phaseblockID);
+                            col_sample_new += std::to_string(phaseblockID);
                         }
                     } else {
-                        if (newline.back().size() != 0) {
-                            newline.back() += ":";
+                        if (col_sample_new.size() != 0) {
+                            col_sample_new += ":";
                         }
-                        newline.back() += col_sample;
+                        col_sample_new += col_sample;
                     }
                     j++;
                 }
                 if (i_PS < 0) {  // input doesn't have phaseblockID field in col 8, so
                     // col 8 and 9 will have it appened as the last entry in their values
-                    if (newline.back().size() != 0) {
-                        newline.back() += ":";
+                    if (col_sample_new.size() != 0) {
+                        col_sample_new += ":";
                     }
                     if (hp == HAPTAG_UNPHASED) {
-                        newline.back() += ".";
+                        col_sample_new += ".";
                     } else {
-                        newline.back() += std::to_string(phaseblockID);
+                        col_sample_new += std::to_string(phaseblockID);
                     }
                 }
             } else if (i_col > 9) {
@@ -1259,7 +1295,8 @@ void vcfio_alter_phasings(
     fp_in.close();
     fp_out.close();
 
-    spdlog::info("[kdys::{}] written output vcf, used {:.1f} s", __func__, Get_T() - T);
+    spdlog::info("[kdys::{}] written output vcf, used {:.1f} s", __func__,
+                 kadayashi::get_timestamp() - T);
 }
 
 std::unordered_map<std::string, int> kadayashi_global_phasing_simple_modify_vcf1(
@@ -1269,7 +1306,7 @@ std::unordered_map<std::string, int> kadayashi_global_phasing_simple_modify_vcf1
         const std::filesystem::path &fn_in_vcf,   // optional
         const std::filesystem::path &fn_out_vcf,  // optional
         const int n_threads) {
-    double T = Get_T();
+    double T = kadayashi::get_timestamp();
 
     if (!fn_in_vcf.native().empty() && fn_out_vcf.native().empty()) {
         spdlog::error("[kdys::{}] VCF input was provided, but did not specify output VCF name",
@@ -1332,7 +1369,7 @@ std::unordered_map<std::string, int> kadayashi_global_phasing_simple_modify_vcf1
     if (!fn_in_vcf.native().empty()) {
         vcfio_alter_phasings(varhaps, fn_in_vcf, fn_out_vcf, phase_breakpoints);
     }
-    spdlog::info("[kdys::{}] used {:.1f} s", __func__, Get_T() - T);
+    spdlog::info("[kdys::{}] used {:.1f} s", __func__, kadayashi::get_timestamp() - T);
     return qname2hp;
 }
 
@@ -1426,7 +1463,7 @@ str2int_t get_phased_read_qnames2hp(
     str2int_t ht;
     const size_t n_reads = ck.reads.size();
     if (!ck.reads.empty()) {
-        uint32_t first_breakpoint_pos = 0;
+        uint32_t first_breakpoint_pos = std::numeric_limits<uint32_t>::max();
         uint32_t last_breakpoint_pos = 0;
         for (auto &[pos, _] : phasing_breakpoints) {
             if (pos < first_breakpoint_pos) {
@@ -1668,7 +1705,10 @@ std::vector<varcall_result_and_localphasinght_t> kadayashi_phase_and_varcall_mul
 
             // (update ck: the read tags and the variants' genotype strings)
             for (uint32_t i_read = 0; i_read < self_ck.reads.size(); i_read++) {
-                self_ck.reads[i_read].hp = self_qname2hp[self_ck.qnames[i_read]];
+                auto it = self_qname2hp.find(self_ck.qnames[i_read]);
+                if (it != self_qname2hp.cend()) {
+                    self_ck.reads[i_read].hp = it->second;
+                }
             }
             for (auto &var : self_ck.varcalls) {
                 std::swap(var.genotype[0], var.genotype[2]);
@@ -1862,7 +1902,7 @@ int local_haplotagging(const std::filesystem::path &fn_bam,
                        const int n_bam_threads,
                        const int n_chunks_per_batch,
                        const std::filesystem::path &fn_out_tsv,
-                       const int use_simple_phasing) {
+                       const bool use_simple_phasing) {
     // return : 0 if all ok, 1 if error
 
     // open output files
@@ -2175,8 +2215,8 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
             }
 
             // write kadayashi tsv
-            const uint32_t chunk_start = query_intervals[i].first - 1;
-            const uint32_t chunk_end = query_intervals[i].second - 1;
+            const uint32_t chunk_start = query_intervals[i].first;
+            const uint32_t chunk_end = query_intervals[i].second;
             local_haptagging_write_tsv2(fp_out_kdystsv_local, hf, (int)binchunkID, chrom,
                                         chunk_start, chunk_end, varcall_results[i].qname2hp_local);
             local_haptagging_write_tsv2(fp_out_kdystsv_apprxglobal, hf, (int)binchunkID, chrom,

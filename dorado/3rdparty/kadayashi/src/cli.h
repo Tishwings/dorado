@@ -38,7 +38,7 @@ struct cliopt_t {
     kadayashi::pileup_pars_t pp;
 
     // not-dvr phasing methods
-    int use_simple = 0;  // toggle for: use simple phasing rather than dv reimpl
+    bool use_simple = false;  // toggle for: use simple phasing rather than dv reimpl
 
     std::string interval_str;
     std::filesystem::path fn_tsv;  // not used by `phase`

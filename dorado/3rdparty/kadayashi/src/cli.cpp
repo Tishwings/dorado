@@ -226,7 +226,7 @@ cliopt_t parse_cli(int argc, char *argv[]) {
         } else if (c == 404) {
             clio.pp.min_varcall_fraction = static_cast<float>(atof(opt.arg));
         } else if (c == 405) {
-            clio.use_simple = 1;
+            clio.use_simple = true;
             spdlog::info("[kdys::{}] using simple phasing\n", __func__);
         } else if (c == 998) {
             kadayashi::KDY_VERBOSE = true;

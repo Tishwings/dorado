@@ -2,9 +2,9 @@
 
 namespace kadayashi {
 
-double Get_T(void);
+double get_timestamp();
 
-double Get_U(void);
+double get_peakrss();
 
 extern bool KDY_VERBOSE;  // verbosity used by CLI
 

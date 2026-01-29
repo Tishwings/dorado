@@ -1,12 +1,9 @@
-//#include "../../spoa/include/spoa/spoa.hpp"  // for test
 #include "bam_tagging.h"
 #include "cli.h"
 #include "kadayashi_utils.h"
 #include "local_haplotagging.h"
 #include "pipeline.h"
 #include "resources.h"
-//#include "BamFile.h"  // for debug
-//#include "FastxRandomReader.h"  // for debug
 
 #include <spdlog/spdlog.h>
 
@@ -29,7 +26,8 @@ void print_help_main() {
 }
 
 void print_end_summary(int argc, char *argv[], double T) {
-    fprintf(stderr, "\n[M::%s] ELAPSED: %.1fs\n", __func__, kadayashi::Get_T() - T);
+    fprintf(stderr, "\n[M::%s] ELAPSED: %.1fs PeakRSS: %.1f GiB\n", __func__,
+            kadayashi::get_timestamp() - T, kadayashi::get_peakrss());
     fprintf(stderr, "[M::%s] kadayashi %s", __func__, KADAYASHI_VERSION);
     fprintf(stderr, "[M::%s] CMD: ", __func__);
     for (int i = 0; i < argc; i++) {
@@ -67,7 +65,7 @@ int main_debug(int argc, char *argv[]) {
 
 int main(int argc, char *argv[]) {
     int ret = 0;
-    double T = kadayashi::Get_T();
+    double T = kadayashi::get_timestamp();
 
     spdlog::set_level(spdlog::level::trace);
 
@@ -151,11 +149,11 @@ int main(int argc, char *argv[]) {
 
         if (!clio.fn_out_bam.empty()) {
             spdlog::info("[kdys::{}] To write haptagged bam...", __func__);
-            double T = kadayashi::Get_T();
+            double T = kadayashi::get_timestamp();
             kadayashi::write_haptagged_bam_given_hashtable_and_itvl(
                     clio.fn_bam, ".", clio.fn_out_bam, qname2hp, clio.n_threads);
             spdlog::info("[kdys::{}] haptagged bam written, used %.1fs", __func__,
-                         kadayashi::Get_T() - T);
+                         kadayashi::get_timestamp() - T);
         }
         ret = 0;
     } else if (subcommand == "varcall") {
@@ -164,7 +162,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        double T = kadayashi::Get_T();
+        double T = kadayashi::get_timestamp();
         std::string fn_out_vcf = clio.output_prefix.string() + ".vcf";
         kadayashi::str2int_t qname2hp = kadayashi::kadayashi_phased_variant_calling_threaded(
                 clio.fn_ref, clio.fn_bam, clio.n_threads, fn_out_vcf, clio.output_prefix,
@@ -174,15 +172,15 @@ int main(int argc, char *argv[]) {
                 clio.pp.max_gapcompressed_seqdiv, clio.vcf_write_allow_refbase_N,
                 clio.pp.disable_region_expansion, clio.varcall_use_dvr, clio.bed_flanking);
         spdlog::info("[kdys::{}] varcall main routine done, used %.1fs", __func__,
-                     kadayashi::Get_T() - T);
+                     kadayashi::get_timestamp() - T);
 
         if (clio.write_dbg_bam) {
-            T = kadayashi::Get_T();
+            T = kadayashi::get_timestamp();
             std::string fn_out_bam = clio.output_prefix.string() + ".kadayashi.bam";
             kadayashi::write_haptagged_bam_given_hashtable_and_multiple_itvls(
                     clio.fn_bam, clio.varcall_regions, fn_out_bam, qname2hp, clio.n_threads);
             spdlog::info("[kdys::{}] haptagged bam written, used %.1fs", __func__,
-                         kadayashi::Get_T() - T);
+                         kadayashi::get_timestamp() - T);
         }
         ret = 0;
     } else if (subcommand == "--version") {

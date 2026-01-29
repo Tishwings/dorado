@@ -3,10 +3,7 @@
 #include "BamFile.h"
 #include "local_haplotagging.h"
 
-#include <htslib/faidx.h>
-#include <htslib/sam.h>
-#include <stdint.h>
-
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -46,7 +43,7 @@ int local_haplotagging(const std::filesystem::path &fn_bam,
                        const int n_bam_threads,
                        const int n_chunks_per_batch,
                        const std::filesystem::path &fn_out_tsv,
-                       const int use_simple_phasing);
+                       const bool use_simple_phasing);
 
 str2int_t kadayashi_global_phasing_simple_modify_vcf(const std::filesystem::path &fn_ref,
                                                      const std::filesystem::path &fn_bam,

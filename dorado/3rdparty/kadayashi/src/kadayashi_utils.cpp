@@ -2,12 +2,12 @@
 
 #include "types.h"
 
-#include <assert.h>
 #include <spdlog/spdlog.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
 
+#include <cassert>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -52,7 +52,7 @@ void write_binary_given_tsv(const std::filesystem::path &fn_tsv,
 
     std::ifstream fp_tsv(fn_tsv);
     assert(fp_tsv);
-    FILE *fp_bin = fopen(fn_bin.string().c_str(), "wb");
+    std::ofstream fp_bin(fn_bin, std::ios::binary);
     assert(fp_bin);
 
     // for indexing
@@ -111,15 +111,16 @@ void write_binary_given_tsv(const std::filesystem::path &fn_tsv,
                 const std::string &qn = cols[2];
                 uint8_t qname_l = static_cast<uint8_t>(qn.size());
                 uint8_t haptag = static_cast<uint8_t>(atoi(cols[3].c_str()));
-                fwrite(&qname_l, 1, 1, fp_bin);
-                fwrite(qn.c_str(), 1, qname_l, fp_bin);
-                fwrite(&haptag, 1, 1, fp_bin);
+                fp_bin.write(reinterpret_cast<const char *>(&qname_l), 1);
+                fp_bin.write(qn.c_str(), qname_l);
+                fp_bin.write(reinterpret_cast<const char *>(&haptag), 1);
             }
         }
 
         // if nothing is collected, return now
         if (chunkID == 0) {
-            fclose(fp_bin);
+            fp_tsv.close();
+            fp_bin.close();
             return;
         }
 
@@ -155,8 +156,8 @@ void write_binary_given_tsv(const std::filesystem::path &fn_tsv,
 
             // write headers
             //(refnames)
-            fwrite(&tot_refs, sizeof(uint32_t), 1, fp_bin);
-            fwrite(refnames.data(), refnames.size(), 1, fp_bin);
+            fp_bin.write(reinterpret_cast<const char *>(&tot_refs), sizeof(uint32_t));
+            fp_bin.write(refnames.data(), refnames.size());
             // (how to jump to chunk interval infos for each reference)
             for (uint32_t i_ref = 0; i_ref < tot_refs; i_ref++) {
                 uint32_t chunkID_start = ref2chunkIDrange[i_ref] >> 32;
@@ -164,28 +165,31 @@ void write_binary_given_tsv(const std::filesystem::path &fn_tsv,
                         header_offset1 +
                         chunkID_start * (sizeof(uint32_t) * 3 + sizeof(uint64_t) * 1);
                 uint32_t chunkID_n = (uint32_t)ref2chunkIDrange[i_ref] - chunkID_start;
-                fwrite(&chunkID_start_infile, sizeof(uint64_t), 1, fp_bin);
-                fwrite(&chunkID_n, sizeof(uint32_t), 1, fp_bin);
+                fp_bin.write(reinterpret_cast<const char *>(&chunkID_start_infile),
+                             sizeof(uint64_t));
+                fp_bin.write(reinterpret_cast<const char *>(&chunkID_n), sizeof(uint32_t));
             }
-            fflush(fp_bin);
-            assert(ftell(fp_bin) == (header_offset1));
+            fp_bin.flush();
+            assert(fp_bin.tellp() == (header_offset1));
             // (chunk interval infos: ref_start, ref_end, start_pos_in_bin, storage_n)
             for (const auto &info : chunkinfos) {
                 const uint32_t ref_s = info.start;
                 const uint32_t ref_e = info.end;
                 const uint64_t pos_infile = info.start_pos_in_bin;
                 const uint32_t l_inchunk = info.storage_n;  // count, not bytes
-                fwrite(&ref_s, sizeof(uint32_t), 1, fp_bin);
-                fwrite(&ref_e, sizeof(uint32_t), 1, fp_bin);
-                fwrite(&pos_infile, sizeof(uint64_t), 1, fp_bin);
-                fwrite(&l_inchunk, sizeof(uint32_t), 1, fp_bin);
+                fp_bin.write(reinterpret_cast<const char *>(&ref_s), sizeof(uint32_t));
+                fp_bin.write(reinterpret_cast<const char *>(&ref_e), sizeof(uint32_t));
+                fp_bin.write(reinterpret_cast<const char *>(&pos_infile), sizeof(uint64_t));
+                fp_bin.write(reinterpret_cast<const char *>(&l_inchunk), sizeof(uint32_t));
             }
-            fflush(fp_bin);
-            assert(ftell(fp_bin) == (header_offset1 + header_offset2));
+            fp_bin.flush();
+            assert(fp_bin.tellp() == (header_offset1 + header_offset2));
         }  // end of header write
     }
     spdlog::info("[kdys::{}] wrote bin file\n", __func__);
-    fclose(fp_bin);
+
+    fp_tsv.close();
+    fp_bin.close();
 }
 
 std::unordered_map<std::string, int> query_bin_file_get_qname2hp(
