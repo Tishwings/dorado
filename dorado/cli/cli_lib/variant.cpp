@@ -30,7 +30,6 @@
 #include "variant_progress_tracker.h"
 
 #include <ATen/Parallel.h>
-#include <ATen/autocast_mode.h>
 #include <IntervalTree.h>
 #include <htslib/faidx.h>
 #include <spdlog/spdlog.h>
@@ -1430,12 +1429,10 @@ int variant_caller(int argc, char* argv[]) {
         const secondary::ModelConfig model_config =
                 resolve_model(bam_info, opt.model_str, opt.load_scripted_model, opt.any_model);
 
-        // Create the models, encoders and BAM handles. Do not cast to half precision because autocast
-        // will be used below.
+        // Create the models, encoders and BAM handles.
         polisher::PolisherResources resources = polisher::create_resources(
                 model_config, opt.in_ref_fastx_fn, opt.in_aln_bam_fn, opt.device_str, opt.threads,
-                opt.infer_threads,
-                /*full_precision=*/true, opt.read_group, opt.tag_name, opt.tag_value,
+                opt.infer_threads, opt.full_precision, opt.read_group, opt.tag_name, opt.tag_value,
                 opt.min_snp_accuracy, opt.tag_keep_missing, opt.min_mapq, opt.haplotag_source,
                 opt.phasing_bin_path, opt.kadayashi_opt);
 
@@ -1451,13 +1448,10 @@ int variant_caller(int argc, char* argv[]) {
         auto stats_sampler = std::make_unique<dorado::stats::StatsSampler>(
                 kStatsPeriod, stats_reporters, stats_callables, static_cast<size_t>(0));
 
-#if DORADO_CUDA_BUILD
-        // Turn on mixed precision if required. No RAII in Libtorch.
+        // Log that that half-precision will be used.
         if (!opt.full_precision) {
-            at::autocast::set_autocast_enabled(at::kCUDA, true);
-            spdlog::info("Using mixed precision!");
+            spdlog::info("Using half precision!");
         }
-#endif
 
         run_variant_calling(opt, bam_info, model_config, resources, tracker, stats);
 
@@ -1467,13 +1461,6 @@ int variant_caller(int argc, char* argv[]) {
         // Hack to clear the last line from the progress bar. The library automatically does '\r'.
         std::cerr << std::string(200, ' ') << '\r';
         spdlog::info("Done!");
-
-#if DORADO_CUDA_BUILD
-        // Turn off mixed precision.
-        if (!opt.full_precision) {
-            at::autocast::set_autocast_enabled(at::kCUDA, false);
-        }
-#endif
 
     } catch (const std::exception& e) {
         spdlog::error(e.what());

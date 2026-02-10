@@ -228,14 +228,7 @@ at::Tensor MultiSequenceCrossAttentionBlockImpl::attn_fn(const at::Tensor& q,
                     torch::toString(q2.scalar_type()), torch::toString(k2.scalar_type()),
                     torch::toString(v2.scalar_type()));
 
-    // Convert to half for more efficient attention calculation.
-    const auto qh = q2.to(at::kBFloat16);
-    const auto kh = k2.to(at::kBFloat16);
-    const auto vh = v2.to(at::kBFloat16);
-
-    at::Tensor attn = at::scaled_dot_product_attention(qh, kh, vh, mask);
-
-    attn = attn.to(at::kFloat);
+    at::Tensor attn = at::scaled_dot_product_attention(q2, k2, v2, mask);
 
     // Reshape back to (N, T, N_Q, H*D).
     attn = attn.view({N, H, N_Q, T, D}).permute({0, 3, 2, 1, 4}).contiguous();  // (N, T, N_Q, H, D)
@@ -618,8 +611,8 @@ at::Tensor ModelVariantPerceiver::create_embedded_features(const at::Tensor& in_
 at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x) {
     utils::ScopedProfileRange spr1("ModelVariantPerceiver::forward_impl", 1);
 
-    LOG_TRACE("[ModelVariantPerceiver::forward_impl] in_x.shape = {}",
-              utils::tensor_shape_as_string(in_x));
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] in_x.shape = {}",
+                    utils::tensor_shape_as_string(in_x));
 
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] Input: in_x.dtype() = {}",
                     torch::toString(in_x.scalar_type()));
@@ -644,12 +637,18 @@ at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x) {
 
     at::Tensor reads = m_expansion_layer(x);
 
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] reads.dtype() = {}",
+                    torch::toString(reads.scalar_type()));
+
     at::Tensor haplotype_sequence =
             m_latent_init.unsqueeze(0)
                     .unsqueeze(0)
                     .unsqueeze(0)
                     .expand({b, p, -1, -1})
                     .to(reads.device());  // (batch_size, num_positions, dimension)
+
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] haplotype_sequence.dtype() = {}",
+                    torch::toString(haplotype_sequence.scalar_type()));
 
     for (auto& layer : *m_blocks) {
         std::tie(reads, haplotype_sequence) =
