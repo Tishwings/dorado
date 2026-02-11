@@ -55,7 +55,7 @@ else()
             CudaModelRunner.cpp
             decode/CUDADecoder.cpp
     )
-    target_link_libraries(dorado_basecall PRIVATE dorado_benchmarks)
+    target_link_libraries(dorado_basecall PRIVATE dorado_cuda_benchmarks)
 endif()
 
 if (TARGET koi)

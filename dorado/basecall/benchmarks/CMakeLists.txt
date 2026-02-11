@@ -1,4 +1,4 @@
-add_library(dorado_benchmarks STATIC
+add_library(dorado_cuda_benchmarks STATIC
     CudaChunkBenchmarks.cpp
     CudaChunkBenchmarks.h
     NVIDIA_A100_80GB_PCIe.cpp
@@ -28,6 +28,6 @@ else()
     )
 endif()
 
-target_sources(dorado_benchmarks PRIVATE ${HOPPER_BENCHMARKS})
+target_sources(dorado_cuda_benchmarks PRIVATE ${HOPPER_BENCHMARKS})
 
-enable_warnings_as_errors(dorado_benchmarks)
+enable_warnings_as_errors(dorado_cuda_benchmarks)
