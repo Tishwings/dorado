@@ -18,8 +18,9 @@ BamInfo analyze_bam(const std::filesystem::path& in_aln_bam_fn, const std::strin
     BamInfo ret;
     BamFile bam(in_aln_bam_fn);
 
-    const std::vector<utils::HeaderLineData> header =
-            utils::parse_header(*bam.hdr(), {utils::HeaderLineType::PG, utils::HeaderLineType::RG});
+    const std::vector<utils::HeaderLineData> header = utils::parse_header(
+            *bam.hdr(),
+            {utils::HeaderLineType::PG, utils::HeaderLineType::RG, utils::HeaderLineType::SQ});
 
     // Get info from headers: program and the read groups.
     for (const auto& line : header) {
@@ -90,6 +91,15 @@ BamInfo analyze_bam(const std::filesystem::path& in_aln_bam_fn, const std::strin
 
             ret.read_groups.emplace(id);
             ret.basecaller_models.emplace(basecaller_model);
+        } else if (line.header_type == utils::HeaderLineType::SQ) {
+            const auto& it_sn = tags.find("SN");
+            const std::string sn = (it_sn != std::end(tags)) ? it_sn->second : "";
+
+            const auto& it_ln = tags.find("LN");
+            const std::string ln_str = (it_ln != std::end(tags)) ? it_ln->second : "0";
+            const int64_t ln = std::stol(ln_str);
+
+            ret.ref_seqs.emplace_back(sn, ln);
         }
     }
 

@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <string>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace dorado::secondary {
 
@@ -12,6 +14,7 @@ struct BamInfo {
     bool has_dwells = false;
     std::unordered_set<std::string> read_groups;
     std::unordered_set<std::string> basecaller_models;
+    std::vector<std::pair<std::string, int64_t>> ref_seqs;
 };
 
 /**
