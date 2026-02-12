@@ -1,7 +1,6 @@
 #include "secondary/common/batching.h"
 
 #include <stdexcept>
-#include <unordered_map>
 
 namespace dorado::secondary {
 
@@ -30,37 +29,47 @@ std::vector<Interval> compute_partitions(const int32_t num_items, const int32_t 
 }
 
 std::pair<std::vector<std::vector<Region>>, std::vector<Interval>> prepare_region_batches(
-        const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& ref_lookup,
+        const std::vector<std::pair<std::string, int64_t>>& bam_ref_seqs,
         const std::vector<Region>& user_regions,
         const int64_t draft_batch_size) {
-    // Create a lookup.
-    std::unordered_map<std::string, int64_t> draft_ids;
-    for (int64_t seq_id = 0; seq_id < dorado::ssize(draft_lens); ++seq_id) {
-        draft_ids[draft_lens[seq_id].first] = seq_id;
-    }
-
     // Outer vector: ID of the draft, inner vector: regions.
-    std::vector<std::vector<Region>> ret(std::size(draft_lens));
+    std::vector<std::vector<Region>> ret(std::size(ref_lookup));
 
     if (std::empty(user_regions)) {
-        // Add full draft sequences.
-        for (int64_t seq_id = 0; seq_id < dorado::ssize(draft_lens); ++seq_id) {
-            const auto& [draft_name, draft_len] = draft_lens[seq_id];
-            ret[seq_id].emplace_back(Region{draft_name, 0, draft_len});
+        // Add full draft sequences referenced in the input BAM.
+        for (int64_t i = 0; i < dorado::ssize(bam_ref_seqs); ++i) {
+            const auto& [ref_name, ref_len_from_bam] = bam_ref_seqs[i];
+            const auto it = ref_lookup.find(ref_name);
+            if (it == std::cend(ref_lookup)) {
+                throw std::runtime_error{
+                        "BAM header references a sequence which is not present in the input "
+                        "reference FASTA file. Sequence name: '" +
+                        ref_name + "'"};
+            }
+            const auto [ref_id, ref_len] = it->second;
+            if (ref_len != ref_len_from_bam) {
+                throw std::runtime_error{
+                        "Length of the reference sequence differs between the input reference "
+                        "FASTA and the BAM header. Sequence name: '" +
+                        ref_name + "', length from FASTA: " + std::to_string(ref_len) +
+                        ", length from BAM: " + std::to_string(ref_len_from_bam)};
+            }
+            ret[ref_id].emplace_back(Region{ref_name, 0, ref_len});
         }
 
     } else {
         // Bin the user regions for individual contigs.
         for (const auto& region : user_regions) {
-            const auto it = draft_ids.find(region.name);
-            if (it == std::end(draft_ids)) {
+            const auto it = ref_lookup.find(region.name);
+            if (it == std::cend(ref_lookup)) {
                 throw std::runtime_error(
                         "Sequence name from a custom specified region not found in the input "
                         "sequence file! region: " +
                         region_to_string(region));
             }
-            const int64_t seq_id = it->second;
-            ret[seq_id].emplace_back(Region{region.name, region.start, region.end});
+            const auto [ref_id, ref_len] = it->second;
+            ret[ref_id].emplace_back(Region{region.name, region.start, region.end});
         }
     }
 

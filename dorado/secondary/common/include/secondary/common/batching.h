@@ -5,6 +5,8 @@
 #include "utils/ssize.h"
 
 #include <cstdint>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -63,7 +65,8 @@ std::vector<Interval> create_batches(const T& data,
  *          These intervals are indices of the first return vector in this pair.
  */
 std::pair<std::vector<std::vector<Region>>, std::vector<Interval>> prepare_region_batches(
-        const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& ref_lookup,
+        const std::vector<std::pair<std::string, int64_t>>& bam_ref_seqs,
         const std::vector<Region>& user_regions,
         const int64_t draft_batch_size);
 

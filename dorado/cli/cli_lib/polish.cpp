@@ -857,6 +857,7 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
 }
 
 void run_polishing(const Options& opt,
+                   const secondary::BamInfo& bam_info,
                    polisher::PolisherResources& resources,
                    polisher::PolishProgressTracker& tracker,
                    secondary::Stats& stats) {
@@ -937,8 +938,8 @@ void run_polishing(const Options& opt,
     }
 
     // Prepare regions for processing.
-    const auto [input_regions, region_batches] =
-            secondary::prepare_region_batches(draft_lens, opt.regions, opt.draft_batch_size);
+    const auto [input_regions, region_batches] = secondary::prepare_region_batches(
+            draft_lookup, bam_info.ref_seqs, opt.regions, opt.draft_batch_size);
 
     // Update the progress tracker.
     {
@@ -1299,7 +1300,7 @@ int polish(int argc, char* argv[]) {
         auto stats_sampler = std::make_unique<dorado::stats::StatsSampler>(
                 kStatsPeriod, stats_reporters, stats_callables, static_cast<size_t>(0));
 
-        run_polishing(opt, resources, tracker, stats);
+        run_polishing(opt, bam_info, resources, tracker, stats);
 
         tracker.finalize();
         stats_sampler->terminate();
