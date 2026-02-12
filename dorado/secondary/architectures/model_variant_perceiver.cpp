@@ -49,6 +49,7 @@ at::Tensor SwiGLUImpl::forward(const at::Tensor& x) {
 
 RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
                                          const float theta,
+                                         const int64_t max_seq_len,
                                          const at::TensorOptions& options)
         : m_dim{dim}, m_theta{theta} {
     if (dim <= 0) {
@@ -56,10 +57,22 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
                                  std::to_string(dim) + ", should be > 0."};
     }
 
-    m_inv_freq =
+    const at::Tensor inv_freq =
             torch::pow(m_theta, torch::arange(0, m_dim, 2, options) / static_cast<float>(m_dim))
                     .reciprocal()
                     .detach();
+
+    const at::Tensor pos = torch::arange(max_seq_len, options);
+    const at::Tensor freqs = at::outer(
+            pos, inv_freq);  // Equivalent to: torch::einsum("i,j->ij", {pos, m_inv_freq});
+    const at::Tensor emb = torch::cat({freqs, freqs}, /*dim=*/-1);
+
+    m_cos_freqs = torch::cos(emb)         // [T, D]
+                          .unsqueeze(0)   // [1, T, D]
+                          .unsqueeze(2)   // [1, T, 1, D]
+                          .unsqueeze(3);  // [1, T, 1, 1, D]
+
+    m_sin_freqs = torch::sin(emb).unsqueeze(0).unsqueeze(2).unsqueeze(3);
 
     // NOTE: There is no `persistent` option in Libtorch unlike Pytorch:
     //      register_buffer("inv_freq", m_inv_freq, /*persistent=*/false);
@@ -69,7 +82,8 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
     // other parameters, and this will crash execution.
     // Workaround: there is now a manually added `add_nonpersistent_buffer()` function in the
     // ModelTorchBase, and the top-level model logs this buffer, so that it can be checked later.
-    register_buffer("inv_freq", m_inv_freq);
+    register_buffer("cos_freqs", m_cos_freqs);
+    register_buffer("sin_freqs", m_sin_freqs);
 }
 
 std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at::Tensor k) {
@@ -97,19 +111,9 @@ std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at:
     // Dimensions: N, T, C, H, D = batch_size, num_positions, num_sequences, num_heads, head_dim
     const int64_t T = q.size(1);
 
-    // TODO: Cache the freqs computation similar to TxModules.
-    const at::Tensor pos = torch::arange(T, q.options());
-    const at::Tensor freqs = at::outer(
-            pos, m_inv_freq);  // Equivalent to: torch::einsum("i,j->ij", {pos, m_inv_freq});
-    const at::Tensor emb = torch::cat({freqs, freqs}, /*dim=*/-1);
-
-    // emb: [L, D]
-    const at::Tensor cos_vals = torch::cos(emb)         // [T, D]
-                                        .unsqueeze(0)   // [1, T, D]
-                                        .unsqueeze(2)   // [1, T, 1, D]
-                                        .unsqueeze(3);  // [1, T, 1, 1, D]
-
-    const at::Tensor sin_vals = torch::sin(emb).unsqueeze(0).unsqueeze(2).unsqueeze(3);
+    // View only the number of values needed.
+    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 1, /*start*/ 0, /*end*/ T);
+    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 1, /* start*/ 0, /*end*/ T);
 
     q = rotate_half(q).mul_(sin_vals).add_(cos_vals * q);
     k = rotate_half(k).mul_(sin_vals).add_(cos_vals * k);
@@ -147,8 +151,9 @@ MultiSequenceCrossAttentionBlockImpl::MultiSequenceCrossAttentionBlockImpl(
     m_q_proj = register_module(
             "q_proj", torch::nn::Linear(torch::nn::LinearOptions(dim, dim).bias(qkv_bias)));
     m_read_embeddings = register_module("read_embeddings", torch::nn::Embedding(max_depth, dim));
-    m_positional_embeddings = register_module(
-            "positional_embeddings", RotaryEmbedding(m_head_dim, 10000.0f, at::TensorOptions{}));
+    m_positional_embeddings =
+            register_module("positional_embeddings",
+                            RotaryEmbedding(m_head_dim, 10000.0f, 100000, at::TensorOptions{}));
     m_out_proj = register_module("out_proj", SwiGLU(dim, dim, false));
     m_norm1 = register_module("norm1", nn::RMSNorm(dim));
     m_norm2 = register_module("norm2", nn::RMSNorm(dim));
@@ -431,14 +436,19 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
 
         // Manually store the names of the non-persistent buffers because Libtorch doesn't have this feature (unlike Pytorch).
         // This will be cross-referenced during model loading.
-        this->add_nonpersistent_buffer("blocks." + std::to_string(i) +
-                                       ".reads_to_haplotypes.positional_embeddings.inv_freq");
-        this->add_nonpersistent_buffer(
-                "blocks." + std::to_string(i) +
-                ".haplotype_self_attention.self_attention.positional_embeddings.inv_freq");
-        if (curr_update) {
+        for (const std::string_view name : {"cos_freqs", "sin_freqs"}) {
             this->add_nonpersistent_buffer("blocks." + std::to_string(i) +
-                                           ".haplotypes_to_reads.positional_embeddings.inv_freq");
+                                           ".reads_to_haplotypes.positional_embeddings." +
+                                           std::string{name});
+            this->add_nonpersistent_buffer(
+                    "blocks." + std::to_string(i) +
+                    ".haplotype_self_attention.self_attention.positional_embeddings." +
+                    std::string{name});
+            if (curr_update) {
+                this->add_nonpersistent_buffer("blocks." + std::to_string(i) +
+                                               ".haplotypes_to_reads.positional_embeddings." +
+                                               std::string{name});
+            }
         }
     }
 

@@ -29,14 +29,18 @@ namespace dorado::secondary {
  */
 class RotaryEmbeddingImpl : public torch::nn::Module {
 public:
-    RotaryEmbeddingImpl(int64_t dim, float theta, const at::TensorOptions& options);
+    RotaryEmbeddingImpl(int64_t dim,
+                        float theta,
+                        const int64_t max_seq_len,
+                        const at::TensorOptions& options);
 
     std::pair<at::Tensor, at::Tensor> forward(at::Tensor q, at::Tensor k);
 
 private:
     int64_t m_dim{0};
     float m_theta{0};
-    at::Tensor m_inv_freq{nullptr};
+    at::Tensor m_cos_freqs{nullptr};
+    at::Tensor m_sin_freqs{nullptr};
 
     at::Tensor rotate_half(const at::Tensor& x) const;
 };
