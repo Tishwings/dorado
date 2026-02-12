@@ -11,8 +11,7 @@ using ShutdownCallback = std::function<void()>;
 
 class BenchmarkTimer {
 public:
-    BenchmarkTimer(int64_t benchmarking_period_ms, ShutdownCallback callback);
-
+    explicit BenchmarkTimer(std::chrono::seconds benchmarking_period, ShutdownCallback callback);
     ~BenchmarkTimer();
 
     void terminate();
@@ -20,11 +19,9 @@ public:
 private:
     ShutdownCallback m_shutdown_callback;
     std::atomic<bool> m_should_terminate{false};
-    int64_t m_benchmarking_period_ms;
-    std::chrono::time_point<std::chrono::system_clock> m_start_time;
     std::thread m_benchmarking_thread;
 
-    void benchmarking_thread_fn();
+    void benchmarking_thread_fn(std::chrono::seconds benchmarking_period);
 };
 
 }  // namespace dorado

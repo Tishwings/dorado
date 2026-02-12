@@ -4,7 +4,6 @@
 
 #include <optional>
 #include <string>
-#include <unordered_map>
 
 namespace dorado::demux {
 

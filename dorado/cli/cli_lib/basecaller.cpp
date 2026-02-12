@@ -74,7 +74,6 @@ using namespace std::chrono_literals;
 using namespace dorado::models;
 using namespace dorado::model_resolution;
 using namespace dorado::config;
-namespace fs = std::filesystem;
 
 namespace dorado {
 
@@ -711,18 +710,19 @@ void setup(const std::vector<std::string>& args,
             pipeline->terminate({.fast = utils::AsyncQueueTerminateFast::Yes});
             spdlog::info("Benchmarking time-limit reached. Shutting down.");
         };
-        benchmark_timer_ptr =
-                std::make_unique<BenchmarkTimer>(run_for_arg * 1000, std::move(shutdown_callback));
+        benchmark_timer_ptr = std::make_unique<BenchmarkTimer>(std::chrono::seconds(run_for_arg),
+                                                               std::move(shutdown_callback));
     }
 
-    DataLoader loader(*pipeline, "cpu", thread_allocations.loader_threads, max_reads, read_list,
-                      reads_already_processed);
-
-    auto func = [client_info](ReadCommon& read) { read.client_info = client_info; };
-    loader.add_read_initialiser(func);
-
-    // This is blocking on all reads
-    loader.load_reads(pod5_folder_info.files(), ReadOrder::UNRESTRICTED);
+    // Start feeding data into the pipeline.
+    {
+        DataLoader loader(*pipeline, "cpu", thread_allocations.loader_threads, max_reads, read_list,
+                          reads_already_processed);
+        loader.add_read_initialiser(
+                [client_info](ReadCommon& read) { read.client_info = client_info; });
+        // This is blocking on all reads
+        loader.load_reads(pod5_folder_info.files(), ReadOrder::UNRESTRICTED);
+    }
 
     // Wait for the pipeline to complete.  When it does, we collect final stats to allow accurate summarisation.
     // Note that if the pipeline was already terminated by the ShutdownCallback, this does nothing, and final_stats
