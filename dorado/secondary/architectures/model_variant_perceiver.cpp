@@ -199,6 +199,7 @@ at::Tensor MultiSequenceCrossAttentionBlockImpl::attn_fn(const at::Tensor& q,
      * q shape: N, T, N_Q, H, D (batch_size, num_positions, num_query_seqs, num_heads, head_dim)
      * k shape: N, T, N_KV, H, D (batch_size, num_positions, num_kv_seqs, num_heads, head_dim)
      */
+    utils::ScopedProfileRange spr1("MultiSequenceCrossAttentionBlockImpl::attn_fn", 4);
 
     const int64_t N = q.size(0);
     const int64_t T = q.size(1);
@@ -217,6 +218,9 @@ at::Tensor MultiSequenceCrossAttentionBlockImpl::attn_fn(const at::Tensor& q,
 
     // Compute mask if needed.
     if (m_attn_window) {
+        utils::ScopedProfileRange spr2("MultiSequenceCrossAttentionBlockImpl::attn_fn-attn_window",
+                                       5);
+
         at::Tensor new_mask = local_attention_mask(T, N_Q, N_KV, *m_attn_window);
 
         // Reshape the mask. Expand broadcasts from [1, 1, ...] to [N, H, ...]. It doesn't copy the data,
@@ -253,14 +257,23 @@ at::Tensor MultiSequenceCrossAttentionBlockImpl::forward(at::Tensor x,
     const int64_t N_KV = cross_attn_seqs.size(2);
 
     // Get the Q tensor.
-    const at::Tensor q = m_q_proj(x).view({N, T, N_Q, m_num_heads, m_head_dim});
+    at::Tensor q;
+    {
+        utils::ScopedProfileRange spr2("MultiSequenceCrossAttentionBlockImpl::forward-q_proj", 4);
+        q = m_q_proj(x).view({N, T, N_Q, m_num_heads, m_head_dim});
+    }
 
     // Get the K, V tensors.
-    const at::Tensor kv = m_kv_proj(cross_attn_seqs).view({N, T, N_KV, 2, m_num_heads, m_head_dim});
-    std::vector<torch::Tensor> kv_unbound = kv.unbind(/*dim=*/3);
-    if (std::ssize(kv_unbound) != 2) {
-        throw std::runtime_error{"Wrong size of the unbound tensors! kv_unbound.size = " +
-                                 std::to_string(std::size(kv_unbound)) + ", expected = 2"};
+    std::vector<torch::Tensor> kv_unbound;
+    {
+        utils::ScopedProfileRange spr2("MultiSequenceCrossAttentionBlockImpl::forward-kv_proj", 4);
+        const at::Tensor kv =
+                m_kv_proj(cross_attn_seqs).view({N, T, N_KV, 2, m_num_heads, m_head_dim});
+        kv_unbound = kv.unbind(/*dim=*/3);
+        if (std::ssize(kv_unbound) != 2) {
+            throw std::runtime_error{"Wrong size of the unbound tensors! kv_unbound.size = " +
+                                     std::to_string(std::size(kv_unbound)) + ", expected = 2"};
+        }
     }
     const auto& k = kv_unbound[0];
     const auto& v = kv_unbound[1];
@@ -275,8 +288,13 @@ at::Tensor MultiSequenceCrossAttentionBlockImpl::forward(at::Tensor x,
 
     const at::Tensor attn_out = attn_fn(q_rot, k_rot, v);
 
-    x = m_norm1(x + attn_out);
-    x = m_norm2(m_out_proj(x).add_(x));
+    {
+        utils::ScopedProfileRange spr2(
+                "MultiSequenceCrossAttentionBlockImpl::forward-residual_proj_and_norms", 4);
+
+        x = m_norm1(x + attn_out);
+        x = m_norm2(m_out_proj(x).add_(x));
+    }
 
     LOG_TRACE_DTYPE("[MultiSequenceCrossAttentionBlockImpl] Output: x.dtype() = {}",
                     torch::toString(x.scalar_type()));
@@ -645,7 +663,11 @@ at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x) {
 
     x = x.permute({0, 3, 1, 2});
 
-    at::Tensor reads = m_expansion_layer(x);
+    at::Tensor reads;
+    {
+        utils::ScopedProfileRange spr2("ModelVariantPerceiver::forward_impl-expansion_layer", 2);
+        reads = m_expansion_layer(x);
+    }
 
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] reads.dtype() = {}",
                     torch::toString(reads.scalar_type()));
@@ -673,7 +695,11 @@ at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x) {
         haplotype_sequence = m_decoder_identity(haplotype_sequence);
     }
 
-    at::Tensor out = m_output(haplotype_sequence).view({b, p, m_ploidy, m_num_classes});
+    at::Tensor out;
+    {
+        utils::ScopedProfileRange spr2("ModelVariantPerceiver::forward_impl-output_layer", 2);
+        out = m_output(haplotype_sequence).view({b, p, m_ploidy, m_num_classes});
+    }
 
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] Output: out.dtype() = {}",
                     torch::toString(out.scalar_type()));

@@ -1,5 +1,6 @@
 #include "model_latent_space_lstm.h"
 
+#include "torch_utils/gpu_profiling.h"
 #include "torch_utils/tensor_utils.h"
 
 #include <cmath>
@@ -87,10 +88,14 @@ ReadLevelConvImpl::ReadLevelConvImpl(const int32_t num_in_features,
     register_module("convs", m_convs);
 }
 
-torch::Tensor ReadLevelConvImpl::forward(torch::Tensor x) { return m_convs->forward(std::move(x)); }
+torch::Tensor ReadLevelConvImpl::forward(torch::Tensor x) {
+    utils::ScopedProfileRange spr1("ReadLevelConvImpl::forward", 4);
+    return m_convs->forward(std::move(x));
+}
 
 torch::Tensor MeanPoolerImpl::forward(const torch::Tensor& x,
                                       const torch::Tensor& non_empty_position_mask) {
+    utils::ScopedProfileRange spr1("MeanPoolerImpl::forward", 4);
     const auto read_depths = non_empty_position_mask.sum(-1).unsqueeze(-1).unsqueeze(-1);
     const auto mask = non_empty_position_mask.unsqueeze(-1).unsqueeze(-1);
     return (x * mask).sum(1) / read_depths;
@@ -107,6 +112,7 @@ ReversibleLSTMImpl::ReversibleLSTMImpl(const int32_t input_size,
 }
 
 torch::Tensor ReversibleLSTMImpl::forward(const torch::Tensor& x) {
+    utils::ScopedProfileRange spr1("ReversibleLSTMImpl::forward", 4);
     const int32_t flip_dim = m_batch_first ? 1 : 0;
     torch::Tensor output;
     if (m_reverse) {

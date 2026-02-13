@@ -4,6 +4,7 @@
 #include "medaka_read_matrix.h"
 #include "secondary/features/encoder_utils.h"
 #include "secondary/features/kadayashi_utils.h"
+#include "torch_utils/gpu_profiling.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
 #include "utils/ssize.h"
@@ -64,6 +65,7 @@ ReadAlignmentTensors read_matrix_data_to_tensors(ReadAlignmentData& data) {
 
 std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary::Sample> samples) {
     const auto cat_vectors = [](const std::vector<std::vector<int64_t>>& vecs) {
+        utils::ScopedProfileRange spr2("merge_adjacent_samples_impl-cat_vectors", 7);
         size_t size = 0;
         for (const auto& vec : vecs) {
             size += std::size(vec);
@@ -77,6 +79,8 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
     };
 
     const auto pad_reads = [](std::vector<at::Tensor> chunks, int64_t target_depth) {
+        utils::ScopedProfileRange spr2("merge_adjacent_samples_impl-pad_reads", 7);
+
         // Determine the target depth if not provided
         if (target_depth < 0) {
             target_depth = 0;
@@ -122,6 +126,7 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
                                   const std::vector<std::vector<std::string>>& read_ids_in,
                                   const std::vector<std::vector<std::string>>& read_ids_out) {
         LOG_TRACE("[reorder_reads] Entered. chunks.size = {}", std::size(chunks));
+        utils::ScopedProfileRange spr2("merge_adjacent_samples_impl-reorder_reads", 8);
 
         if (std::size(chunks) < 2) {
             return chunks;
@@ -151,6 +156,8 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
 
     const auto merge_samples = [&samples, &cat_vectors, &pad_reads,
                                 &reorder_reads](const std::vector<int64_t>& sample_ids) {
+        utils::ScopedProfileRange spr2("merge_adjacent_samples_impl-merge_samples", 6);
+
         // The torch::cat is slow, so just move if there is nothing to concatenate.
         if (std::empty(sample_ids)) {
             return secondary::Sample{};
@@ -193,6 +200,8 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
 
         return ret;
     };
+
+    utils::ScopedProfileRange spr2("merge_adjacent_samples_impl", 5);
 
     std::vector<int64_t> buffer_ids;
     int64_t last_end = -1;
@@ -294,6 +303,10 @@ kadayashi::varcall_result_t EncoderReadAlignment::produce_haplotags(
         const int64_t ref_start,  // 0-based, inclusive
         const int64_t ref_end     // 0-based, exclusive
 ) {
+    const std::string spr_label =
+            fmt::format("produce_haplotags-{}-{}-{}", ref_name, ref_start, ref_end);
+    utils::ScopedProfileRange spr1(spr_label.c_str(), 5);
+
     spdlog::debug("Haplotagging region: {}:{}-{}, source = {}", ref_name, (ref_start + 1), ref_end,
                   secondary::haplotag_source_to_string(m_hap_source));
 
