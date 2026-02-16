@@ -38,8 +38,8 @@ public:
         // Get the timings for a given config.
         // Returns an empty span if they aren't found.
         // Note: the returned timings are only valid while the lock is held.
-        std::span<const SpeedEntry> get_timings(const std::string &gpu_name,
-                                                const std::string &model_name) const;
+        std::span<const SpeedEntry> get_timings(std::string_view gpu_name,
+                                                std::string_view model_name) const;
 
         // Adds new timing data to the cache, as if calling add_timings().
         bool load_from_file(const std::filesystem::path &path);
@@ -64,7 +64,7 @@ private:
     using GPUName = std::string;
     using ModelName = std::string;
     using Key = std::pair<GPUName, ModelName>;
-    std::map<Key, std::vector<SpeedEntry>> m_runtime_cache;
+    std::map<Key, std::vector<SpeedEntry>, std::less<>> m_runtime_cache;
 
     static BenchmarkCache s_cache;
 };
