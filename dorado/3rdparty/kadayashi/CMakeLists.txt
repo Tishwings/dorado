@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
 option(BUILD_KADAYASHI_ENABLE_COVERAGE "Build tests with gcov coverage" OFF)
-option(BUILD_KADAYASHI_TESTS "Build the kadayashi unit test executable" OFF)
+option(BUILD_KADAYASHI_TESTS "Build the kadayashi unit test executable" ON)
 option(BUILD_KADAYASHI_EXE "Build the kadayashi executable" ON)
 option(BUILD_KADAYASHI_AS_SUBPROJECT "If ON, custom compiler options will not be set" OFF)
 
@@ -123,7 +123,6 @@ install(EXPORT kadayashi_targets
 if (BUILD_KADAYASHI_EXE OR BUILD_KADAYASHI_TESTS)
     add_library(kadayashi_main_lib STATIC
             src/bam_tagging.cpp
-            src/kthread.cpp
             src/cli.cpp
             src/kadayashi_utils.cpp
             src/pipeline.cpp
@@ -135,6 +134,7 @@ if (BUILD_KADAYASHI_EXE OR BUILD_KADAYASHI_TESTS)
         PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/haplotag_lib
         ${CMAKE_CURRENT_SOURCE_DIR}/src/hts_utils
+        ${CMAKE_CURRENT_SOURCE_DIR}/../cxxpool/src
     )
     target_link_libraries(kadayashi_main_lib
         PRIVATE

@@ -14,26 +14,26 @@
 
 void print_help_main() {
     // clang-format off
-    fprintf(stderr, "kadayashi %s\n", KADAYASHI_VERSION);
-    fprintf(stderr, "Usage:\n");
-    fprintf(stderr, "  kadayashi phase -o prefix --ref ref.fa fn_bam 2>log\n");
-    fprintf(stderr, "  kadayashi modifytag --ref hg38.fa --readtags fn_tsv_0index -o out.bam [-i chrom:s-e] [-t threads] fn_bam #note: use 2-col tsv mapping qname to haptag (0-index), not kadayashi tsv\n");
-    fprintf(stderr, "  kadayashi tsv2bin -o out.bin in.tsv\n");
-    fprintf(stderr, "  kadayashi phaseglobal -r fn_ref [-o output.vcf] [-t threads] fn_bam fn_vcf\n");
-    fprintf(stderr, "  kadayashi varcall [--varcall-use-dvr] -o prefix [-t threads -b -r REGION -w window_size] fn_ref fn_bam 2>log\n");
-    fprintf(stderr, "  kadayashi dbg #runs whatever is in the current main_dbg()\n");
+    fprintf(stdout, "kadayashi %s\n", KADAYASHI_VERSION);
+    fprintf(stdout, "Usage:\n");
+    fprintf(stdout, "  kadayashi phase -o prefix --ref ref.fa fn_bam 2>log\n");
+    fprintf(stdout, "  kadayashi modifytag --ref hg38.fa --readtags fn_tsv_0index -o out.bam [-i chrom:s-e] [-t threads] fn_bam #note: use 2-col tsv mapping qname to haptag (0-index), not kadayashi tsv\n");
+    fprintf(stdout, "  kadayashi tsv2bin -o out.bin in.tsv\n");
+    fprintf(stdout, "  kadayashi phaseglobal -r fn_ref [-o output.vcf] [-t threads] fn_bam fn_vcf\n");
+    fprintf(stdout, "  kadayashi varcall [--varcall-use-dvr] -o prefix [-t threads -b -r REGION -w window_size] fn_ref fn_bam 2>log\n");
+    fprintf(stdout, "  kadayashi dbg #runs whatever is in the current main_debug()\n");
     // clang-format on
 }
 
 void print_end_summary(int argc, char *argv[], double T) {
-    fprintf(stderr, "\n[M::%s] ELAPSED: %.1fs PeakRSS: %.1f GiB\n", __func__,
+    fprintf(stdout, "\n[M::%s] ELAPSED: %.1fs , PeakRSS: %.1f GiB\n", __func__,
             kadayashi::get_timestamp() - T, kadayashi::get_peakrss());
-    fprintf(stderr, "[M::%s] kadayashi %s", __func__, KADAYASHI_VERSION);
-    fprintf(stderr, "[M::%s] CMD: ", __func__);
+    fprintf(stdout, "[M::%s] kadayashi %s\n", __func__, KADAYASHI_VERSION);
+    fprintf(stdout, "[M::%s] CMD: ", __func__);
     for (int i = 0; i < argc; i++) {
-        fprintf(stderr, "%s ", argv[i]);
+        fprintf(stdout, "%s ", argv[i]);
     }
-    fprintf(stderr, "\n");
+    fprintf(stdout, "\n");
 }
 
 int main_phase(cliopt_t &clio) {
@@ -57,7 +57,7 @@ int main_debug(int argc, char *argv[]) {
     //            5, 0.2f, 200, 0.1f, false);
     //for (auto &var : result.variants){
     //    if (var.is_valid)
-    //        fprintf(stderr, "%d %s %s\n", var.pos0, var.ref_allele_seq0.c_str(), var.alt_allele_seq0.c_str());
+    //        fprintf(stdout, "%d %s %s\n", var.pos0, var.ref_allele_seq0.c_str(), var.alt_allele_seq0.c_str());
     //}
     return 0;
     // clang-format on
@@ -184,12 +184,12 @@ int main(int argc, char *argv[]) {
         }
         ret = 0;
     } else if (subcommand == "--version") {
-        fprintf(stderr, "kadayashi %s\n", KADAYASHI_VERSION);
+        fprintf(stdout, "kadayashi %s\n", KADAYASHI_VERSION);
         ret = 0;
     } else if (subcommand == "dbg") {
         ret = main_debug(argc - 1, argv + 1);
     } else {
-        fprintf(stderr, "[E::%s] unknown subcommand: %s\n", __func__, argv[1]);
+        fprintf(stdout, "[E::%s] unknown subcommand: %s\n", __func__, argv[1]);
         print_help_main();
         return 1;
     }

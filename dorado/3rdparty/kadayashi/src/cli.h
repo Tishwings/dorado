@@ -11,7 +11,7 @@
 #define BAM_THREAD_RATIO 3
 #define BAM_THREAD_MULT 4
 
-#define KADAYASHI_VERSION "v0.1-r69"
+#define KADAYASHI_VERSION "v0.1-r71"
 
 struct cliopt_t {
     bool is_valid = true;

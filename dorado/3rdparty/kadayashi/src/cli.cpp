@@ -113,43 +113,43 @@ int sancheck_cliopt(cliopt_t &clio) {
 
 // clang-format off
 void print_help_cliopt_t(cliopt_t &clio) {
-    fprintf(stderr, "kadayashi %s\n", KADAYASHI_VERSION);
-    fprintf(stderr,
+    fprintf(stdout, "kadayashi %s\n", KADAYASHI_VERSION);
+    fprintf(stdout,
             "Usage: kadayashi phase -o out --ref ref.fa "
             "[--bed fn_bed] [...] fn_bam 2>log\n");
-    fprintf(stderr, "Outputs: $(out).tsv $(out).bin\n");
-    fprintf(stderr, "Basic options:\n");
-    fprintf(stderr, "  -o STR        [opt] Output file prefix. [%s]\n", clio.output_prefix.string().c_str());
-    fprintf(stderr, "  --ref STR     [req] Rference genome. Must have fai index.\n");
-    fprintf(stderr, "  -t INT        [opt] Number of threads. [%d]\n", clio.n_threads);
-    fprintf(stderr, "  -c INT        [opt] Local haplotagging window size (chunk size) [%d]\n",
+    fprintf(stdout, "Outputs: $(out).tsv $(out).bin\n");
+    fprintf(stdout, "Basic options:\n");
+    fprintf(stdout, "  -o STR        [opt] Output file prefix. [%s]\n", clio.output_prefix.string().c_str());
+    fprintf(stdout, "  --ref STR     [req] Rference genome. Must have fai index.\n");
+    fprintf(stdout, "  -t INT        [opt] Number of threads. [%d]\n", clio.n_threads);
+    fprintf(stdout, "  -c INT        [opt] Local haplotagging window size (chunk size) [%d]\n",
             clio.chunk_l);
-    fprintf(stderr, "  -s INT        [opt] Local haplotagging stride (chunk stride) [%d]\n",
+    fprintf(stdout, "  -s INT        [opt] Local haplotagging stride (chunk stride) [%d]\n",
             clio.chunk_stride);
-    fprintf(stderr, "  --verbose     [opt] Enable more output.\n");
-    fprintf(stderr, "  --no-site-flt [opt] Disable strand and coverage-based filtering \n"
+    fprintf(stdout, "  --verbose     [opt] Enable more output.\n");
+    fprintf(stdout, "  --no-site-flt [opt] Disable strand and coverage-based filtering \n"
                     "                      for informative sites. Intended to be used \n"
                     "                      along --vcf to respect its variants.\n");
-    fprintf(stderr, "  --bed STR      [opt] If provided, do local haplotagging in regions \n"
+    fprintf(stdout, "  --bed STR      [opt] If provided, do local haplotagging in regions \n"
                     "                      specified by the bed file. Without --slice-in-bed, \n"
                     "                      will take entire intervals rather than doing \n"
                     "                      sliding windows (chunks) within them.\n");
-    fprintf(stderr, "  --slice-in-bed [opt] Do sliding windows in bed-specified intervals.\n");
-    fprintf(stderr, "  --region STR   [opt] Phase a single region without sliding window.\n");
-    fprintf(stderr, "                       0-index [).\n");
-    fprintf(stderr, "                       String can be like: chr6:1,100,50-2M\n");
-    fprintf(stderr, "  --write-dbg-bam[opt] Used with --region, automatically write haptagged bam w/ "
+    fprintf(stdout, "  --slice-in-bed [opt] Do sliding windows in bed-specified intervals.\n");
+    fprintf(stdout, "  --region STR   [opt] Phase a single region without sliding window.\n");
+    fprintf(stdout, "                       0-index [).\n");
+    fprintf(stdout, "                       String can be like: chr6:1,100,50-2M\n");
+    fprintf(stdout, "  --write-dbg-bam[opt] Used with --region, automatically write haptagged bam w/ "
                     "index.\n");
-    fprintf(stderr, "Hyperparameter options:\n");
-    fprintf(stderr, "  --max-clipping INT [opt] Ignore reads with clippings larger than INT\n");
-    fprintf(stderr, "                 on either side.[%d]\n", clio.pp.max_clipping);
-    fprintf(stderr, "  --min-base-q INT   [opt] Ignore alt alleles with quality less than $INT. [%d] (TODO: "
+    fprintf(stdout, "Hyperparameter options:\n");
+    fprintf(stdout, "  --max-clipping INT [opt] Ignore reads with clippings larger than INT\n");
+    fprintf(stdout, "                 on either side.[%d]\n", clio.pp.max_clipping);
+    fprintf(stdout, "  --min-base-q INT   [opt] Ignore alt alleles with quality less than $INT. [%d] (TODO: "
                     "currently not affecting ref alleles.)\n", clio.pp.min_base_quality);
-    fprintf(stderr, "  --min-site-cov INT [opt] Minimum informative site cov per allele. [%d]\n",
+    fprintf(stdout, "  --min-site-cov INT [opt] Minimum informative site cov per allele. [%d]\n",
                     clio.pp.min_varcall_coverage);
-    fprintf(stderr, "  --strict-intervals [opt] If set, do not allow attempts to expand\n");
-    fprintf(stderr, "                           the requested interval(s).\n");
-    fprintf(stderr, "  -h            [   ] Print this message and exit.\n");
+    fprintf(stdout, "  --strict-intervals [opt] If set, do not allow attempts to expand\n");
+    fprintf(stdout, "                           the requested interval(s).\n");
+    fprintf(stdout, "  -h            [   ] Print this message and exit.\n");
 }
 // clang-format on
 
@@ -231,7 +231,7 @@ cliopt_t parse_cli(int argc, char *argv[]) {
         } else if (c == 998) {
             kadayashi::KDY_VERBOSE = true;
         } else if (c == 999) {
-            fprintf(stderr, "kadayashi: %s\n", KADAYASHI_VERSION);
+            fprintf(stdout, "kadayashi: %s\n", KADAYASHI_VERSION);
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
@@ -268,11 +268,11 @@ cliopt_t parse_cli(int argc, char *argv[]) {
 }
 
 void print_help_tsv2bin_cli(cliopt_t &clio) {
-    fprintf(stderr, "kadayashi %s\n", KADAYASHI_VERSION);
-    fprintf(stderr, "Usage: kadayashi tsv2bin -o out.bin in.tsv\n");
-    fprintf(stderr, "Outputs: out.bin\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -o STR        [req] Output file name. [%s]\n",
+    fprintf(stdout, "kadayashi %s\n", KADAYASHI_VERSION);
+    fprintf(stdout, "Usage: kadayashi tsv2bin -o out.bin in.tsv\n");
+    fprintf(stdout, "Outputs: out.bin\n");
+    fprintf(stdout, "Options:\n");
+    fprintf(stdout, "  -o STR        [req] Output file name. [%s]\n",
             clio.output_name.string().c_str());
 }
 
@@ -301,7 +301,7 @@ cliopt_t parse_cli_tsv2bin(int argc, char *argv[]) {
         } else if (c == 998) {
             kadayashi::KDY_VERBOSE = true;
         } else if (c == 999) {
-            fprintf(stderr, "kadayashi: %s\n", KADAYASHI_VERSION);
+            fprintf(stdout, "kadayashi: %s\n", KADAYASHI_VERSION);
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
@@ -328,15 +328,15 @@ cliopt_t parse_cli_tsv2bin(int argc, char *argv[]) {
 }
 
 static void print_help_bin2bam_cli(const cliopt_t &clio) {
-    fprintf(stderr, "Usage: kadayashi bin2bam -o out.bam [-t threads] -r region fn_bam fn_bin\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  fn_bam        Input bam.\n");
-    fprintf(stderr, "  fn_bin        Kadayashi binary.\n");
-    fprintf(stderr, "  -o STR        [req] Output bam name. Will create index. [%s]\n",
+    fprintf(stdout, "Usage: kadayashi bin2bam -o out.bam [-t threads] -r region fn_bam fn_bin\n");
+    fprintf(stdout, "Options:\n");
+    fprintf(stdout, "  fn_bam        Input bam.\n");
+    fprintf(stdout, "  fn_bin        Kadayashi binary.\n");
+    fprintf(stdout, "  -o STR        [req] Output bam name. Will create index. [%s]\n",
             clio.output_name.string().c_str());
-    fprintf(stderr, "  -r/--region STR [req] Query region, 0-index [). [%s]\n",
+    fprintf(stdout, "  -r/--region STR [req] Query region, 0-index [). [%s]\n",
             clio.one_region_str.c_str());
-    fprintf(stderr, "  -t INT        [opt] Threads to use. [%s]\n",
+    fprintf(stdout, "  -t INT        [opt] Threads to use. [%s]\n",
             clio.output_name.string().c_str());
 }
 cliopt_t parse_cli_bin2bam(int argc, char *argv[]) {
@@ -363,7 +363,7 @@ cliopt_t parse_cli_bin2bam(int argc, char *argv[]) {
         } else if (c == 998) {
             kadayashi::KDY_VERBOSE = true;
         } else if (c == 999) {
-            fprintf(stderr, "kadayashi: %s\n", KADAYASHI_VERSION);
+            fprintf(stdout, "kadayashi: %s\n", KADAYASHI_VERSION);
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
@@ -398,17 +398,17 @@ cliopt_t parse_cli_bin2bam(int argc, char *argv[]) {
 }
 
 static void print_help_phaseglobal_cli(const cliopt_phaseglobal_t &clio) {
-    fprintf(stderr,
+    fprintf(stdout,
             "Usage: kadayashi phaseglobal -r fn_ref [-o output.vcf] [-t threads] fn_bam fn_vcf\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -r     STR [req] Reference genome, whose index must exist.\n");
-    fprintf(stderr, "  fn_bam STR [req] Aligned, sorted & indexed reads.\n");
-    fprintf(stderr, "  fn_vcf STR [req] Variants in VCF. Any existing phasing will be ignored.\n");
-    fprintf(stderr,
+    fprintf(stdout, "Options:\n");
+    fprintf(stdout, "  -r     STR [req] Reference genome, whose index must exist.\n");
+    fprintf(stdout, "  fn_bam STR [req] Aligned, sorted & indexed reads.\n");
+    fprintf(stdout, "  fn_vcf STR [req] Variants in VCF. Any existing phasing will be ignored.\n");
+    fprintf(stdout,
             "  -o     STR [opt] Output VCF name. If not present, will be ${fn_vcf}.kadayashi.vcf "
             ".\n");
-    fprintf(stderr, "  -t     INT [opt] Threads to use. [%d]\n", clio.n_threads);
-    fprintf(stderr, "  -b     STR [opt] Write haptagged bam. Default to no output.\n");
+    fprintf(stdout, "  -t     INT [opt] Threads to use. [%d]\n", clio.n_threads);
+    fprintf(stdout, "  -b     STR [opt] Write haptagged bam. Default to no output.\n");
 }
 
 cliopt_phaseglobal_t parse_cli_phaseglobal(int argc, char *argv[]) {
@@ -438,7 +438,7 @@ cliopt_phaseglobal_t parse_cli_phaseglobal(int argc, char *argv[]) {
         } else if (c == 998) {
             kadayashi::KDY_VERBOSE = true;
         } else if (c == 999) {
-            fprintf(stderr, "kadayashi: %s\n", KADAYASHI_VERSION);
+            fprintf(stdout, "kadayashi: %s\n", KADAYASHI_VERSION);
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {
@@ -497,42 +497,42 @@ static ko_longopt_t longopts_varcall[] = {
 // clang-format on
 
 void print_help_varcall_cli(cliopt_varcall_t &clio) {
-    fprintf(stderr, "kadayashi %s\n", KADAYASHI_VERSION);
-    fprintf(stderr, "Usage: kadayashi varcall -o prefix [-t threads] [-b] fn_ref fn_bam\n");
-    fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  fn_ref        Reference genome, index (.fai file).\n");
-    fprintf(stderr, "  fn_bam        Input bam.\n");
-    fprintf(stderr, "  -o STR        [req] Output prefix. [%s]\n",
+    fprintf(stdout, "kadayashi %s\n", KADAYASHI_VERSION);
+    fprintf(stdout, "Usage: kadayashi varcall -o prefix [-t threads] [-b] fn_ref fn_bam\n");
+    fprintf(stdout, "Options:\n");
+    fprintf(stdout, "  fn_ref        Reference genome, index (.fai file).\n");
+    fprintf(stdout, "  fn_bam        Input bam.\n");
+    fprintf(stdout, "  -o STR        [req] Output prefix. [%s]\n",
             clio.output_prefix.string().c_str());
-    fprintf(stderr, "  -t INT        [opt] Threads to use. [%d]\n", clio.n_threads);
-    fprintf(stderr, "  -b            [opt] Set this to output phased bam. [not set]\n");
-    fprintf(stderr, "  -w            [opt] Variant calling window size. [%d]\n", clio.varcall_w);
-    fprintf(stderr,
+    fprintf(stdout, "  -t INT        [opt] Threads to use. [%d]\n", clio.n_threads);
+    fprintf(stdout, "  -b            [opt] Set this to output phased bam. [not set]\n");
+    fprintf(stdout, "  -w            [opt] Variant calling window size. [%d]\n", clio.varcall_w);
+    fprintf(stdout,
             "  -p            [opt] Padding size for BED output. If specified multiple times, only "
             "the last value will be used. [%d]\n",
             clio.bed_flanking);
-    fprintf(stderr,
+    fprintf(stdout,
             "  -r/--region   [opt] Specify region in 0-index [) with format like chr6:10M-11000000 "
             ".\n");
-    fprintf(stderr, "                      Can use multiple times. Default is all.\n");
-    fprintf(stderr, "  --use-dvr     [opt] Set to use dvr phasing method of simpel phasing. [%s]\n",
+    fprintf(stdout, "                      Can use multiple times. Default is all.\n");
+    fprintf(stdout, "  --use-dvr     [opt] Set to use dvr phasing method of simpel phasing. [%s]\n",
             clio.varcall_use_dvr ? "set" : "not set");
-    fprintf(stderr,
+    fprintf(stdout,
             "  --min-strand-cov   [opt] Minimum coverage for both strands (inclusive). [%d]\n",
             clio.pp.min_strand_cov);
-    fprintf(stderr,
+    fprintf(stdout,
             "  --min-strand-cov-frac   [opt] Minimum coverage fraction for both strands "
             "(inclusive). [%.3f]\n",
             clio.pp.min_strand_cov_frac);
-    fprintf(stderr, "  --allow-refbase-n  [opt] Set to allow the output vcf to contain\n");
-    fprintf(stderr, "                              entries where ref base has N or n. [%s]\n",
+    fprintf(stdout, "  --allow-refbase-n  [opt] Set to allow the output vcf to contain\n");
+    fprintf(stdout, "                              entries where ref base has N or n. [%s]\n",
             clio.vcf_write_allow_refbase_N ? "set" : "not set");
-    fprintf(stderr, "  --strict-intervals [opt] Set to disable region expansion, i.e. \n");
-    fprintf(stderr, "                      phase using strict the variants within \n");
-    fprintf(stderr, "                      each chunk and don't look around. [%s]\n",
+    fprintf(stdout, "  --strict-intervals [opt] Set to disable region expansion, i.e. \n");
+    fprintf(stdout, "                      phase using strict the variants within \n");
+    fprintf(stdout, "                      each chunk and don't look around. [%s]\n",
             clio.pp.disable_region_expansion ? "set" : "not set");
-    fprintf(stderr, "  --max-gc-seqdiv [opt] Max gap-compressed sequence divergence allowed\n");
-    fprintf(stderr, "                  for a read to be considered in phasing & varcall.[%.2f]\n",
+    fprintf(stdout, "  --max-gc-seqdiv [opt] Max gap-compressed sequence divergence allowed\n");
+    fprintf(stdout, "                  for a read to be considered in phasing & varcall.[%.2f]\n",
             clio.pp.max_gapcompressed_seqdiv);
 }
 
@@ -640,7 +640,7 @@ cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]) {
                          __func__);
         } else if (c == 304) {
             clio.vcf_write_allow_refbase_N = false;
-            fprintf(stderr,
+            fprintf(stdout,
                     "[M::%s] vcf output will omit entries where referene allele is or has N\n",
                     __func__);
         } else if (c == 305) {
@@ -654,7 +654,7 @@ cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]) {
         } else if (c == 998) {
             kadayashi::KDY_VERBOSE = true;
         } else if (c == 999) {
-            fprintf(stderr, "kadayashi: %s\n", KADAYASHI_VERSION);
+            fprintf(stdout, "kadayashi: %s\n", KADAYASHI_VERSION);
             clio.is_print_help = true;
             return clio;
         } else if (c == '?') {

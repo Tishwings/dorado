@@ -16,7 +16,7 @@ double get_timestamp() {
     return static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                        std::chrono::system_clock::now().time_since_epoch())
                                        .count()) /
-           1000000.0;
+           1000.0;
 }
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__) || defined(_POSIX_VERSION)

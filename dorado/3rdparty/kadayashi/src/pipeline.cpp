@@ -4,8 +4,8 @@
 #include "FastxRandomReader.h"
 #include "bam_record_parsing.h"
 #include "bam_tagging.h"
+#include "cxxpool.h"
 #include "kadayashi_utils.h"
-#include "kthread.h"
 #include "resources.h"
 #include "sequence_utility.h"
 #include "types.h"
@@ -94,7 +94,7 @@ bool parse_region_integer(std::string_view s,
                 } else if (s[i] == 'k' || s[i] == 'K') {
                     multiplier = 1'000;
                 } else {
-                    spdlog::error("[kdys::{}] malformated: {}", __func__, s);
+                    spdlog::error("[kdys::{}] malformatted: {}", __func__, s);
                     return false;
                 }
 
@@ -140,8 +140,8 @@ void insert_bed_line(const std::string &line, std::string_view chrom, std::vecto
         return;
     }
     if (chrom == cols[col_chrom]) {
-        uint32_t s = std::stoul(cols[col_s].c_str(), NULL, 10);
-        uint32_t e = std::stoul(cols[col_e].c_str(), NULL, 10);
+        uint32_t s = std::stoul(cols[col_s]);
+        uint32_t e = std::stoul(cols[col_e]);
         intvls.push_back(u32p_t{.s = s, .e = e});
     }
 }
@@ -391,7 +391,7 @@ struct worker_2a2p_st {  // step
     std::vector<uint8_t> success{};                          // fixed length
 };
 
-static void local_haplotagging_callback(void *data, long job_i, int thread_i) {
+void local_haplotagging_callback(void *data, int job_i) {
     worker_2a2p_st *d = (worker_2a2p_st *)data;
     const int chunkID = d->chunkID_start + job_i;
     const uint32_t ref_start = d->pl->ranges[chunkID].s;
@@ -451,48 +451,54 @@ static void local_haplotagging_callback(void *data, long job_i, int thread_i) {
     }
 }
 
-static void *local_haplotagging_pipeline(void *data_pl, int step, void *in) {
-    // this pipeline exists because read names were not stored.
-    worker_2a2p_pl *pl = (worker_2a2p_pl *)data_pl;
-    if (step == 0) {  // parse bam and do phasing
+void local_haplotagging_phase_and_write(worker_2a2p_pl *pl) {
+    assert(pl->n_chunks_per_batch > 0);
+    for (size_t i = 0; i < pl->ranges.size(); i += pl->n_chunks_per_batch) {
         worker_2a2p_st *st = new worker_2a2p_st();
-        st->chunkID_start = pl->range_i;
         st->pl = pl;
-        for (size_t i = pl->range_i; i < pl->ranges.size(); i++) {
-            st->n_chunks++;
-            if (st->n_chunks >= pl->n_chunks_per_batch) {
-                break;
-            }
+
+        // parse bam and do phasing
+        if (i >= pl->ranges.size()) {
+            break;
         }
+        size_t j = std::min<size_t>(pl->ranges.size(), i + pl->n_chunks_per_batch);
+        if (j <= i) {
+            break;
+        }
+        st->n_chunks = j - i;
+        st->chunkID_start = pl->range_i;
         pl->range_i += st->n_chunks;
-        if (st->n_chunks > 0) {
-            st->qnames.resize(st->n_chunks);
-            st->haptags.resize(st->n_chunks);
-            st->success.resize(st->n_chunks, 0);
-            st->votes_diploid.resize(st->n_chunks);
-            st->informative_sites.resize(st->n_chunks);
-            kt_for(pl->n_threads, local_haplotagging_callback, st, st->n_chunks);
-            return st;
-        } else {
-            delete st;
+
+        st->qnames.resize(st->n_chunks);
+        st->haptags.resize(st->n_chunks);
+        st->success.resize(st->n_chunks, 0);
+        st->votes_diploid.resize(st->n_chunks);
+        st->informative_sites.resize(st->n_chunks);
+
+        cxxpool::thread_pool pool{static_cast<size_t>(pl->n_threads)};
+        std::vector<std::future<void>> pool_futures;
+        pool_futures.reserve(st->n_chunks);
+        for (int job_i = 0; job_i < st->n_chunks; job_i++) {
+            pool_futures.emplace_back(pool.push(local_haplotagging_callback, st, job_i));
         }
-    } else if (step == 1) {  // write to file
-        worker_2a2p_st *st = (worker_2a2p_st *)in;
-        for (int i = 0; i < st->n_chunks; i++) {
-            const int chunkID_abs = st->pl->tot_offset + st->chunkID_start + i;
-            const int chunkID = st->chunkID_start + i;
+        for (auto &v : pool_futures) {
+            v.get();
+        }
+
+        // write to file
+        for (int i_chunk = 0; i_chunk < st->n_chunks; i_chunk++) {
+            const int chunkID_abs = st->pl->tot_offset + st->chunkID_start + i_chunk;
+            const int chunkID = st->chunkID_start + i_chunk;
             const uint32_t start = pl->ranges[chunkID].s;
             const uint32_t end = pl->ranges[chunkID].e;
             local_haptagging_write_tsv(pl->fp_out, chunkID_abs, pl->refname, start, end,
-                                       st->success[i], st->haptags[i].size(), st->qnames[i],
-                                       st->haptags[i], st->votes_diploid[i],
-                                       st->informative_sites[i]);
+                                       st->success[i_chunk], st->haptags[i_chunk].size(),
+                                       st->qnames[i_chunk], st->haptags[i_chunk],
+                                       st->votes_diploid[i_chunk], st->informative_sites[i_chunk]);
             spdlog::info("[kdys::{}] done processing interval {}:{}-{}", __func__,
                          pl->refname.data(), start, end);
         }
-        delete st;
     }
-    return 0;
 }
 
 reference_variants_t load_frozen_variants_from_vcf_2ad(const std::filesystem::path &fn_vcf) {
@@ -655,7 +661,7 @@ struct worker_simple_2a2p_st {
     std::vector<uint32_t> seedreadID;
     std::vector<std::unordered_map<uint32_t, uint8_t>> arr_read2hp;  // readID to haptag hastables
 };
-static void variant_graph_simple_haptag1_worker(void *data, long job_i, int thread_i) {
+void variant_graph_simple_haptag1_worker(void *data, int job_i) {
     worker_simple_2a2p_st *d = (worker_simple_2a2p_st *)data;
     const uint32_t seedreadID = d->seedreadID[job_i];
     d->arr_read2hp[job_i] = variant_graph_do_simple_haptag1_give_ht(d->ck, seedreadID);
@@ -735,7 +741,17 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
 
     // iterate
     st.arr_read2hp.resize(st.seedreadID.size());
-    kt_for(n_threads, variant_graph_simple_haptag1_worker, &st, st.seedreadID.size());
+
+    cxxpool::thread_pool pool{static_cast<size_t>(n_threads)};
+    std::vector<std::future<void>> pool_futures;
+    pool_futures.reserve(st.seedreadID.size());
+    for (int job_i = 0; job_i < static_cast<int>(st.seedreadID.size()); job_i++) {
+        pool_futures.emplace_back(pool.push(variant_graph_simple_haptag1_worker, &st, job_i));
+    }
+    for (auto &v : pool_futures) {
+        v.get();
+    }
+
     if constexpr (DEBUG_PRINT) {
         spdlog::info("[kdys::{}] all iterations done, used {:.1f} s", __func__,
                      kadayashi::get_timestamp() - T2);
@@ -1946,7 +1962,7 @@ int local_haplotagging(const std::filesystem::path &fn_bam,
                 .n_bam_threads = n_bam_threads};
 
         if (!dbg_region_str.empty()) {
-            if (!region_string_is_sane(dbg_region_str, dbg_region_str.size())) {
+            if (region_string_is_sane(dbg_region_str, dbg_region_str.size()) == IS_MALFORMAT) {
                 spdlog::error("[kdys::{}] --region was malformatted: {}", __func__,
                               dbg_region_str.data());
                 exit(1);
@@ -1962,8 +1978,10 @@ int local_haplotagging(const std::filesystem::path &fn_bam,
                 region.start = 1;
                 region.end = ref_l;
                 spdlog::warn(
-                        "[kdys::{}] not slicing in the query range. Probably want to use BED file "
-                        "with --slice-in-bed instead.",
+                        "[kdys::{}] Not slicing in the query range which seems to be a whole "
+                        "chromosome. Use BED file "
+                        "with --slice-in-bed instead if not intended. The --region is an debug "
+                        "option.",
                         __func__);
             }
             if (region.chrom != refname) {
@@ -2003,8 +2021,7 @@ int local_haplotagging(const std::filesystem::path &fn_bam,
         }
 
         // phasing
-        kt_pipeline(n_threads, local_haplotagging_pipeline, &pl, 2);
-
+        local_haplotagging_phase_and_write(&pl);
         pl.tot_offset += pl.range_i;
     }
 

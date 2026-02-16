@@ -2,7 +2,6 @@
 
 #include "BamFile.h"
 #include "kadayashi_utils.h"
-#include "kthread.h"
 #include "local_haplotagging.h"
 #include "pipeline.h"
 
