@@ -67,6 +67,14 @@ std::string FastxRandomReader::fetch_seq(const std::string& read_id) const {
     }
 }
 
+int FastxRandomReader::fetch_seq_len(const std::string& tn) const {
+    const int32_t len = faidx_seq_len(m_faidx.get(), tn.c_str());
+    if (len < 0) {
+        spdlog::error("Could not fetch sequence length for {}", tn);
+    }
+    return len;
+}
+
 std::vector<uint8_t> FastxRandomReader::fetch_qual(const std::string& read_id) const {
     int len = 0;
     CharPtr qual(fai_fetchqual(m_faidx.get(), read_id.c_str(), &len));

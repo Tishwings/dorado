@@ -1,7 +1,7 @@
 #pragma once
 
-#include "BamFile.h"
 #include "local_haplotagging.h"
+#include "secondary/common/bam_file.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -70,7 +70,7 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
                                                     const int use_dvr_for_phasing,
                                                     const int bed_flanking);
 
-intervals_t region_strings_to_intervals(hts_utils::BamFile &hf,
+intervals_t region_strings_to_intervals(dorado::secondary::BamFile &hf,
                                         const int window_size,
                                         const std::vector<std::string> &query_regions);
 

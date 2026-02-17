@@ -49,7 +49,7 @@ int main_phase(cliopt_t &clio) {
 
 int main_debug(int argc, char *argv[]) {
     // clang-format off
-    //kadayashi::hts_utils::BamFile hf{argv[1], 1};
+    //kadayashi::dorado::secondary::BamFile hf{argv[1], 1};
     //faidx_t *fai = fai_load_format(argv[2], FAI_FASTA);
     //const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
     //            hf.fp(), hf.idx(), hf.hdr(),

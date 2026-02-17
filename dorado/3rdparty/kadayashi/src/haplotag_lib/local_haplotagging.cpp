@@ -439,7 +439,7 @@ struct interval_t {
     uint32_t start;
     uint32_t end;
 };
-interval_t expand_query_interval(BamFileView &hf,
+interval_t expand_query_interval(dorado::secondary::BamFileView &hf,
                                  std::string_view refname,
                                  const uint32_t itvl_start,
                                  const uint32_t itvl_end) {
@@ -1524,7 +1524,7 @@ std::string create_region_string(const std::string_view ref_name,
     return ret;
 }
 
-chunk_t variant_pileup_ht(BamFileView &hf,
+chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                           const variants_t &ht_refvars,
                           const faidx_t *fai,
                           const str2int_t *qname2hp,  // 0-index
@@ -2197,7 +2197,7 @@ phase_return_t kadayashi_local_haptagging_dvr_single_region(samFile *fp_bam,
 
     phase_return_t ret;
 
-    BamFileView hf{.fp = fp_bam, .idx = fp_bai, .hdr = fp_header};
+    dorado::secondary::BamFileView hf{.fp = fp_bam, .idx = fp_bai, .hdr = fp_header};
 
     chunk_t ck = variant_pileup_ht(hf, {}, fai, nullptr, ref_name, ref_start, ref_end, pp);
 
@@ -2230,7 +2230,7 @@ phase_return_t kadayashi_local_haptagging_simple_single_region(samFile *fp_bam,
                                                                const pileup_pars_t &pp) {
     phase_return_t ret;
 
-    BamFileView hf{.fp = fp_bam, .idx = fp_bai, .hdr = fp_header};
+    dorado::secondary::BamFileView hf{.fp = fp_bam, .idx = fp_bai, .hdr = fp_header};
 
     chunk_t ck = variant_pileup_ht(hf, {}, fai, nullptr, ref_name, ref_start, ref_end, pp);
 
@@ -2342,7 +2342,7 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
                                                     const float min_strand_cov_frac,
                                                     const float max_gapcompressed_seqdiv,
                                                     const bool use_dvr_for_phasing) {
-    BamFileView hf_view{fp_bam, fp_bai, fp_header};
+    dorado::secondary::BamFileView hf_view{fp_bam, fp_bai, fp_header};
 
     phase_return_t phasing_result;
     if (use_dvr_for_phasing) {

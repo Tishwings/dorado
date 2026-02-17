@@ -1,10 +1,9 @@
 #include "pipeline.h"
 
-#include "BamFile.h"
-#include "FastxRandomReader.h"
 #include "bam_record_parsing.h"
 #include "bam_tagging.h"
 #include "cxxpool.h"
+#include "hts_utils/FastxRandomReader.h"
 #include "kadayashi_utils.h"
 #include "resources.h"
 #include "sequence_utility.h"
@@ -299,7 +298,7 @@ void local_haptagging_write_tsv(std::ofstream &fp,
 }
 
 void local_haptagging_write_tsv2(std::ofstream &fp,
-                                 hts_utils::BamFile &hf,
+                                 dorado::secondary::BamFile &hf,
                                  const int chunkID,
                                  const std::string_view refname,
                                  const uint32_t ref_start,  // 0-index
@@ -397,10 +396,10 @@ void local_haplotagging_callback(void *data, int job_i) {
     const uint32_t ref_start = d->pl->ranges[chunkID].s;
     const uint32_t ref_end = d->pl->ranges[chunkID].e;
 
-    hts_utils::BamFile hf{d->pl->fn_bam, d->pl->n_bam_threads};
-    hts_utils::FastxRandomReader fai{d->pl->fn_ref};
+    dorado::secondary::BamFile hf{d->pl->fn_bam, d->pl->n_bam_threads};
+    dorado::hts_io::FastxRandomReader fai{d->pl->fn_ref};
 
-    BamFileView hf_view = hf.get_view();
+    dorado::secondary::BamFileView hf_view = hf.get_view();
 
     chunk_t ck = variant_pileup_ht(hf_view, d->pl->ht_refvars, fai.get_raw_faidx_ptr(), nullptr,
                                    d->pl->refname, ref_start, ref_end, d->pl->pp);
@@ -813,7 +812,7 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
                  kadayashi::get_timestamp() - T);
 }
 
-chunk_t kadayashi_global_phasing_simple1(BamFileView &hf_view,
+chunk_t kadayashi_global_phasing_simple1(dorado::secondary::BamFileView &hf_view,
                                          const faidx_t *fai_view,
                                          std::string_view refname,
                                          const uint32_t ref_len,
@@ -857,7 +856,7 @@ chunk_t kadayashi_global_phasing_simple1(BamFileView &hf_view,
     return ck;
 }
 
-void haptag_variants_2ad(hts_utils::BamFile &hf,
+void haptag_variants_2ad(dorado::secondary::BamFile &hf,
                          std::string_view refname,
                          const variants_t &vars,  // known variants of the current chromosome
                          const str2int_t &qname2hp,
@@ -1330,10 +1329,10 @@ std::unordered_map<std::string, int> kadayashi_global_phasing_simple_modify_vcf1
         exit(1);
     }
 
-    hts_utils::BamFile hf{fn_bam, n_threads};
-    hts_utils::FastxRandomReader fp_fai{fn_ref};
+    dorado::secondary::BamFile hf{fn_bam, n_threads};
+    dorado::hts_io::FastxRandomReader fp_fai{fn_ref};
 
-    BamFileView hf_view = hf.get_view();
+    dorado::secondary::BamFileView hf_view = hf.get_view();
 
     varhaps_t varhaps;
     std::unordered_map<std::string, int> qname2hp;
@@ -1449,7 +1448,7 @@ query_regions_t region_strings_to_ht(const std::vector<std::string> &query_regio
     return ret;
 }
 
-void varcall_write_simple_vcf_header(std::ofstream &fp_out_vcf, hts_utils::BamFile &hf) {
+void varcall_write_simple_vcf_header(std::ofstream &fp_out_vcf, dorado::secondary::BamFile &hf) {
     fp_out_vcf << "##fileformat=VCFv4.2\n";
     fp_out_vcf << "##FILTER=<ID=PASS,Description=\"called\">\n";
     fp_out_vcf << "##FILTER=<ID=unsr,Description=\"go to the large model\">\n";
@@ -1637,8 +1636,8 @@ std::vector<varcall_result_and_localphasinght_t> kadayashi_phase_and_varcall_mul
     // do variant calling in queries
     std::vector<ck_and_varcall_result_t> ck_and_vrs(n_jobs);
     auto worker = [&] {
-        hts_utils::BamFile hf{fn_bam, n_bam_threads};
-        hts_utils::FastxRandomReader fp_fai{fn_ref};
+        dorado::secondary::BamFile hf{fn_bam, n_bam_threads};
+        dorado::hts_io::FastxRandomReader fp_fai{fn_ref};
         while (true) {
             const int jobID_start = next_jobID.fetch_add(JOB_CHUNK_SIZE, std::memory_order_relaxed);
             if (jobID_start >= n_jobs) {
@@ -1803,7 +1802,7 @@ int util_modify_tag_given_tsv(const std::filesystem::path &fn_bam,
         return 1;
     }
 
-    hts_utils::BamFile hf{fn_bam, n_bam_threads};
+    dorado::secondary::BamFile hf{fn_bam, n_bam_threads};
     spdlog::info("[kdys::{}] itvl: {}", __func__, itvl);
     HtsItrPtr bamitr =
             HtsItrPtr(sam_itr_querys(hf.idx(), hf.hdr(), itvl.data()), HtsItrDestructor());
@@ -1929,7 +1928,7 @@ int local_haplotagging(const std::filesystem::path &fn_bam,
     }
 
     // for reading the header; threads will open the bam files on their own
-    hts_utils::BamFile hf{fn_bam, n_bam_threads};
+    dorado::secondary::BamFile hf{fn_bam, n_bam_threads};
 
     // will load vcf variants if present
     reference_variants_t refvars;
@@ -2044,7 +2043,7 @@ str2int_t kadayashi_global_phasing_simple_modify_vcf(const std::filesystem::path
                                                        fn_out_vcf, n_threads);
 }
 
-intervals_t region_strings_to_intervals(hts_utils::BamFile &hf,
+intervals_t region_strings_to_intervals(dorado::secondary::BamFile &hf,
                                         const int window_size,
                                         const std::vector<std::string> &query_regions) {
     intervals_t ret;
@@ -2116,8 +2115,8 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
                                                     const int use_dvr_for_phasing,
                                                     const int bed_flanking) {
     // prep input files and inputs
-    hts_utils::BamFile hf{fn_bam, 1};
-    hts_utils::FastxRandomReader fp_fai{fn_ref};
+    dorado::secondary::BamFile hf{fn_bam, 1};
+    dorado::hts_io::FastxRandomReader fp_fai{fn_ref};
     intervals_t query_intervals_all = region_strings_to_intervals(hf, window_size, query_regions);
 
     // prep output files
@@ -2285,7 +2284,7 @@ std::vector<std::string> bam_region_to_seqs(const std::filesystem::path &fn_ref,
         assert(fp_out_fa.is_open());
     }
 
-    hts_utils::FastxRandomReader fp_fai{fn_ref};
+    dorado::hts_io::FastxRandomReader fp_fai{fn_ref};
     const std::string refseq_s = fp_fai.fetch_seq(interval_string.data());
 
     ret.push_back(refseq_s);
@@ -2293,7 +2292,7 @@ std::vector<std::string> bam_region_to_seqs(const std::filesystem::path &fn_ref,
         fp_out_fa << fmt::format(">ref {}\n{}\n", interval_string, ret.back());
     }
 
-    hts_utils::BamFile hf{fn_bam, n_threads};
+    dorado::secondary::BamFile hf{fn_bam, n_threads};
     HtsItrPtr bamitr = HtsItrPtr(sam_itr_querys(hf.idx(), hf.hdr(), interval_string.data()),
                                  HtsItrDestructor());
     BamPtr aln = BamPtr(bam_init1(), BamDestructor());  // use local buffer instead of hf->aln

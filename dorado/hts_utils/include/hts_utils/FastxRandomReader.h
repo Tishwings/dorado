@@ -26,6 +26,7 @@ public:
 
     std::string fetch_seq(const std::string& read_id) const;
     std::vector<uint8_t> fetch_qual(const std::string& read_id) const;
+    int fetch_seq_len(const std::string& tn) const;
 
     faidx_t* get_raw_faidx_ptr();
 

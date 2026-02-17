@@ -1,6 +1,6 @@
 #include "bam_tagging.h"
 
-#include "BamFile.h"
+#include "bam_file.h"
 #include "kadayashi_utils.h"
 #include "local_haplotagging.h"
 #include "pipeline.h"
@@ -32,7 +32,7 @@ int write_haptagged_bam_given_hashtable_and_itvl(
     assert(!itvl.empty());
     int ret = 0;
 
-    hts_utils::BamFile hf{fn_bam, n_threads / 2};
+    dorado::secondary::BamFile hf{fn_bam, n_threads / 2};
     HtsItrPtr bamitr =
             HtsItrPtr(sam_itr_querys(hf.idx(), hf.hdr(), itvl.data()), HtsItrDestructor());
 
@@ -100,7 +100,7 @@ int write_haptagged_bam_given_bin_and_itvl(const std::filesystem::path &fn_bam,
         return 1;
     }
 
-    hts_utils::BamFile hf{fn_bam, n_bam_threads};
+    dorado::secondary::BamFile hf{fn_bam, n_bam_threads};
     HtsItrPtr bamitr =
             HtsItrPtr(sam_itr_querys(hf.idx(), hf.hdr(), itvl.data()), HtsItrDestructor());
 
@@ -169,7 +169,7 @@ int write_haptagged_bam_given_hashtable_and_multiple_itvls(
 
     // prep input
     assert(!fn_bam.native().empty());
-    hts_utils::BamFile hf{fn_bam, n_threads};
+    dorado::secondary::BamFile hf{fn_bam, n_threads};
 
     // prep output
     BGZF *fp_out = bgzf_open(fn_out.string().c_str(), "w");

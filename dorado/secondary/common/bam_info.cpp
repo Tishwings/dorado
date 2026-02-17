@@ -16,7 +16,7 @@ namespace dorado::secondary {
 
 BamInfo analyze_bam(const std::filesystem::path& in_aln_bam_fn, const std::string& cli_read_group) {
     BamInfo ret;
-    BamFile bam(in_aln_bam_fn);
+    BamFile bam(in_aln_bam_fn, 1);
 
     const std::vector<utils::HeaderLineData> header =
             utils::parse_header(*bam.hdr(), {utils::HeaderLineType::PG, utils::HeaderLineType::RG});

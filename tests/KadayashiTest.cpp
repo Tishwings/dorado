@@ -112,7 +112,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple, normal case", TEST_GROUP) {
     };
 
     // Open the input files.
-    dorado::secondary::BamFile bam_reader(fn_bam);
+    dorado::secondary::BamFile bam_reader(fn_bam, 1);
     dorado::hts_io::FastxRandomReader fastx_reader(fn_ref);
 
     CATCH_REQUIRE(bam_reader.fp());
@@ -161,7 +161,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple, empty region", TEST_GROUP) {
     const std::unordered_map<std::string, int32_t> expected{};
 
     // Open the input files.
-    dorado::secondary::BamFile bam_reader(fn_bam);
+    dorado::secondary::BamFile bam_reader(fn_bam, 1);
     dorado::hts_io::FastxRandomReader fastx_reader(fn_ref);
 
     CATCH_REQUIRE(bam_reader.fp());
@@ -236,7 +236,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple nonexistent chromosome", TEST_GROUP) {
     const std::unordered_map<std::string, int32_t> expected{};
 
     // Open the input files.
-    dorado::secondary::BamFile bam_reader(fn_bam);
+    dorado::secondary::BamFile bam_reader(fn_bam, 1);
     dorado::hts_io::FastxRandomReader fastx_reader(fn_ref);
 
     CATCH_REQUIRE(bam_reader.fp());
@@ -342,7 +342,7 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
             }};
 
     // Open the input files.
-    dorado::secondary::BamFile bam_reader(fn_bam);
+    dorado::secondary::BamFile bam_reader(fn_bam, 1);
     dorado::hts_io::FastxRandomReader fastx_reader(fn_ref);
 
     CATCH_REQUIRE(bam_reader.fp());
