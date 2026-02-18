@@ -34,7 +34,6 @@ private:
 
     std::shared_ptr<utils::concurrency::MultiQueueThreadPool> m_thread_pool{};
     utils::concurrency::AsyncTaskExecutor m_task_executor;
-    utils::concurrency::TaskPriority m_pipeline_priority{utils::concurrency::TaskPriority::normal};
 
     std::atomic<size_t> total_tail_lengths_called{0};
     std::atomic<int> num_called{0};
