@@ -671,19 +671,21 @@ void CudaCaller::cuda_thread_fn() {
         auto device_stats =
                 c10::cuda::CUDACachingAllocator::getDeviceStats(m_options.device().index());
 
-        auto print_stat = [](const auto &st) {
-            return "aggregate current " + std::to_string(st[0].current);
-        };
+        const auto aggregate_idx =
+                static_cast<uint64_t>(c10::CachingAllocator::StatType::AGGREGATE);
         spdlog::trace(
-                "allocation {}, segment {}, active {}, inactive_split {}, alloc_bytes {}, "
-                "reserved_bytes {}, active_bytes {}, inactive_split_bytes {}, requested_bytes "
-                "{}, num_alloc_retries {}, num_ooms {}, max_split_size {}",
-                print_stat(device_stats.allocation), print_stat(device_stats.segment),
-                print_stat(device_stats.active), print_stat(device_stats.inactive_split),
-                print_stat(device_stats.allocated_bytes), print_stat(device_stats.reserved_bytes),
-                print_stat(device_stats.active_bytes),
-                print_stat(device_stats.inactive_split_bytes),
-                print_stat(device_stats.requested_bytes), device_stats.num_alloc_retries,
+                "Aggregate current: allocation {}, segment {}, active {}, inactive_split {}, "
+                "alloc_bytes {}, reserved_bytes {}, active_bytes {}, inactive_split_bytes {}, "
+                "requested_bytes {}. Total: num_alloc_retries {}, num_ooms {}, max_split_size {}",
+                device_stats.allocation[aggregate_idx].current,
+                device_stats.segment[aggregate_idx].current,
+                device_stats.active[aggregate_idx].current,
+                device_stats.inactive_split[aggregate_idx].current,
+                device_stats.allocated_bytes[aggregate_idx].current,
+                device_stats.reserved_bytes[aggregate_idx].current,
+                device_stats.active_bytes[aggregate_idx].current,
+                device_stats.inactive_split_bytes[aggregate_idx].current,
+                device_stats.requested_bytes[aggregate_idx].current, device_stats.num_alloc_retries,
                 device_stats.num_alloc_retries, device_stats.num_ooms, device_stats.max_split_size);
 
         auto run_basecalling = [&]() {
