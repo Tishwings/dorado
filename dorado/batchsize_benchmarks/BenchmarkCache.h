@@ -10,8 +10,9 @@
 namespace dorado::batchsize_benchmarks {
 
 struct SpeedEntry {
-    int batch_size;
+    std::uint32_t batch_size;
     double basecall_speed;
+    std::uint64_t memory_used;
 };
 
 class BenchmarkCache final {

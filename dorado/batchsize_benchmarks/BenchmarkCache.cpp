@@ -48,7 +48,8 @@ void csv_write_entries(std::ofstream &out,
         out << gpu_name << ',';
         out << model_name << ',';
         out << entry.batch_size << ',';
-        out << entry.basecall_speed;
+        out << entry.basecall_speed << ',';
+        out << entry.memory_used;
     }
 }
 
@@ -67,6 +68,7 @@ void csv_read_lines(std::ifstream &in, Callback &&callback) {
         const auto model_name = stream.getline();
         const auto batch_size_str = stream.getline();
         const auto basecall_speed_str = stream.getline();
+        const auto memory_used_str = stream.getline();
         if (stream.eof()) {
             // Ignore this line if any of the components are missing.
             spdlog::warn("Line doesn't have enough entries: {}", line);
@@ -74,9 +76,10 @@ void csv_read_lines(std::ifstream &in, Callback &&callback) {
         }
 
         // Parse numbers.
-        const auto batch_size = utils::from_chars<int>(batch_size_str.value());
+        const auto batch_size = utils::from_chars<std::uint32_t>(batch_size_str.value());
         const auto basecall_speed = utils::from_chars<double>(basecall_speed_str.value());
-        if (!batch_size.has_value() || !basecall_speed.has_value()) {
+        const auto memory_used = utils::from_chars<std::uint64_t>(memory_used_str.value());
+        if (!batch_size.has_value() || !basecall_speed.has_value() || !memory_used.has_value()) {
             // Ignore this line if the values failed to parse.
             spdlog::warn("Failed to parse line: {}", line);
             continue;
@@ -86,6 +89,7 @@ void csv_read_lines(std::ifstream &in, Callback &&callback) {
         const SpeedEntry entry{
                 .batch_size = batch_size.value(),
                 .basecall_speed = basecall_speed.value(),
+                .memory_used = memory_used.value(),
         };
         callback(gpu_name.value(), model_name.value(), entry);
     }
