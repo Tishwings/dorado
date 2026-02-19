@@ -2,6 +2,9 @@
 
 #include "utils/math_utils.h"
 
+#include <ATen/ops/empty.h>
+#include <c10/core/ScalarType.h>
+
 #include <stdexcept>
 
 namespace dorado::nn {
@@ -24,12 +27,12 @@ std::string to_string(const TensorLayout &layout) {
     throw std::logic_error("TensorLayout unknown");
 }
 
-int64_t WorkingMemory::tensor_bytes(torch::IntArrayRef sizes, torch::Dtype dtype) {
+int64_t WorkingMemory::tensor_bytes(at::IntArrayRef sizes, at::ScalarType dtype) {
     auto elems = c10::multiply_integers(sizes);
-    return utils::pad_to<int64_t>(elems * torch::elementSize(dtype), ALIGNMENT);
+    return utils::pad_to<int64_t>(elems * at::elementSize(dtype), ALIGNMENT);
 }
 
-at::Tensor WorkingMemory::next(torch::IntArrayRef sizes, torch::Dtype dtype, bool make_current) {
+at::Tensor WorkingMemory::next(at::IntArrayRef sizes, at::ScalarType dtype, bool make_current) {
     auto new_bytes = tensor_bytes(sizes, dtype);
     at::Tensor new_tensor;
     if (!backing_tensor.defined()) {
@@ -44,9 +47,8 @@ at::Tensor WorkingMemory::next(torch::IntArrayRef sizes, torch::Dtype dtype, boo
                 current.defined() && current.data_ptr() == backing_tensor.data_ptr();
         auto elems = c10::multiply_integers(sizes);
         auto bt_dtype = backing_tensor.view(dtype);
-        auto start_pos = current_is_front
-                                 ? (reservation_bytes - new_bytes) / torch::elementSize(dtype)
-                                 : int64_t(0);
+        auto start_pos = current_is_front ? (reservation_bytes - new_bytes) / at::elementSize(dtype)
+                                          : int64_t(0);
         new_tensor = bt_dtype.narrow(0, start_pos, elems).view(sizes);
     }
     if (make_current) {
@@ -83,31 +85,31 @@ at::Tensor WorkingMemory::next_TC(int T_, int C_, TensorLayout layout_) {
     C = C_;
     layout = layout_;
     if (layout == TensorLayout::NTC) {
-        return next({N, T, C}, torch::kF16, true);
+        return next({N, T, C}, at::kHalf, true);
     } else if (layout == TensorLayout::TNC) {
-        return next({T, N, C}, torch::kF16, true);
+        return next({T, N, C}, at::kHalf, true);
     } else if (layout == TensorLayout::CUTLASS_TNC_F16) {
-        return next({T + 5, N, C}, torch::kF16, true);
+        return next({T + 5, N, C}, at::kHalf, true);
     } else if (layout == TensorLayout::CUTLASS_TNC_I8) {
-        return next({T + 5, N, C}, torch::kI8, true);
+        return next({T + 5, N, C}, at::kChar, true);
     } else if (layout == TensorLayout::CUBLAS_TN2C) {
-        return next({T + 1, N, 2, C}, torch::kF16, true);
+        return next({T + 1, N, 2, C}, at::kHalf, true);
     } else if (layout == TensorLayout::CUBLAS_TNC) {
-        return next({T + 3, N, C}, torch::kF16, true);
+        return next({T + 3, N, C}, at::kHalf, true);
     } else {
         throw std::logic_error("Unhandled TensorLayout");
     }
 }
 
-at::Tensor WorkingMemory::temp(torch::IntArrayRef sizes, torch::Dtype dtype) {
+at::Tensor WorkingMemory::temp(at::IntArrayRef sizes, at::ScalarType dtype) {
     return next(sizes, dtype, false);
 }
 
-void WorkingMemory::allocate_backing_tensor(torch::Device dev) {
+void WorkingMemory::allocate_backing_tensor(c10::Device dev) {
     // Using kF16 here because the libtorch version on TX2 doesn't support `Tensor::view()`
     // with a dtype of a different size, and all buffers are kF16 on TX2.
-    backing_tensor = torch::empty({reservation_bytes / 2},
-                                  at::TensorOptions().device(dev).dtype(torch::kF16));
+    backing_tensor =
+            at::empty({reservation_bytes / 2}, at::TensorOptions().device(dev).dtype(at::kHalf));
     current_bytes = 0;
 }
 

@@ -1,7 +1,8 @@
 #pragma once
 
+#include <ATen/core/TensorBody.h>
+#include <c10/core/Device.h>
 #include <cuda_runtime.h>
-#include <torch/torch.h>
 
 #include <mutex>
 #include <string>
@@ -47,7 +48,7 @@ std::vector<CUDADeviceInfo> get_cuda_device_info(const std::string &device_strin
 std::string get_cuda_gpu_names(const std::string &device_string);
 
 // Reports the amount of available memory (in bytes) for a given device.
-size_t available_memory(torch::Device device);
+size_t available_memory(c10::Device device);
 
 // Print `label` and stats for Torch CUDACachingAllocator to stderr. Useful for tracking down
 // where Torch allocates GPU memory.

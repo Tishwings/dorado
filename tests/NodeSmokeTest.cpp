@@ -22,11 +22,11 @@
 #include "utils/PostCondition.h"
 #include "utils/parameters.h"
 
+#include <ATen/ops/rand.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/internal/catch_run_context.hpp>
 #include <torch/cuda.h>
-#include <torch/types.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -152,7 +152,7 @@ DEFINE_TEST(NodeSmokeTestRead, "ScalerNode") {
 
     // Scaler node expects i16 input
     set_read_mutator([model_type](dorado::SimplexReadPtr& read) {
-        read->read_common.raw_data = read->read_common.raw_data.to(torch::kI16);
+        read->read_common.raw_data = read->read_common.raw_data.to(at::kShort);
         read->read_common.is_rna_model = model_type != SampleType::DNA;
     });
 
@@ -308,7 +308,7 @@ DEFINE_TEST(NodeSmokeTestRead, "ModBaseCallerNode") {
 
     // ModBase node expects half input and needs a move table
     set_read_mutator([this, model_stride](dorado::SimplexReadPtr& read) {
-        read->read_common.raw_data = read->read_common.raw_data.to(torch::kHalf);
+        read->read_common.raw_data = read->read_common.raw_data.to(at::kHalf);
 
         read->read_common.attributes.model_stride = int(model_stride);
         // The move table size needs rounding up.

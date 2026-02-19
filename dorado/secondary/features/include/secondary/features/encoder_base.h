@@ -1,12 +1,9 @@
 #pragma once
 
 #include "local_haplotagging.h"
-#include "secondary/common/bam_file.h"
-#include "secondary/consensus/consensus_result.h"
 #include "secondary/consensus/sample.h"
 
 #include <ATen/ATen.h>
-#include <torch/types.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -32,7 +29,7 @@ struct KeyHash {
 using FeatureIndicesType =
         std::unordered_map<std::pair<std::string, bool>, std::vector<int64_t>, KeyHash>;
 
-constexpr auto FeatureTensorType = torch::kFloat32;
+constexpr auto FeatureTensorType = at::kFloat;
 
 enum class FeatureColumns : int32_t {
     BASE,

@@ -2,7 +2,6 @@
 
 #include <c10/core/TensorOptions.h>
 #include <spdlog/spdlog.h>
-#include <torch/types.h>
 
 namespace dorado::nn {
 

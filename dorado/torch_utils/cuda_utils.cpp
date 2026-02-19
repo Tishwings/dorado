@@ -11,22 +11,17 @@
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <spdlog/spdlog.h>
+#include <torch/cuda.h>
 
 #include <algorithm>
-#include <array>
 #include <cassert>
-#include <chrono>
 #include <exception>
 #include <iomanip>
-#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
-
-using namespace std::chrono;
 
 namespace dorado::utils {
 
@@ -337,7 +332,7 @@ void print_cuda_alloc_info(const std::string &label) {
 
 // Note that in general the torch caching allocator may be consuming
 // significant memory that could be freed if required.
-size_t available_memory(torch::Device device) {
+size_t available_memory(c10::Device device) {
     size_t free, total;
     c10::cuda::CUDAGuard device_guard(device);
     cudaMemGetInfo(&free, &total);

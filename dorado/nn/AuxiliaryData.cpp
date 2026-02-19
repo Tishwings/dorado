@@ -47,14 +47,13 @@ AuxiliaryData::AuxiliaryData(at::Tensor workspace,
                      std::begin(chunk_intervals_));
 }
 
-void AuxiliaryData::create_convolution_auxiliary_data(
-        [[maybe_unused]] const torch::Device& device) {
+void AuxiliaryData::create_convolution_auxiliary_data([[maybe_unused]] const c10::Device& device) {
 #if DORADO_CUDA_BUILD
     if (device_chunk_intervals.defined()) {
         return;
     }
 
-    auto options = at::TensorOptions().dtype(torch::kInt32);
+    auto options = at::TensorOptions().dtype(at::kInt);
 
     device_chunk_intervals =
             at::from_blob(std::data(chunk_intervals_),
@@ -65,7 +64,7 @@ void AuxiliaryData::create_convolution_auxiliary_data(
 #endif
 }
 
-void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const torch::Device& device,
+void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const at::Device& device,
                                                [[maybe_unused]] KoiThreads& thread_pool) {
 #if DORADO_CUDA_BUILD
     if (device_in_layout.defined()) {
@@ -78,10 +77,10 @@ void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const torch::Dev
     const std::int32_t chunk_sum =
             std::accumulate(std::cbegin(chunk_sizes_), std::cend(chunk_sizes_), 0);
 
-    device_in_layout = at::empty({chunk_sum}, options.dtype(torch::kInt32));
-    device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, options.dtype(torch::kInt32));
-    device_fwd_encoding = at::empty({N_ * T_lstm_}, options.dtype(torch::kInt32));
-    device_bwd_encoding = at::empty({N_ * (T_lstm_ + 1)}, options.dtype(torch::kInt32));
+    device_in_layout = at::empty({chunk_sum}, options.dtype(at::kInt));
+    device_out_layout = at::empty({N_ * (T_lstm_ + 1)}, options.dtype(at::kInt));
+    device_fwd_encoding = at::empty({N_ * T_lstm_}, options.dtype(at::kInt));
+    device_bwd_encoding = at::empty({N_ * (T_lstm_ + 1)}, options.dtype(at::kInt));
 
     constexpr std::int32_t SUBBATCH_SIZE{32};
 
@@ -100,13 +99,13 @@ void AuxiliaryData::create_lstm_auxiliary_data([[maybe_unused]] const torch::Dev
 #endif
 }
 
-void AuxiliaryData::create_decoder_auxiliary_data([[maybe_unused]] const torch::Device& device) {
+void AuxiliaryData::create_decoder_auxiliary_data([[maybe_unused]] const at::Device& device) {
 #if DORADO_CUDA_BUILD
     if (device_chunk_sizes.defined()) {
         return;
     }
 
-    auto options = at::TensorOptions().dtype(torch::kInt32);
+    auto options = at::TensorOptions().dtype(at::kInt);
 
     device_chunk_sizes =
             at::from_blob(std::data(chunk_sizes_),

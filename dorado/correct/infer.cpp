@@ -2,17 +2,18 @@
 
 #include "correct/types.h"
 #include "utils/memory_utils.h"
+#include "utils/string_utils.h"
+
+#include <c10/core/Device.h>
+#include <spdlog/spdlog.h>
+#include <toml.hpp>
+
 #if DORADO_METAL_BUILD
 #include "torch_utils/metal_utils.h"
 #endif
 #if DORADO_CUDA_BUILD
 #include "torch_utils/cuda_utils.h"
 #endif
-#include "utils/string_utils.h"
-
-#include <spdlog/spdlog.h>
-#include <toml.hpp>
-#include <torch/types.h>
 
 namespace keys {
 namespace {
@@ -40,7 +41,7 @@ int calculate_batch_size(const std::string& device, float memory_fraction) {
     }
 #if DORADO_CUDA_BUILD
     else if (utils::starts_with(device, "cuda")) {
-        torch::Device dev = torch::Device(device);
+        c10::Device dev(device);
         int64_t available = utils::available_memory(dev) / dorado::utils::BYTES_PER_GB;
         usable_memory = available * memory_fraction;
     }

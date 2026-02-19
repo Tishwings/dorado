@@ -4,6 +4,7 @@
 #include "utils/ssize.h"
 
 #include <spdlog/spdlog.h>
+#include <torch/types.h>
 
 #include <cassert>
 #include <cstddef>

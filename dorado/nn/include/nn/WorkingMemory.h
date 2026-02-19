@@ -1,6 +1,8 @@
 #pragma once
 
-#include <torch/types.h>
+#include <ATen/core/TensorBody.h>
+
+#include <string>
 
 namespace dorado::nn {
 
@@ -55,8 +57,8 @@ class WorkingMemory {
     // return 256-byte aligned pointers (even though GPU cache lines are at most 128 bytes).
     static constexpr int64_t ALIGNMENT = 256;
 
-    static int64_t tensor_bytes(torch::IntArrayRef sizes, torch::Dtype dtype);
-    at::Tensor next(torch::IntArrayRef sizes, torch::Dtype dtype, bool make_current);
+    static int64_t tensor_bytes(at::IntArrayRef sizes, at::ScalarType dtype);
+    at::Tensor next(at::IntArrayRef sizes, at::ScalarType dtype, bool make_current);
 
 public:
     explicit WorkingMemory(int batch_size) : N(batch_size) {}
@@ -64,9 +66,9 @@ public:
     at::Tensor get_current_NTC_view();
     void next_N(int N_);
     at::Tensor next_TC(int T_, int C_, TensorLayout layout_);
-    at::Tensor temp(torch::IntArrayRef sizes, torch::Dtype dtype);
+    at::Tensor temp(at::IntArrayRef sizes, at::ScalarType dtype);
 
-    void allocate_backing_tensor(torch::Device dev);
+    void allocate_backing_tensor(c10::Device dev);
 
     int64_t reservation_bytes{0};
     int64_t current_bytes{0};

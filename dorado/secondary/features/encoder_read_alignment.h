@@ -8,7 +8,6 @@
 #include "secondary/features/kadayashi_options.h"
 
 #include <ATen/ATen.h>
-#include <torch/types.h>
 
 #include <cstdint>
 #include <filesystem>

@@ -130,7 +130,7 @@ std::vector<VariantCallingSample> merge_vc_samples(
                                   std::end(rh.positions_minor));
 
         // Merge the tensors.
-        lh.logits = torch::cat({std::move(lh.logits), rh.logits});
+        lh.logits = at::cat({std::move(lh.logits), rh.logits});
     };
 
     if (std::empty(vc_samples)) {
