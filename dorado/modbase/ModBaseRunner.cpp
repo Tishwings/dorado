@@ -13,8 +13,6 @@
 #include <c10/cuda/CUDAGuard.h>
 #endif
 
-#include <torch/torch.h>
-
 namespace {
 #if DORADO_CUDA_BUILD
 std::vector<c10::optional<c10::Stream>> get_streams_from_caller(

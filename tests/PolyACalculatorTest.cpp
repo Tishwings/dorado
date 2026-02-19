@@ -11,7 +11,7 @@
 #include <catch2/matchers/catch_matchers_all.hpp>
 #include <spdlog/spdlog.h>
 #include <toml.hpp>
-#include <torch/torch.h>
+#include <torch/serialize.h>
 
 #include <filesystem>
 #include <sstream>

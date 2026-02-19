@@ -1,7 +1,7 @@
 #include "secondary/consensus/sample_collate_utils.h"
 
+#include <ATen/ops/rand.h>
 #include <catch2/catch_test_macros.hpp>
-#include <torch/torch.h>
 
 #include <cstdint>
 #include <vector>
@@ -18,10 +18,10 @@ Sample create_mock_sample(const std::vector<int64_t>& shape) {
     }
     Sample sample;
     sample.seq_id = 1;
-    sample.features = torch::rand(shape);
+    sample.features = at::rand(shape);
     sample.positions_major = std::vector<int64_t>(shape.front());
     sample.positions_minor = std::vector<int64_t>(shape.front(), 0);  // All are major.
-    sample.depth = torch::rand(shape.front());
+    sample.depth = at::rand(shape.front());
     std::iota(std::begin(sample.positions_major), std::end(sample.positions_major), 0);
     return sample;
 }
