@@ -4,7 +4,6 @@
 #include "config/BasecallModelConfig.h"
 #include "torch_utils/metal_utils.h"
 
-#include <ATen/TensorIndexing.h>
 #include <ATen/core/TensorBody.h>
 #include <ATen/ops/zeros.h>
 #include <c10/core/ScalarType.h>

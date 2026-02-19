@@ -3,6 +3,8 @@
 #include "torch_utils/tensor_utils.h"
 #include "utils/ssize.h"
 
+#include <ATen/TensorIndexing.h>
+
 #include <ostream>
 #include <span>
 
