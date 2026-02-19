@@ -5,8 +5,6 @@
 #include "alignment/minimap2_wrappers.h"
 #include "hts_utils/hts_file.h"
 #include "read_pipeline/nodes/HtsWriterNode.h"
-#include "utils/stream_utils.h"
-#include "utils/types.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <htslib/sam.h>

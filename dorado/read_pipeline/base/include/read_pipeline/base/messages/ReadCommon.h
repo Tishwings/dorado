@@ -43,6 +43,13 @@ struct Attributes {
 
 class ReadCommon {
 public:
+    explicit ReadCommon();
+    ReadCommon(const ReadCommon&);
+    ReadCommon& operator=(const ReadCommon&);
+    ReadCommon(ReadCommon&&) noexcept;
+    ReadCommon& operator=(ReadCommon&&) noexcept;
+    ~ReadCommon();
+
     static constexpr int POLY_TAIL_NOT_FOUND = -1;
     static constexpr int POLY_TAIL_NOT_ENABLED = -2;
     at::Tensor raw_data;  // Loaded from source file
@@ -70,7 +77,7 @@ public:
 
     dorado::details::Attributes attributes;
 
-    uint64_t start_time_ms;
+    uint64_t start_time_ms = 0;
 
     std::shared_ptr<BarcodeScoreResult> barcoding_result;
     PrimerClassification primer_classification{};

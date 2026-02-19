@@ -3,6 +3,7 @@
 #include "basecall/ModelRunnerBase.h"
 #include "config/BasecallModelConfig.h"
 #include "read_pipeline/base/chunk.h"
+#include "read_pipeline/base/messages/ReadCommon.h"
 #include "read_pipeline/base/read_utils.h"
 #include "read_pipeline/base/stitch.h"
 #include "utils/stats.h"

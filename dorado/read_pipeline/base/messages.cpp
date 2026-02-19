@@ -14,12 +14,64 @@
 #include <htslib/sam.h>
 
 #include <bitset>
+#include <variant>
 
 namespace dorado {
 
+Message::Message() {
+    // 32 was chosen arbitrarily (it's the current size). In the future we might want to change the
+    // logic to have |Message| be the full objects, ie not holding pointers, and instead pass around
+    // a |unique_ptr<Message>|.
+    static_assert(sizeof(Message) <= 32,
+                  "Messages should be kept small since they're shared by all nodes");
+}
+
+Message::~Message() {
+    // Destructor must be out-of-line so that every use of Message doesn't need to know
+    // how to destroy every type of object in the variant.
+}
+
+Message::Message(Message &&o) noexcept : Message() { m_message.swap(o.m_message); }
+
+Message &Message::operator=(Message &&o) noexcept {
+    m_message.swap(o.m_message);
+    return *this;
+}
+
+template <typename T>
+bool Message::holds() const {
+    return std::holds_alternative<T>(m_message);
+}
+
+template <typename T>
+const T &Message::get() const {
+    return std::get<T>(m_message);
+}
+
+template <typename T>
+T Message::take() {
+    T message = std::get<T>(std::move(m_message));
+    m_message = {};
+    return message;
+}
+
+std::size_t Message::index() const { return m_message.index(); }
+
+#define MESSAGE_IMPL(T)                                              \
+    Message::Message(T &&message) : m_message(std::move(message)) {} \
+    template bool Message::holds<T>() const;                         \
+    template const T &Message::get<T>() const;                       \
+    template T Message::take<T>();
+
+MESSAGE_IMPL(SimplexReadPtr)
+MESSAGE_IMPL(BamMessage)
+MESSAGE_IMPL(ReadPairPtr)
+MESSAGE_IMPL(CacheFlushMessage)
+MESSAGE_IMPL(DuplexReadPtr)
+MESSAGE_IMPL(CorrectionAlignmentsPtr)
+
 bool is_read_message(const Message &message) {
-    return std::holds_alternative<SimplexReadPtr>(message) ||
-           std::holds_alternative<DuplexReadPtr>(message);
+    return message.holds<SimplexReadPtr>() || message.holds<DuplexReadPtr>();
 }
 
 uint64_t SimplexRead::get_end_time_ms() const {
@@ -27,6 +79,15 @@ uint64_t SimplexRead::get_end_time_ms() const {
            ((end_sample - start_sample) * 1000) /
                    read_common.attributes.sample_rate;  //TODO get rid of the trimmed thing?
 }
+
+// Special member functions are out-of-line so that users of ReadCommon/SimplexRead/DuplexRead don't
+// need to know how to construct/destroy all member types (ie |alignment_results|).
+ReadCommon::ReadCommon() = default;
+ReadCommon::ReadCommon(const ReadCommon &) = default;
+ReadCommon &ReadCommon::operator=(const ReadCommon &) = default;
+ReadCommon::ReadCommon(ReadCommon &&) noexcept = default;
+ReadCommon &ReadCommon::operator=(ReadCommon &&) noexcept = default;
+ReadCommon::~ReadCommon() = default;
 
 std::string ReadCommon::generate_read_group() const {
     std::string read_group;
@@ -434,19 +495,19 @@ const ReadCommon &get_read_common_data(const Message &message) {
     if (!is_read_message(message)) {
         throw std::invalid_argument("Message is not a read");
     } else {
-        if (std::holds_alternative<SimplexReadPtr>(message)) {
-            return std::get<SimplexReadPtr>(message)->read_common;
+        if (message.holds<SimplexReadPtr>()) {
+            return message.get<SimplexReadPtr>()->read_common;
         } else {
-            return std::get<DuplexReadPtr>(message)->read_common;
+            return message.get<DuplexReadPtr>()->read_common;
         }
     }
 }
 
 void materialise_read_raw_data(Message &message) {
-    if (std::holds_alternative<DuplexReadPtr>(message)) {
+    if (message.holds<DuplexReadPtr>()) {
         // Note: we could deallocate stereo_feature_inputs fields,
         // but this made a negligible difference to overall memory usage.
-        auto &duplex_read = *std::get<DuplexReadPtr>(message);
+        auto &duplex_read = *message.get<DuplexReadPtr>();
         duplex_read.read_common.raw_data =
                 generate_stereo_features(duplex_read.stereo_feature_inputs);
     }

@@ -1,5 +1,6 @@
 #include "read_pipeline/nodes/CorrectionPafWriterNode.h"
 
+#include "read_pipeline/base/messages/CorrectionAlignments.h"
 #include "utils/paf_utils.h"
 
 #include <iostream>
@@ -17,12 +18,12 @@ std::string CorrectionPafWriterNode::get_name() const { return "CorrectionPafWri
 void CorrectionPafWriterNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
-        const auto *alignments_ptr = std::get_if<CorrectionAlignmentsPtr>(&message);
-        if (!alignments_ptr) {
+        if (!message.holds<CorrectionAlignmentsPtr>()) {
             continue;
         }
 
-        const CorrectionAlignments &alignments = **alignments_ptr;
+        const auto alignments_ptr = message.take<CorrectionAlignmentsPtr>();
+        const CorrectionAlignments &alignments = *alignments_ptr;
         for (size_t i = 0; i < std::size(alignments.qnames); ++i) {
             utils::serialize_to_paf(std::cout, alignments.qnames[i], alignments.read_name,
                                     alignments.overlaps[i], 0, 0, 60, alignments.cigars[i]);

@@ -5,6 +5,8 @@
 #include "correct/infer.h"
 #include "correct/windows.h"
 #include "hts_utils/FastxRandomReader.h"
+#include "hts_utils/hts_types.h"
+#include "read_pipeline/base/messages/CorrectionAlignments.h"
 #include "torch_utils/gpu_profiling.h"
 #include "utils/string_utils.h"
 #include "utils/thread_utils.h"
@@ -350,10 +352,10 @@ void CorrectionInferenceNode::input_thread_fn() {
 
     Message message;
     while (get_input_message(message)) {
-        if (std::holds_alternative<CorrectionAlignmentsPtr>(message)) {
+        if (message.holds<CorrectionAlignmentsPtr>()) {
             utils::ScopedProfileRange spr("input_loop", 1);
 
-            auto alignments = std::move(*std::get<CorrectionAlignmentsPtr>(message));
+            auto alignments = std::move(*message.take<CorrectionAlignmentsPtr>());
             auto tname = alignments.read_name;
 
             if (alignments.overlaps.empty()) {

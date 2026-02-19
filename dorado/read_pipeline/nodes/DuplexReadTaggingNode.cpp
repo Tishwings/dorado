@@ -1,5 +1,7 @@
 #include "read_pipeline/nodes/DuplexReadTaggingNode.h"
 
+#include "read_pipeline/base/messages/SimplexRead.h"
+
 #include <spdlog/spdlog.h>
 
 namespace dorado {
@@ -43,7 +45,7 @@ void DuplexReadTaggingNode::input_thread_fn() {
         // Once all reads have been processed, any leftover parent simplex reads are
         // the ones whose duplex offsprings never came. They are retagged to not be
         // duplex parents and then sent downstream.
-        if (!read_common.is_duplex && !std::get<SimplexReadPtr>(message)->is_duplex_parent) {
+        if (!read_common.is_duplex && !message.get<SimplexReadPtr>()->is_duplex_parent) {
             send_message_to_sink(std::move(message));
         } else if (read_common.is_duplex) {
             std::string template_read_id =
@@ -83,8 +85,7 @@ void DuplexReadTaggingNode::input_thread_fn() {
             } else {
                 // No duplex offspring is seen so far, so hold it and track
                 // it as available parents.
-                auto& read = std::get<SimplexReadPtr>(message);
-                m_duplex_parents[read_common.read_id] = std::move(read);
+                m_duplex_parents[read_common.read_id] = message.take<SimplexReadPtr>();
             }
         }
     }

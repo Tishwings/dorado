@@ -1,22 +1,21 @@
 #include "splitter/DuplexReadSplitter.h"
 
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "splitter/myers.h"
 #include "splitter_utils.h"
 #include "utils/PostCondition.h"
-#include "utils/alignment_utils.h"
 #include "utils/log_utils.h"
 #include "utils/sequence_utils.h"
 #include "utils/uuid_utils.h"
 
 #include <ATen/TensorIndexing.h>
+#include <edlib.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cmath>
-#include <iomanip>
 #include <iterator>
 #include <optional>
 #include <string>

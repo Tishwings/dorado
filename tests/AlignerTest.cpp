@@ -9,8 +9,9 @@
 #include "hts_utils/header_sq_record.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/AlignerNode.h"
-#include "utils/PostCondition.h"
 #include "utils/concurrency/multi_queue_thread_pool.h"
 #include "utils/sequence_utils.h"
 #include "utils/string_utils.h"
@@ -126,10 +127,10 @@ protected:
         pipeline->push_message(std::move(read));
         pipeline->terminate({.fast = dorado::utils::AsyncQueueTerminateFast::No});
 
-        CATCH_CHECK((m_output_messages.size() == 1 &&
-                     std::holds_alternative<MessageTypePtr>(m_output_messages[0])));
+        CATCH_CHECK(
+                (m_output_messages.size() == 1 && m_output_messages[0].holds<MessageTypePtr>()));
 
-        return std::get<MessageTypePtr>(std::move(m_output_messages[0]));
+        return m_output_messages[0].take<MessageTypePtr>();
     }
 
     std::string get_sam_line_from_bam(dorado::BamPtr bam_record) {

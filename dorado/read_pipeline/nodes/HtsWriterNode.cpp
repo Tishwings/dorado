@@ -37,11 +37,11 @@ OutputMode HtsWriterNode::get_output_mode(const std::string& mode) {
 void HtsWriterNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
-        if (!std::holds_alternative<BamMessage>(message)) {
+        if (!message.holds<BamMessage>()) {
             continue;
         }
 
-        auto bam_message = std::move(std::get<BamMessage>(message));
+        auto bam_message = message.take<BamMessage>();
         BamPtr aln = std::move(bam_message.data->bam_ptr);
 
         if (m_file.get_output_mode() == utils::HtsFile::OutputMode::FASTQ) {

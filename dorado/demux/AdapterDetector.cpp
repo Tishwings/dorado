@@ -1,8 +1,6 @@
 #include "demux/AdapterDetector.h"
 
 #include "adapter_primer_kits.h"
-#include "demux/parse_custom_kit.h"
-#include "demux/parse_custom_sequences.h"
 #include "utils/log_utils.h"
 #include "utils/sequence_utils.h"
 #include "utils/string_utils.h"
@@ -13,11 +11,8 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <iostream>
-#include <sstream>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <vector>
 
 namespace dorado::demux {

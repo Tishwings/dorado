@@ -1,12 +1,11 @@
 #include "TestUtils.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
-#include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "splitter/RNAReadSplitter.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <torch/serialize.h>
 
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 

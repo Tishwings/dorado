@@ -13,6 +13,8 @@
 
 namespace dorado {
 
+struct ModBaseInfo;
+
 namespace modbase {
 class ModBaseRunner;
 using RunnerPtr = std::unique_ptr<ModBaseRunner>;

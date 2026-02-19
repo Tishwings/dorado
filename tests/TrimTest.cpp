@@ -3,6 +3,7 @@
 #include "TestUtils.h"
 #include "demux/Trimmer.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/base/read_utils.h"
 #include "utils/types.h"
 

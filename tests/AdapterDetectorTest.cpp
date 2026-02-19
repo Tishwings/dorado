@@ -7,6 +7,8 @@
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/messages/ReadPair.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/AdapterDetectorNode.h"
 #include "read_pipeline/nodes/TrimmerNode.h"
 #include "utils/sequence_utils.h"
@@ -610,8 +612,8 @@ CATCH_TEST_CASE(
             int(stride * 2 * flank_size);  // * 2 is because we have 2 moves per base
 
     for (auto& message : messages) {
-        if (std::holds_alternative<BamMessage>(message)) {
-            auto bam_message = std::get<BamMessage>(std::move(message));
+        if (message.holds<BamMessage>()) {
+            auto bam_message = message.take<BamMessage>();
             bam1_t* rec = bam_message.data->bam_ptr.get();
 
             // Check trimming on the bam1_t struct.
@@ -645,9 +647,9 @@ CATCH_TEST_CASE(
             CATCH_CHECK_THAT(mod_probs, Equals(std::vector<uint8_t>{235}));
 
             CATCH_CHECK(bam_aux2i(bam_aux_get(rec, "ts")) == additional_trimmed_samples);
-        } else if (std::holds_alternative<SimplexReadPtr>(message)) {
+        } else if (message.holds<SimplexReadPtr>()) {
             // Check trimming on the Read type.
-            auto msg_read = std::get<SimplexReadPtr>(std::move(message));
+            auto msg_read = message.take<SimplexReadPtr>();
             const ReadCommon& read_common = msg_read->read_common;
 
             CATCH_CHECK(read_common.seq == nonbc_seq);

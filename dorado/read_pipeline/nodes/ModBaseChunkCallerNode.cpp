@@ -3,7 +3,8 @@
 #include "config/ModBaseModelConfig.h"
 #include "modbase/ModBaseContext.h"
 #include "modbase/encode_kmer.h"
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/dev_utils.h"
 #include "utils/math_utils.h"
 #include "utils/sequence_utils.h"
@@ -178,9 +179,9 @@ void ModBaseChunkCallerNode::input_thread_fn() {
         // If this message isn't a read, just forward it to the sink.
         if (!is_read_message(message)) {
             send_message_to_sink(std::move(message));
-        } else if (std::holds_alternative<SimplexReadPtr>(message)) {
+        } else if (message.holds<SimplexReadPtr>()) {
             simplex_mod_call(std::move(message));
-        } else if (std::holds_alternative<DuplexReadPtr>(message)) {
+        } else if (message.holds<DuplexReadPtr>()) {
             duplex_mod_call(std::move(message));
         }
     }
@@ -712,7 +713,7 @@ void ModBaseChunkCallerNode::simplex_mod_call(Message&& message) {
     auto& runner = m_runners.at(0);
 
     // Get ownership of the read
-    auto read_ptr = std::get<SimplexReadPtr>(std::move(message));
+    auto read_ptr = message.take<SimplexReadPtr>();
     auto& read = read_ptr->read_common;
     const std::string read_id = read.read_id;
 
@@ -774,7 +775,7 @@ void ModBaseChunkCallerNode::duplex_mod_call(Message&& message) {
     auto& runner = m_runners.at(0);
 
     // Get ownership of the read
-    auto read_ptr = std::get<DuplexReadPtr>(std::move(message));
+    auto read_ptr = message.take<DuplexReadPtr>();
     auto& read_common = read_ptr->read_common;
     auto& read_stereo = read_ptr->stereo_feature_inputs;
     const std::string read_id = read_common.read_id;

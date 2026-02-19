@@ -1,6 +1,9 @@
 #include "read_pipeline/nodes/ReadForwarderNode.h"
 
 #include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/ReadPair.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 
 #include <catch2/catch_test_macros.hpp>
 

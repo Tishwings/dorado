@@ -4,13 +4,6 @@
 #include <memory>
 #include <variant>
 
-// TODO: remove these by hiding Message's dtor
-#include "messages/CorrectionAlignments.h"
-#include "messages/DuplexRead.h"
-#include "messages/ReadPair.h"
-#include "messages/SimplexRead.h"
-#include "utils/types.h"
-
 namespace dorado {
 
 class ClientInfo;
@@ -44,17 +37,50 @@ struct BamMessage {
 // - a ReadPair object, which represents a pair of reads for duplex calling
 // - a CorrectionAlignments, which holds alignment information per read to be corrected
 // To add more message types, simply add them to the list of types in the std::variant.
-using Message = std::variant<SimplexReadPtr,
-                             BamMessage,
-                             ReadPairPtr,
-                             CacheFlushMessage,
-                             DuplexReadPtr,
-                             CorrectionAlignmentsPtr>;
-// 32 was chosen arbitrarily (it's the current size). In the future we might want to change the
-// logic to have |Message| be the full objects, ie not holding pointers, and instead pass around
-// a |unique_ptr<Message>|.
-static_assert(sizeof(Message) <= 32,
-              "Messages should be kept small since they're shared by all nodes");
+class Message {
+    std::variant<std::monostate,
+                 SimplexReadPtr,
+                 BamMessage,
+                 ReadPairPtr,
+                 CacheFlushMessage,
+                 DuplexReadPtr,
+                 CorrectionAlignmentsPtr>
+            m_message;
+
+public:
+    // Constructors for each message type.
+    Message(SimplexReadPtr&& message);
+    Message(BamMessage&& message);
+    Message(ReadPairPtr&& message);
+    Message(CacheFlushMessage&& message);
+    Message(DuplexReadPtr&& message);
+    Message(CorrectionAlignmentsPtr&& message);
+
+    explicit Message();
+    ~Message();
+
+    Message(const Message&) = delete;
+    Message& operator=(const Message&) = delete;
+    Message(Message&&) noexcept;
+    Message& operator=(Message&&) noexcept;
+
+    // See if this holds a certain message type.
+    template <typename T>
+    bool holds() const;
+
+    // Get a reference to the message type.
+    // Throws if the type doesn't match what's held.
+    template <typename T>
+    const T& get() const;
+
+    // Extract the message that's held.
+    // Throws is the type doesn't match what's held.
+    template <typename T>
+    T take();
+
+    // Exposed for debugging.
+    std::size_t index() const;
+};
 
 bool is_read_message(const Message& message);
 

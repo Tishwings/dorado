@@ -56,7 +56,7 @@ private:
         Message message;
         std::unordered_map<std::string, size_t> read_id_counts;
         while (get_input_message(message)) {
-            auto bam_message = std::get<BamMessage>(std::move(message));
+            auto bam_message = message.take<BamMessage>();
 
             int64_t dx_tag = 0;
             auto tag_str = bam_aux_get(bam_message.data->bam_ptr.get(), "dx");

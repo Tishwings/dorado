@@ -1,11 +1,7 @@
 #pragma once
 #include "ReadSplitter.h"
-#include "utils/types.h"
 
-#include <cstdint>
-#include <functional>
 #include <optional>
-#include <string>
 #include <vector>
 
 namespace dorado::splitter {

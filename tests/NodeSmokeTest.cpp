@@ -12,6 +12,7 @@
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/AdapterDetectorNode.h"
 #include "read_pipeline/nodes/BarcodeClassifierNode.h"
 #include "read_pipeline/nodes/BasecallerNode.h"
@@ -121,7 +122,7 @@ protected:
         // Check the message types match
         for (auto& message : messages) {
             CATCH_CAPTURE(message.index());
-            CATCH_CHECK((std::holds_alternative<MessageTs>(message) || ...));
+            CATCH_CHECK((message.holds<MessageTs>() || ...));
         }
     }
 };

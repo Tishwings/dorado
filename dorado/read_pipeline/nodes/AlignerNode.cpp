@@ -6,7 +6,8 @@
 #include "alignment/alignment_info.h"
 #include "alignment/minimap2_args.h"
 #include "read_pipeline/base/ClientInfo.h"
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/concurrency/multi_queue_thread_pool.h"
 #include "utils/context_container.h"
 #include "utils/sequence_utils.h"
@@ -217,12 +218,12 @@ void AlignerNode::align_bam_message(BamMessage&& bam_message) {
 void AlignerNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
-        if (std::holds_alternative<BamMessage>(message)) {
-            align_bam_message(std::get<BamMessage>(std::move(message)));
-        } else if (std::holds_alternative<SimplexReadPtr>(message)) {
-            align_read(std::get<SimplexReadPtr>(std::move(message)));
-        } else if (std::holds_alternative<DuplexReadPtr>(message)) {
-            align_read(std::get<DuplexReadPtr>(std::move(message)));
+        if (message.holds<BamMessage>()) {
+            align_bam_message(message.take<BamMessage>());
+        } else if (message.holds<SimplexReadPtr>()) {
+            align_read(message.take<SimplexReadPtr>());
+        } else if (message.holds<DuplexReadPtr>()) {
+            align_read(message.take<DuplexReadPtr>());
         } else {
             send_message_to_sink(std::move(message));
             continue;

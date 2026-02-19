@@ -6,6 +6,7 @@
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/ClientInfo.h"
 #include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/barcode_kits.h"
 #include "utils/context_container.h"
 #include "utils/log_utils.h"
@@ -79,34 +80,31 @@ void BarcodeClassifierNode::restart() {
 void BarcodeClassifierNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
-        std::visit(
-                [this](auto&& read) {
-                    using T = std::decay_t<decltype(read)>;
-                    if constexpr (std::is_same_v<T, BamMessage>) {
-                        // If the read is a secondary or supplementary read, ignore it if
-                        // client requires read trimming.
-                        m_task_executor.send([this, read_ = std::move(read)]() mutable {
-                            const auto* barcoding_info = get_barcoding_info(*read_.client_info);
-                            if (barcoding_info && barcoding_info->trim &&
-                                (read_.data->bam_ptr->core.flag &
-                                 (BAM_FSUPPLEMENTARY | BAM_FSECONDARY))) {
-                                return;  // n.b. discards the read!
-                            }
+        if (message.holds<BamMessage>()) {
+            auto read = message.take<BamMessage>();
+            // If the read is a secondary or supplementary read, ignore it if
+            // client requires read trimming.
+            m_task_executor.send([this, read_ = std::move(read)]() mutable {
+                const auto* barcoding_info = get_barcoding_info(*read_.client_info);
+                if (barcoding_info && barcoding_info->trim &&
+                    (read_.data->bam_ptr->core.flag & (BAM_FSUPPLEMENTARY | BAM_FSECONDARY))) {
+                    return;  // n.b. discards the read!
+                }
 
-                            barcode(read_, barcoding_info);
-                            send_message_to_sink(std::move(read_));
-                        });
+                barcode(read_, barcoding_info);
+                send_message_to_sink(std::move(read_));
+            });
 
-                    } else if constexpr (std::is_same_v<T, SimplexReadPtr>) {
-                        m_task_executor.send([this, read_ = std::move(read)]() mutable {
-                            barcode(*read_);
-                            send_message_to_sink(std::move(read_));
-                        });
-                    } else {
-                        send_message_to_sink(std::move(read));
-                    }
-                },
-                message);
+        } else if (message.holds<SimplexReadPtr>()) {
+            auto read = message.take<SimplexReadPtr>();
+            m_task_executor.send([this, read_ = std::move(read)]() mutable {
+                barcode(*read_);
+                send_message_to_sink(std::move(read_));
+            });
+
+        } else {
+            send_message_to_sink(std::move(message));
+        }
     }
 }
 

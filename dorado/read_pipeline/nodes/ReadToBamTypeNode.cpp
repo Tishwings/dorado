@@ -1,5 +1,6 @@
 #include "read_pipeline/nodes/ReadToBamTypeNode.h"
 
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/barcode_kits.h"
 
 #include <spdlog/spdlog.h>
@@ -23,7 +24,7 @@ void ReadToBamTypeNode::input_thread_fn() {
 
         bool is_duplex_parent = false;
         if (!read_common_data.is_duplex) {
-            is_duplex_parent = std::get<SimplexReadPtr>(message)->is_duplex_parent;
+            is_duplex_parent = message.get<SimplexReadPtr>()->is_duplex_parent;
         }
 
         const bool is_status_pass =
