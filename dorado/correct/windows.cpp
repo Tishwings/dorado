@@ -3,7 +3,7 @@
 #include "correct/conversions.h"
 #include "correct/features.h"
 #include "correct/types.h"
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/CorrectionAlignments.h"
 #include "torch_utils/gpu_profiling.h"
 #include "utils/paf_utils.h"
 

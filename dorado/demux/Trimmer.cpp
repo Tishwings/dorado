@@ -2,6 +2,7 @@
 
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "torch_utils/trim.h"
 #include "utils/log_utils.h"
 #include "utils/sequence_utils.h"

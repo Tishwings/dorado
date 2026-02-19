@@ -2,7 +2,7 @@
 
 #include "models/kits.h"
 #include "read_pipeline/base/ReadPipeline.h"
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/PostCondition.h"
 #include "utils/fs_utils.h"
 #include "utils/thread_utils.h"

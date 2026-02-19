@@ -2,12 +2,15 @@
 
 #include "alignment/sam_utils.h"
 #include "hts_utils/bam_utils.h"
+#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/ReadCommon.h"
 #include "utils/PostCondition.h"
 #include "utils/sequence_utils.h"
 
 #include <htslib/sam.h>
 #include <minimap.h>
 
+#include <sstream>
 #include <stdexcept>
 
 //todo: mmpriv.h is a private header from mm2 for the mm_event_identity function.

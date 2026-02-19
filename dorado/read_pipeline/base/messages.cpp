@@ -2,6 +2,10 @@
 
 #include "hts_utils/bam_utils.h"
 #include "modbase/ModBaseContext.h"
+#include "read_pipeline/base/messages/CorrectionAlignments.h"
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/ReadPair.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "stereo_features.h"
 #include "utils/log_utils.h"
 #include "utils/sequence_utils.h"

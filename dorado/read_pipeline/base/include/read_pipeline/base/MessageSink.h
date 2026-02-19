@@ -1,12 +1,10 @@
 #pragma once
 
-#include "ClientInfo.h"
 #include "messages.h"
 #include "terminate_options.h"
 #include "utils/AsyncQueue.h"
 #include "utils/stats.h"
 
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -54,7 +52,7 @@ protected:
     }
 
     // Allows inputs again.
-    void start_input_queue() { m_work_queue.restart(); }
+    void start_input_queue();
 
     // Sends message to the designated sink.
     template <typename Msg>
@@ -73,18 +71,7 @@ protected:
 
     // Pops the next input message, returning true on success.
     // If terminating, returns false.
-    bool get_input_message(Message& message) {
-        auto status = m_work_queue.try_pop(message);
-        if (!m_sinks.empty() && forward_on_disconnected()) {
-            while (status == utils::AsyncQueueStatus::Success && is_read_message(message) &&
-                   get_read_common_data(message).client_info &&
-                   get_read_common_data(message).client_info->is_disconnected()) {
-                send_message_to_sink(0, std::move(message));
-                status = m_work_queue.try_pop(message);
-            }
-        }
-        return status == utils::AsyncQueueStatus::Success;
-    }
+    bool get_input_message(Message& message);
 
     // Mark the input queue as active, and start input processing threads executing the
     // supplied functor.

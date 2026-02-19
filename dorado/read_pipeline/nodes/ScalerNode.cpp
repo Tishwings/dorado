@@ -3,6 +3,7 @@
 #include "config/BasecallModelConfig.h"
 #include "demux/adapter_info.h"
 #include "models/kits.h"
+#include "read_pipeline/base/ClientInfo.h"
 #include "torch_utils/tensor_utils.h"
 #include "torch_utils/trim.h"
 #include "utils/context_container.h"
