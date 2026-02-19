@@ -2,7 +2,7 @@
 
 #include "utils/sequence_utils.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/flip.h>
 #include <edlib.h>
 
 #include <cassert>

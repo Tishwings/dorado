@@ -8,7 +8,6 @@
 #include "utils/stats.h"
 #include "utils/thread_utils.h"
 
-#include <ATen/Functions.h>
 #include <ATen/TensorIndexing.h>
 #include <nvtx3/nvtx3.hpp>
 #include <spdlog/spdlog.h>

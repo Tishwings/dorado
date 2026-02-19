@@ -11,7 +11,6 @@
 #include "utils/thread_utils.h"
 #include "utils/types.h"
 
-#include <ATen/Functions.h>
 #include <ATen/TensorIndexing.h>
 #include <ATen/TensorOperators.h>
 #include <ATen/core/TensorBody.h>

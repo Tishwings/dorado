@@ -9,7 +9,7 @@
 #include "utils/time_utils.h"
 #include "utils/types.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/empty.h>
 #include <pod5_format/c_api.h>
 #include <spdlog/spdlog.h>
 

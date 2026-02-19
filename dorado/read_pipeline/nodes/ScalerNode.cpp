@@ -8,7 +8,6 @@
 #include "utils/context_container.h"
 #include "utils/log_utils.h"
 
-#include <ATen/Functions.h>
 #include <ATen/TensorIndexing.h>
 #include <ATen/TensorOperators.h>
 #include <spdlog/spdlog.h>

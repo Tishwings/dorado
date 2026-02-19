@@ -1,8 +1,8 @@
 #include "hts_utils/bam_utils.h"
-#include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages.h"
 #include "utils/types.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/empty.h>
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>

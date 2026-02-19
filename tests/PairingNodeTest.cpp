@@ -8,7 +8,7 @@
 #include "utils/sequence_utils.h"
 #include "utils/time_utils.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/zeros.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <htslib/sam.h>

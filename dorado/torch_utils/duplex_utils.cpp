@@ -1,14 +1,13 @@
 #include "torch_utils/duplex_utils.h"
 
-#include <ATen/Functions.h>
 #include <ATen/TensorIndexing.h>
 #include <ATen/TensorOperators.h>
 
-#include <algorithm>
 #include <fstream>
 #include <vector>
 
 namespace dorado::utils {
+
 std::map<std::string, std::string> load_pairs_file(const std::string& pairs_file_path) {
     std::ifstream dataFile;
     dataFile.open(pairs_file_path);

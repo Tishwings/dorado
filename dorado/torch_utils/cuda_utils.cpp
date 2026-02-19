@@ -4,8 +4,8 @@
 #include "utils/PostCondition.h"
 #include "utils/math_utils.h"
 
-#include <ATen/Functions.h>
 #include <ATen/cuda/CUDAContext.h>
+#include <ATen/ops/matmul.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -403,7 +403,7 @@ void matmul_f16_cublas(const at::Tensor &A, const at::Tensor &B, at::Tensor &C) 
 }
 
 void matmul_f16_torch(const at::Tensor &A, const at::Tensor &B, at::Tensor &C) {
-    torch::matmul_out(C, A, B);
+    at::matmul_out(C, A, B);
 }
 
 }  // namespace details

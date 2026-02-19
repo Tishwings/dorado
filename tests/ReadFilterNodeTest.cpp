@@ -2,7 +2,7 @@
 
 #include "MessageSinkUtils.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/empty.h>
 #include <catch2/catch_test_macros.hpp>
 
 #define TEST_GROUP "[read_pipeline][ReadFilterNode]"

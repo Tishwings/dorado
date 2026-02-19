@@ -6,7 +6,6 @@
 #include "utils/dev_utils.h"
 #include "utils/math_utils.h"
 
-#include <ATen/Functions.h>
 #include <ATen/TensorIndexing.h>
 #include <ATen/ops/scaled_dot_product_attention.h>
 #include <c10/core/ScalarType.h>

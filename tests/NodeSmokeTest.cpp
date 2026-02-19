@@ -9,7 +9,6 @@
 #include "demux/parse_custom_sequences.h"
 #include "model_downloader/model_downloader.h"
 #include "models/kits.h"
-#include "models/models.h"
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
@@ -18,27 +17,21 @@
 #include "read_pipeline/nodes/BasecallerNode.h"
 #include "read_pipeline/nodes/ModBaseCallerNode.h"
 #include "read_pipeline/nodes/PolyACalculatorNode.h"
-#include "read_pipeline/nodes/ReadFilterNode.h"
 #include "read_pipeline/nodes/ReadToBamTypeNode.h"
 #include "read_pipeline/nodes/ScalerNode.h"
 #include "utils/PostCondition.h"
-#include "utils/SampleSheet.h"
 #include "utils/parameters.h"
 
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <catch2/internal/catch_run_context.hpp>
 #include <torch/cuda.h>
-
-#include <optional>
-
-#if DORADO_CUDA_BUILD
-#include "torch_utils/cuda_utils.h"
-#endif
-
-#include <ATen/Functions.h>
 #include <torch/types.h>
 
 #include <algorithm>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <random>
 #include <string_view>
 
@@ -46,9 +39,9 @@
 #include <unistd.h>
 #endif
 
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/generators/catch_generators.hpp>
-#include <catch2/internal/catch_run_context.hpp>
+#if DORADO_CUDA_BUILD
+#include "torch_utils/cuda_utils.h"
+#endif
 
 namespace fs = std::filesystem;
 namespace {
