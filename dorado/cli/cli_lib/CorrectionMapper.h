@@ -3,6 +3,7 @@
 #include "CorrectionAligner.h"
 #include "aligner/Minimap2Aligner.h"
 #include "alignment/Minimap2Index.h"
+#include "read_pipeline/base/messages/CorrectionAlignments.h"  // GCC 11's unordered_map needs this
 #include "utils/AsyncQueue.h"
 #include "utils/stats.h"
 

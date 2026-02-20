@@ -2,6 +2,8 @@
 
 #include "read_pipeline/base/messages.h"
 
+#include <string>
+
 namespace dorado::utils {
 
 SimplexReadPtr shallow_copy_read(const SimplexRead& read);

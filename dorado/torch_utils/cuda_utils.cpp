@@ -381,7 +381,7 @@ bool try_parse_device_ids(const std::string &device_string,
 void matmul_f16_cublas(const at::Tensor &A, const at::Tensor &B, at::Tensor &C) {
     constexpr uint16_t HALF_ZERO = 0;      // 0.0 in __half format
     constexpr uint16_t HALF_ONE = 0x3C00;  // 1.0 in __half format
-    assert(A.dtype() == torch::kF16 && B.dtype() == torch::kF16 && C.dtype() == torch::kF16);
+    assert(A.dtype() == at::kHalf && B.dtype() == at::kHalf && C.dtype() == at::kHalf);
     assert(A.stride(1) == 1 && B.stride(1) == 1 && C.stride(1) == 1);
     assert(A.size(0) == C.size(0));  // M
     assert(B.size(1) == C.size(1));  // N

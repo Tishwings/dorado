@@ -2,6 +2,9 @@
 
 #include "nn/KoiThreads.h"
 
+#include <ATen/ops/empty.h>
+#include <ATen/ops/from_blob.h>
+
 #include <numeric>
 #include <stdexcept>
 

@@ -1,12 +1,13 @@
 #include "torch_utils/cuda_utils.h"
 
+#include <ATen/Context.h>
+#include <ATen/ops/allclose.h>
+#include <ATen/ops/empty.h>
+#include <ATen/ops/rand.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_all.hpp>
 #include <spdlog/spdlog.h>
-
-#include <limits>
-#include <tuple>
 
 #define CUT_TAG "[cuda_utils]"
 #define DEFINE_TEST(name) CATCH_TEST_CASE(CUT_TAG " " name, CUT_TAG)
@@ -19,7 +20,7 @@ using details::try_parse_device_ids;
 
 DEFINE_TEST("matmul_f16") {
     // Seed RNG for repeatability in CI
-    torch::manual_seed(0);
+    at::manual_seed(0);
 
     // Tensor sizes
     const int L = 3;
@@ -27,16 +28,16 @@ DEFINE_TEST("matmul_f16") {
     const int N = 5;
 
     // Setup tensors
-    if (!torch::hasCUDA()) {
+    if (!at::hasCUDA()) {
         spdlog::warn("No Nvidia driver present - Test skipped");
         return;
     }
 
-    auto options = at::TensorOptions().dtype(torch::kFloat16).device(c10::kCUDA);
-    auto A = torch::rand({L, M}, options);
-    auto B = torch::rand({M, N}, options);
-    auto C1 = torch::empty({L, N}, options);
-    auto C2 = torch::empty({L, N}, options);
+    auto options = at::TensorOptions().dtype(at::kHalf).device(c10::kCUDA);
+    auto A = at::rand({L, M}, options);
+    auto B = at::rand({M, N}, options);
+    auto C1 = at::empty({L, N}, options);
+    auto C2 = at::empty({L, N}, options);
 
     // Do it both ways
     details::matmul_f16_cublas(A, B, C1);
@@ -47,7 +48,7 @@ DEFINE_TEST("matmul_f16") {
     // ~3 decimal digits, so we need to reduce the tolerances a bit.
     const double rtol = 1e-3;
     const double atol = 0;
-    CATCH_REQUIRE(torch::allclose(C1, C2, rtol, atol));
+    CATCH_REQUIRE(at::allclose(C1, C2, rtol, atol));
 }
 
 DEFINE_TEST("try_parse_device_ids parameterised test cases") {
