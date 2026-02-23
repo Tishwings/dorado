@@ -1,7 +1,7 @@
 #include "MessageSinkUtils.h"
 #include "TestUtils.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
-#include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/PairingNode.h"
 #include "read_pipeline/nodes/ReadSplitNode.h"
 #include "read_pipeline/nodes/StereoDuplexEncoderNode.h"
@@ -10,7 +10,7 @@
 #include "splitter/ReadSplitter.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <torch/torch.h>
+#include <torch/serialize.h>
 
 #include <algorithm>
 #include <filesystem>

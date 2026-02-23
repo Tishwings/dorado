@@ -1,7 +1,6 @@
 #include "utils/SampleSheet.h"
 
 #include "utils/PostCondition.h"
-#include "utils/barcode_kits.h"
 #include "utils/string_utils.h"
 #include "utils/types.h"
 
@@ -9,6 +8,8 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <set>
+
 #if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"

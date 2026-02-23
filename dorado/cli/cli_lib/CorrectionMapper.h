@@ -3,20 +3,17 @@
 #include "CorrectionAligner.h"
 #include "aligner/Minimap2Aligner.h"
 #include "alignment/Minimap2Index.h"
-#include "alignment/Minimap2IndexSupportTypes.h"
+#include "read_pipeline/base/messages/CorrectionAlignments.h"  // GCC 11's unordered_map needs this
 #include "utils/AsyncQueue.h"
 #include "utils/stats.h"
-#include "utils/types.h"
 
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -38,7 +35,7 @@ public:
                      int32_t min_chain_score,
                      float mid_occ_frac);
 
-    ~CorrectionMapper() = default;
+    ~CorrectionMapper();
     std::string get_name() const override { return "CorrectionMapper"; }
     stats::NamedStats sample_stats() const override;
 

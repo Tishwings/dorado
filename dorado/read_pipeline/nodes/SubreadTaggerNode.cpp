@@ -1,5 +1,7 @@
 #include "read_pipeline/nodes/SubreadTaggerNode.h"
 
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/thread_utils.h"
 
 #include <spdlog/spdlog.h>
@@ -22,10 +24,10 @@ void SubreadTaggerNode::input_thread_fn() {
         const auto split_count = read_common.split_count;
         if (read_common.is_duplex) {
             std::lock_guard lock(m_duplex_reads_mutex);
-            m_duplex_reads[read_tag].push_back(std::get<DuplexReadPtr>(std::move(message)));
+            m_duplex_reads[read_tag].push_back(message.take<DuplexReadPtr>());
             m_updated_read_tags.insert(read_tag);
         } else {
-            auto read = std::get<SimplexReadPtr>(std::move(message));
+            auto read = message.take<SimplexReadPtr>();
             std::unique_lock subreads_lock(m_subread_groups_mutex);
             auto& subreads = m_subread_groups[read_tag];
             subreads.push_back(std::move(read));

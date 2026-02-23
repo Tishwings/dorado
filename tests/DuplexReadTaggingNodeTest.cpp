@@ -1,6 +1,7 @@
 #include "read_pipeline/nodes/DuplexReadTaggingNode.h"
 
 #include "MessageSinkUtils.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 
 #include <catch2/catch_test_macros.hpp>
 

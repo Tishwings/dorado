@@ -7,7 +7,6 @@
 #include "utils/stats.h"
 
 #include <utility>
-#include <variant>
 
 namespace dorado {
 
@@ -19,8 +18,8 @@ WriterNode::~WriterNode() { stop_input_processing(utils::AsyncQueueTerminateFast
 void WriterNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
-        if (std::holds_alternative<BamMessage>(message)) {
-            const auto &bam_message = std::get<BamMessage>(message);
+        if (message.holds<BamMessage>()) {
+            const auto &bam_message = message.get<BamMessage>();
             auto item = std::ref(*bam_message.data);
             for (const auto &writer : m_writers) {
                 writer->process(item);

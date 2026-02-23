@@ -1,5 +1,6 @@
 #include "MessageSinkUtils.h"
 #include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/base/terminate_options.h"
 #include "read_pipeline/nodes/NullNode.h"
 

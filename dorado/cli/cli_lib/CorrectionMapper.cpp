@@ -9,7 +9,7 @@
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/HtsReader.h"
 #include "read_pipeline/base/ReadPipeline.h"
-#include "utils/alignment_utils.h"
+#include "read_pipeline/base/messages/CorrectionAlignments.h"
 #include "utils/sequence_utils.h"
 #include "utils/thread_utils.h"
 
@@ -169,7 +169,8 @@ void CorrectionMapper::send_data_fn(Pipeline& pipeline) {
                     spdlog::trace("Resuming in mapping: skipping read '{}'.", tname);
                     continue;
                 }
-                pipeline.push_message(std::make_unique<CorrectionAlignments>(std::move(r)));
+                pipeline.push_message(
+                        Message(std::make_unique<CorrectionAlignments>(std::move(r))));
                 ++num_pushed;
             }
             m_reads_to_infer.fetch_add(num_pushed);
@@ -359,6 +360,8 @@ CorrectionMapper::CorrectionMapper(const std::string& index_file,
     }
     spdlog::debug("Initial index block set to: {}", m_current_index);
 }
+
+CorrectionMapper::~CorrectionMapper() = default;
 
 stats::NamedStats CorrectionMapper::sample_stats() const {
     stats::NamedStats stats;

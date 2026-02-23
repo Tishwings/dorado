@@ -9,36 +9,30 @@
 #include "demux/parse_custom_sequences.h"
 #include "model_downloader/model_downloader.h"
 #include "models/kits.h"
-#include "models/models.h"
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/AdapterDetectorNode.h"
 #include "read_pipeline/nodes/BarcodeClassifierNode.h"
 #include "read_pipeline/nodes/BasecallerNode.h"
 #include "read_pipeline/nodes/ModBaseCallerNode.h"
 #include "read_pipeline/nodes/PolyACalculatorNode.h"
-#include "read_pipeline/nodes/ReadFilterNode.h"
 #include "read_pipeline/nodes/ReadToBamTypeNode.h"
 #include "read_pipeline/nodes/ScalerNode.h"
 #include "utils/PostCondition.h"
-#include "utils/SampleSheet.h"
 #include "utils/parameters.h"
 
+#include <ATen/ops/rand.h>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <catch2/internal/catch_run_context.hpp>
 #include <torch/cuda.h>
-
-#include <optional>
-
-#if DORADO_CUDA_BUILD
-#include "torch_utils/cuda_utils.h"
-#endif
-
-#include <ATen/Functions.h>
-#include <torch/types.h>
 
 #include <algorithm>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <random>
 #include <string_view>
 
@@ -46,9 +40,9 @@
 #include <unistd.h>
 #endif
 
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/generators/catch_generators.hpp>
-#include <catch2/internal/catch_run_context.hpp>
+#if DORADO_CUDA_BUILD
+#include "torch_utils/cuda_utils.h"
+#endif
 
 namespace fs = std::filesystem;
 namespace {
@@ -128,7 +122,7 @@ protected:
         // Check the message types match
         for (auto& message : messages) {
             CATCH_CAPTURE(message.index());
-            CATCH_CHECK((std::holds_alternative<MessageTs>(message) || ...));
+            CATCH_CHECK((message.holds<MessageTs>() || ...));
         }
     }
 };
@@ -159,7 +153,7 @@ DEFINE_TEST(NodeSmokeTestRead, "ScalerNode") {
 
     // Scaler node expects i16 input
     set_read_mutator([model_type](dorado::SimplexReadPtr& read) {
-        read->read_common.raw_data = read->read_common.raw_data.to(torch::kI16);
+        read->read_common.raw_data = read->read_common.raw_data.to(at::kShort);
         read->read_common.is_rna_model = model_type != SampleType::DNA;
     });
 
@@ -315,7 +309,7 @@ DEFINE_TEST(NodeSmokeTestRead, "ModBaseCallerNode") {
 
     // ModBase node expects half input and needs a move table
     set_read_mutator([this, model_stride](dorado::SimplexReadPtr& read) {
-        read->read_common.raw_data = read->read_common.raw_data.to(torch::kHalf);
+        read->read_common.raw_data = read->read_common.raw_data.to(at::kHalf);
 
         read->read_common.attributes.model_stride = int(model_stride);
         // The move table size needs rounding up.

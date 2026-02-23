@@ -2,15 +2,15 @@
 
 #include "correct/conversions.h"
 #include "correct/types.h"
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/CorrectionAlignments.h"
 #include "torch_utils/gpu_profiling.h"
 #include "utils/cigar.h"
 #include "utils/sequence_utils.h"
-#include "utils/types.h"
 
 #include <ATen/Tensor.h>
+#include <ATen/ops/empty.h>
+#include <ATen/ops/from_blob.h>
 #include <spdlog/spdlog.h>
-#include <torch/types.h>
 
 #include <cstdint>
 #include <stdexcept>
@@ -159,8 +159,8 @@ std::tuple<at::Tensor, at::Tensor> get_features_for_window(
 #ifndef NDEBUG
     static auto base_decoding = gen_base_decoding();
 #endif
-    auto bases_options = at::TensorOptions().dtype(torch::kInt32).device(torch::kCPU);
-    auto quals_options = at::TensorOptions().dtype(torch::kFloat32).device(torch::kCPU);
+    auto bases_options = at::TensorOptions().dtype(at::kInt).device(at::kCPU);
+    auto quals_options = at::TensorOptions().dtype(at::kFloat).device(at::kCPU);
 
     const int length = std::accumulate(max_ins.begin(), max_ins.end(), 0) + (int)max_ins.size();
     const int reads = 1 + TOP_K;
@@ -406,7 +406,7 @@ at::Tensor get_indices(const at::Tensor& bases, const std::vector<std::pair<int,
     }
 
     return at::from_blob(supported_indices.data(), {(int)supported_indices.size()},
-                         at::TensorOptions().dtype(torch::kInt32).device(torch::kCPU))
+                         at::TensorOptions().dtype(at::kInt).device(at::kCPU))
             .clone();
 }
 

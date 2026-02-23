@@ -1,5 +1,7 @@
 #include "read_pipeline/base/MessageSink.h"
 
+#include "read_pipeline/base/ClientInfo.h"
+#include "read_pipeline/base/messages/ReadCommon.h"
 #include "utils/thread_utils.h"
 
 #include <cassert>
@@ -21,6 +23,25 @@ void MessageSink::push_message_internal(Message &&message) {
 }
 
 void MessageSink::add_sink(MessageSink &sink) { m_sinks.push_back(std::ref(sink)); }
+
+void MessageSink::start_input_queue() {
+    // This must be out-of-line since restart() calls clear() which destructs
+    // the elements and needs a full definition of everything.
+    m_work_queue.restart();
+}
+
+bool MessageSink::get_input_message(Message &message) {
+    auto status = m_work_queue.try_pop(message);
+    if (!m_sinks.empty() && forward_on_disconnected()) {
+        while (status == utils::AsyncQueueStatus::Success && is_read_message(message) &&
+               get_read_common_data(message).client_info &&
+               get_read_common_data(message).client_info->is_disconnected()) {
+            send_message_to_sink(0, std::move(message));
+            status = m_work_queue.try_pop(message);
+        }
+    }
+    return status == utils::AsyncQueueStatus::Success;
+}
 
 void MessageSink::start_input_processing(const std::function<void()> &input_thread_fn,
                                          const std::string &worker_name) {

@@ -4,12 +4,13 @@
 #include "modbase/ModBaseContext.h"
 #include "modbase/ModBaseEncoder.h"
 #include "modbase/ModBaseRunner.h"
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/math_utils.h"
 #include "utils/sequence_utils.h"
 #include "utils/stats.h"
 #include "utils/thread_utils.h"
 
-#include <ATen/Functions.h>
 #include <ATen/TensorIndexing.h>
 #include <nvtx3/nvtx3.hpp>
 #include <spdlog/spdlog.h>
@@ -153,7 +154,7 @@ void ModBaseCallerNode::init_modbase_info() {
 }
 
 void ModBaseCallerNode::duplex_mod_call(Message&& message) {
-    auto read = std::get<DuplexReadPtr>(std::move(message));
+    auto read = message.take<DuplexReadPtr>();
     stats::Timer timer;
 
     {
@@ -311,8 +312,9 @@ void ModBaseCallerNode::duplex_mod_call(Message&& message) {
 }
 
 void ModBaseCallerNode::simplex_mod_call(Message&& message) {
-    auto read = std::get<SimplexReadPtr>(std::move(message));
+    auto read = message.take<SimplexReadPtr>();
     stats::Timer timer;
+
     {
         nvtx3::scoped_range range{"base_mod_probs_init"};
         // initialize base_mod_probs _before_ we start handing out chunks
@@ -425,9 +427,9 @@ void ModBaseCallerNode::input_thread_fn() {
         // If this message isn't a read, just forward it to the sink.
         if (!is_read_message(message)) {
             send_message_to_sink(std::move(message));
-        } else if (std::holds_alternative<SimplexReadPtr>(message)) {
+        } else if (message.holds<SimplexReadPtr>()) {
             simplex_mod_call(std::move(message));
-        } else if (std::holds_alternative<DuplexReadPtr>(message)) {
+        } else if (message.holds<DuplexReadPtr>()) {
             duplex_mod_call(std::move(message));
         }
     }

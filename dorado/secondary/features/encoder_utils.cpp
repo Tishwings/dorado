@@ -4,7 +4,6 @@
 #include "utils/container_utils.h"
 
 #include <spdlog/spdlog.h>
-#include <torch/types.h>
 
 #include <cstddef>
 #include <span>
@@ -192,17 +191,17 @@ std::tuple<at::Tensor, std::vector<int64_t>, std::vector<int64_t>> filter_empty_
                 std::size(positions_minor),
                 ", feature_tensor.shape = ", utils::tensor_shape_as_string(feature_tensor));
 
-    using namespace torch::indexing;
+    using namespace at::indexing;
 
     // Extract base feature channel: [positions, reads]
     const at::Tensor bases = feature_tensor.index({Ellipsis, 0});
 
     // Convert positions_minor to a Tensor and move to the same device as the feature_tensor.
-    const at::Tensor pos_minor_t = torch::from_blob(const_cast<int64_t*>(positions_minor.data()),
-                                                    {std::ssize(positions_minor)},
-                                                    torch::TensorOptions().dtype(torch::kInt64))
-                                           .clone()
-                                           .to(feature_tensor.device());
+    const at::Tensor pos_minor_t =
+            at::from_blob(const_cast<int64_t*>(positions_minor.data()),
+                          {std::ssize(positions_minor)}, at::TensorOptions().dtype(at::kLong))
+                    .clone()
+                    .to(feature_tensor.device());
 
     const at::Tensor is_major = (pos_minor_t == 0);  // Shape: [positions]
     const at::Tensor pos_has_base = bases.any(1);    // Reduce dimension 1, shape: [positions]

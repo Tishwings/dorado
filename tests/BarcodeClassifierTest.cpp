@@ -8,6 +8,8 @@
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/messages/ReadPair.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/BarcodeClassifierNode.h"
 #include "read_pipeline/nodes/TrimmerNode.h"
 #include "utils/PostCondition.h"
@@ -15,7 +17,7 @@
 #include "utils/sequence_utils.h"
 #include "utils/types.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/zeros.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_all.hpp>
@@ -330,8 +332,8 @@ CATCH_TEST_CASE(
             int(stride * 2 * front_flank.length());  // * 2 is because we have 2 moves per base
 
     for (auto& message : messages) {
-        if (std::holds_alternative<BamMessage>(message)) {
-            auto bam_message = std::get<BamMessage>(std::move(message));
+        if (message.holds<BamMessage>()) {
+            auto bam_message = message.take<BamMessage>();
             bam1_t* rec = bam_message.data->bam_ptr.get();
 
             // Check trimming on the bam1_t struct.
@@ -360,9 +362,9 @@ CATCH_TEST_CASE(
             // corresponding to the trimmed trailing flank needs to be removed from the end
             // of the original signal.
             CATCH_CHECK(bam_aux2i(bam_aux_get(rec, "ns")) == ((100 + 51) * 2 * stride));
-        } else if (std::holds_alternative<SimplexReadPtr>(message)) {
+        } else if (message.holds<SimplexReadPtr>()) {
             // Check trimming on the Read type.
-            auto msg_read = std::get<SimplexReadPtr>(std::move(message));
+            auto msg_read = message.take<SimplexReadPtr>();
             const ReadCommon& read_common = msg_read->read_common;
 
             CATCH_CHECK(read_common.barcode == expected_bc);
@@ -431,9 +433,9 @@ CATCH_TEST_CASE("BarcodeClassifierNode: test for proper trimming and alignment d
 
     CATCH_CHECK(messages.size() == 2);
 
-    auto bam_message = std::get<BamMessage>(std::move(messages[0]));
+    auto bam_message = messages[0].take<BamMessage>();
     read1 = std::move(bam_message.data->bam_ptr);
-    bam_message = std::get<BamMessage>(std::move(messages[1]));
+    bam_message = messages[1].take<BamMessage>();
     read2 = std::move(bam_message.data->bam_ptr);
 
     // Reads may not come back in the same order.

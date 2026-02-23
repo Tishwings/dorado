@@ -4,10 +4,9 @@
 #include "config/BasecallModelConfig.h"
 #include "torch_utils/metal_utils.h"
 
-#include <ATen/TensorIndexing.h>
 #include <ATen/core/TensorBody.h>
+#include <ATen/ops/zeros.h>
 #include <c10/core/ScalarType.h>
-#include <torch/types.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -84,7 +83,7 @@ public:
         // is to be submitted directly then it must also have this arrangement.
         // Note that this is not the same as other caller implementations, which
         // have T innermost.
-        return torch::zeros({m_batch_size, m_in_chunk_size, m_config.num_features}, torch::kF16);
+        return at::zeros({m_batch_size, m_in_chunk_size, m_config.num_features}, at::kHalf);
     }
 
 private:
@@ -100,8 +99,8 @@ private:
     bool call_task(NNTask &task, std::mutex &inter_caller_mutex, int try_count) override;
 
     std::unique_ptr<model::MetalCRFModelImpl> m_model;
-    torch::ScalarType m_scores_dtype = torch::kChar;
-    torch::ScalarType m_posts_dtype = torch::kShort;
+    at::ScalarType m_scores_dtype = at::kChar;
+    at::ScalarType m_posts_dtype = at::kShort;
 
     // Number of pieces the linear output is split into, for reasons of
     // buffer size constraints.
@@ -130,7 +129,7 @@ public:
 
     at::Tensor create_input_tensor() const override {
         // NCT
-        return torch::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, torch::kF16);
+        return at::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, at::kHalf);
     }
 
 private:
@@ -142,8 +141,8 @@ private:
     std::unique_ptr<model::TxModelImpl> m_model;
     NS::SharedPtr<MTL::CommandQueue> m_command_queue;
 
-    torch::ScalarType m_scores_dtype = torch::kHalf;
-    torch::ScalarType m_posts_dtype = torch::kFloat32;
+    at::ScalarType m_scores_dtype = at::kHalf;
+    at::ScalarType m_posts_dtype = at::kFloat;
 
     int m_in_chunk_size, m_out_chunk_size, m_batch_size, m_states;
     at::Tensor m_scores_TNC, m_posts_NTC, m_bwd_NTC;

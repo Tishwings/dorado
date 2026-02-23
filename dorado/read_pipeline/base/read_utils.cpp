@@ -1,5 +1,6 @@
 #include "read_pipeline/base/read_utils.h"
 
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "torch_utils/trim.h"
 #include "utils/log_utils.h"
 #include "utils/sequence_utils.h"
@@ -9,7 +10,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <optional>
 
 using Slice = at::indexing::Slice;
 

@@ -1,5 +1,6 @@
 #include "read_pipeline/nodes/ReadSplitNode.h"
 
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "splitter/ReadSplitter.h"
 
 #include <spdlog/spdlog.h>
@@ -45,13 +46,13 @@ void ReadSplitNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
         // If this message isn't a read, just forward it to the sink.
-        if (!std::holds_alternative<SimplexReadPtr>(message)) {
+        if (!message.holds<SimplexReadPtr>()) {
             send_message_to_sink(std::move(message));
             continue;
         }
 
         // If this message isn't a read, we'll get a bad_variant_access exception.
-        auto initial_read = std::get<SimplexReadPtr>(std::move(message));
+        auto initial_read = message.take<SimplexReadPtr>();
         auto read_id = initial_read->read_common.read_id;
         auto tag = initial_read->read_common.read_tag;
 

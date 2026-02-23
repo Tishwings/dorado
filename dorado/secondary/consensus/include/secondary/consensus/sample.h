@@ -1,11 +1,10 @@
 #pragma once
 
-#include <ATen/ATen.h>
+#include <ATen/core/TensorBody.h>
 
 #include <cstdint>
 #include <iosfwd>
 #include <string>
-#include <tuple>
 #include <vector>
 
 namespace dorado::secondary {

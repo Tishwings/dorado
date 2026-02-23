@@ -4,7 +4,7 @@
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/ReadPipeline.h"
-#include "utils/time_utils.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 
 #include <htslib/sam.h>
 #include <spdlog/spdlog.h>

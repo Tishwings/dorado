@@ -3,7 +3,6 @@
 #include "secondary/consensus/consensus_result.h"
 
 #include <ATen/ATen.h>
-#include <torch/types.h>
 
 #include <span>
 #include <string>

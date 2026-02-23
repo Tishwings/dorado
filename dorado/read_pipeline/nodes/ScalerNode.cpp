@@ -3,12 +3,13 @@
 #include "config/BasecallModelConfig.h"
 #include "demux/adapter_info.h"
 #include "models/kits.h"
+#include "read_pipeline/base/ClientInfo.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "torch_utils/tensor_utils.h"
 #include "torch_utils/trim.h"
 #include "utils/context_container.h"
 #include "utils/log_utils.h"
 
-#include <ATen/Functions.h>
 #include <ATen/TensorIndexing.h>
 #include <ATen/TensorOperators.h>
 #include <spdlog/spdlog.h>
@@ -147,12 +148,12 @@ void ScalerNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
         // If this message isn't a Simplex read, just forward it to the sink.
-        if (!std::holds_alternative<SimplexReadPtr>(message)) {
+        if (!message.holds<SimplexReadPtr>()) {
             send_message_to_sink(std::move(message));
             continue;
         }
 
-        auto read = std::get<SimplexReadPtr>(std::move(message));
+        auto read = message.take<SimplexReadPtr>();
 
         bool is_rna_model = m_model_type == SampleType::RNA004;
 

@@ -3,17 +3,16 @@
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "poly_tail/poly_tail_config.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/PolyACalculatorNode.h"
-#include "utils/sequence_utils.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_all.hpp>
 #include <spdlog/spdlog.h>
 #include <toml.hpp>
-#include <torch/torch.h>
+#include <torch/serialize.h>
 
-#include <cstdint>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -68,7 +67,7 @@ CATCH_TEST_CASE("PolyACalculator: Test polyT tail estimation", TEST_GROUP) {
 
     CATCH_CHECK(messages.size() == 1);
 
-    auto out = std::get<SimplexReadPtr>(std::move(messages[0]));
+    auto out = messages[0].take<SimplexReadPtr>();
     CATCH_CHECK(out->read_common.rna_poly_tail_length == gt);
 }
 
@@ -106,7 +105,7 @@ CATCH_TEST_CASE("PolyACalculator: Test polyT tail estimation with custom config"
 
     CATCH_CHECK(messages.size() == 1);
 
-    auto out = std::get<SimplexReadPtr>(std::move(messages[0]));
+    auto out = messages[0].take<SimplexReadPtr>();
     CATCH_CHECK(out->read_common.rna_poly_tail_length == -1);
 }
 

@@ -1,7 +1,6 @@
 #include "plasmid_poly_tail_calculator.h"
 
-#include "read_pipeline/base/messages.h"
-#include "utils/PostCondition.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/log_utils.h"
 #include "utils/sequence_utils.h"
 

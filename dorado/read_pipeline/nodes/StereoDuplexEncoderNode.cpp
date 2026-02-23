@@ -1,8 +1,10 @@
 #include "read_pipeline/nodes/StereoDuplexEncoderNode.h"
 
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/ReadPair.h"
 #include "utils/sequence_utils.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/flip.h>
 #include <edlib.h>
 
 #include <cassert>
@@ -97,13 +99,12 @@ void StereoDuplexEncoderNode::input_thread_fn() {
 
     Message message;
     while (get_input_message(message)) {
-        auto* read_pair_ptr = std::get_if<ReadPairPtr>(&message);
-        if (!read_pair_ptr) {
+        if (!message.holds<ReadPairPtr>()) {
             send_message_to_sink(std::move(message));
             continue;
         }
 
-        auto stereo_encoded_read = stereo_encode(std::move(**read_pair_ptr));
+        auto stereo_encoded_read = stereo_encode(std::move(*message.take<ReadPairPtr>()));
 
         send_message_to_sink(
                 std::move(stereo_encoded_read));  // Stereo-encoded read created, send it to sink

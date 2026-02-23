@@ -1,5 +1,7 @@
 #include "read_pipeline/nodes/ReadFilterNode.h"
 
+#include "read_pipeline/base/messages/ReadCommon.h"
+
 #include <spdlog/spdlog.h>
 
 namespace dorado {

@@ -3,14 +3,17 @@
 #include "torch_utils/cuda_utils.h"
 #include "torch_utils/gpu_profiling.h"
 
+#include <ATen/TensorIndexing.h>
+#include <ATen/ops/arange.h>
+#include <ATen/ops/empty.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <nvtx3/nvtx3.hpp>
+
+#include <numeric>
 
 extern "C" {
 #include "koi.h"
 }
-
-#include <numeric>
 
 namespace dorado::basecall::decode {
 

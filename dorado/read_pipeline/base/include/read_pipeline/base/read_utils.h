@@ -2,7 +2,10 @@
 
 #include "read_pipeline/base/messages.h"
 
+#include <string>
+
 namespace dorado::utils {
+
 SimplexReadPtr shallow_copy_read(const SimplexRead& read);
 
 // Find the trimming index for degraded ends of a mux_change read.

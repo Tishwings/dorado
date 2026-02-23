@@ -2,14 +2,14 @@
 
 #include "models/kits.h"
 #include "read_pipeline/base/ReadPipeline.h"
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/PostCondition.h"
 #include "utils/fs_utils.h"
 #include "utils/thread_utils.h"
 #include "utils/time_utils.h"
 #include "utils/types.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/empty.h>
 #include <pod5_format/c_api.h>
 #include <spdlog/spdlog.h>
 

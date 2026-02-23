@@ -1,6 +1,6 @@
 #pragma once
 
-#include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages/DuplexRead.h"
 
 #include <ATen/Tensor.h>
 

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "alignment/Minimap2Index.h"
+#include "hts_utils/hts_types.h"
 #include "read_pipeline/base/messages.h"
+#include "utils/types.h"
 
 #include <minimap.h>
 

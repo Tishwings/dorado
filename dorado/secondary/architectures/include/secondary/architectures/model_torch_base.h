@@ -1,6 +1,5 @@
 #pragma once
 
-#include <ATen/ATen.h>
 #include <torch/nn/module.h>
 
 #include <memory>

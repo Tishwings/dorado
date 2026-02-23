@@ -3,6 +3,7 @@
 #include "poly_tail/poly_tail_calculator.h"
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "read_pipeline/base/ClientInfo.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/context_container.h"
 
 #include <spdlog/spdlog.h>
@@ -20,13 +21,13 @@ void PolyACalculatorNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
         // If this message isn't a read, just forward it to the sink.
-        if (!std::holds_alternative<SimplexReadPtr>(message)) {
+        if (!message.holds<SimplexReadPtr>()) {
             send_message_to_sink(std::move(message));
             continue;
         }
 
         // If this message isn't a read, we'll get a bad_variant_access exception.
-        auto read = std::get<SimplexReadPtr>(std::move(message));
+        auto read = message.take<SimplexReadPtr>();
         m_task_executor.send([this, read_ = std::move(read)]() mutable {
             process_read(*read_);
             send_message_to_sink(std::move(read_));

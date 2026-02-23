@@ -1,6 +1,6 @@
 #include "read_pipeline/base/stitch.h"
 
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/ReadCommon.h"
 #include "utils/math_utils.h"
 #include "utils/string_utils.h"
 

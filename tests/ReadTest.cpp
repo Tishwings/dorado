@@ -1,8 +1,8 @@
 #include "hts_utils/bam_utils.h"
-#include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/types.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/empty.h>
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -168,7 +168,7 @@ CATCH_TEST_CASE(TEST_GROUP ": Test tag generation", TEST_GROUP) {
 }
 
 CATCH_TEST_CASE(TEST_GROUP ": Test sam record generation", TEST_GROUP) {
-    dorado::SimplexRead test_read{};
+    dorado::SimplexRead test_read;
     CATCH_SECTION("Generating sam record for empty read throws") {
         CATCH_REQUIRE_THROWS(test_read.read_common.extract_sam_lines(false, std::nullopt, false));
     }

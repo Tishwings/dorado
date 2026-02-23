@@ -7,7 +7,6 @@
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
 #include "utils/ssize.h"
-#include "utils/timer_high_res.h"
 
 #include <spdlog/spdlog.h>
 
@@ -42,17 +41,18 @@ ReadAlignmentTensors read_matrix_data_to_tensors(ReadAlignmentData& data) {
     ReadAlignmentTensors result;
 
     // Allocate a tensor of the appropriate size directly for `result.counts` on the CPU
-    result.counts = torch::empty({data.n_pos, data.buffer_reads, data.featlen}, torch::kInt8);
+    result.counts = at::empty({data.n_pos, data.buffer_reads, data.featlen}, at::kChar);
 
     assert(result.counts.data_ptr<int8_t>() != nullptr);
 
     // Copy the data from `data.matrix` into `result.counts`
     std::memcpy(result.counts.data_ptr<int8_t>(), std::data(data.matrix), num_bytes);
 
-    result.counts =
-            result.counts.index({torch::indexing::Slice(),
-                                 torch::indexing::Slice(0, static_cast<int64_t>(data.n_reads)),
-                                 torch::indexing::Slice()});
+    result.counts = result.counts.index({
+            at::indexing::Slice(),
+            at::indexing::Slice(0, static_cast<int64_t>(data.n_reads)),
+            at::indexing::Slice(),
+    });
 
     result.positions_major = std::move(data.major);
     result.positions_minor = std::move(data.minor);
@@ -91,13 +91,13 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
             const int64_t pad_depth = target_depth - chunk.size(1);
             if (pad_depth > 0) {
                 auto padding =
-                        torch::zeros({chunk.size(0), pad_depth, chunk.size(2)}, chunk.options());
+                        at::zeros({chunk.size(0), pad_depth, chunk.size(2)}, chunk.options());
 
                 LOG_TRACE("[pad_reads] Padding depth: chunk.shape = {}, padding.shape = {}",
                           utils::tensor_shape_as_string(chunk),
                           utils::tensor_shape_as_string(padding));
 
-                auto concated = torch::cat({std::move(chunk), std::move(padding)}, 1);
+                auto concated = at::cat({std::move(chunk), std::move(padding)}, 1);
 
                 LOG_TRACE("[pad_reads] Emplacing (1) chunk: concated.shape = {}",
                           utils::tensor_shape_as_string(concated));
@@ -182,11 +182,11 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
         // NOTE: It appears that the read IDs are not supposed to be merged. After this stage it seems they are no longer needed.
         secondary::Sample ret{
                 seq_id,
-                torch::cat(pad_reads(
-                        reorder_reads(std::move(features), read_ids_left, read_ids_right), -1)),
+                at::cat(pad_reads(reorder_reads(std::move(features), read_ids_left, read_ids_right),
+                                  -1)),
                 cat_vectors(positions_major),
                 cat_vectors(positions_minor),
-                torch::cat(std::move(depth)),
+                at::cat(std::move(depth)),
                 {},
                 {},
         };
@@ -379,7 +379,7 @@ secondary::Sample EncoderReadAlignment::encode_region(
     };
 
     if (m_clip_to_zero) {
-        sample.features = torch::clamp_min(sample.features, 0);
+        sample.features = at::clamp_min(sample.features, 0);
     }
 
     return sample;
@@ -395,7 +395,7 @@ at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch) const {
 
     // Adjust negative values in features to 0.
     for (auto& data : batch) {
-        data = torch::clamp_min(data, 0);
+        data = at::clamp_min(data, 0);
     }
 
     at::Tensor features;
@@ -416,12 +416,12 @@ at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch) const {
         const int64_t max_depth = *std::max_element(std::begin(depths), std::end(depths));
 
         // Initialize a zero-filled feature tensor.
-        features = torch::zeros({batch_size, npos, max_depth, nfeats}, torch::kUInt8);
+        features = at::zeros({batch_size, npos, max_depth, nfeats}, at::kByte);
 
         // Fill the tensor with sample data, padding as necessary.
         for (size_t i = 0; i < std::size(batch); ++i) {
-            features.index_put_({static_cast<int64_t>(i), torch::indexing::Slice(),
-                                 torch::indexing::Slice(0, depths[i]), torch::indexing::Slice()},
+            features.index_put_({static_cast<int64_t>(i), at::indexing::Slice(),
+                                 at::indexing::Slice(0, depths[i]), at::indexing::Slice()},
                                 batch[i]);
         }
     } else {

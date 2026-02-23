@@ -1,6 +1,5 @@
 #include "demux/BarcodeClassifier.h"
 
-#include "demux/barcoding_info.h"
 #include "utils/alignment_utils.h"
 #include "utils/barcode_kits.h"
 #include "utils/log_utils.h"
@@ -12,7 +11,6 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>

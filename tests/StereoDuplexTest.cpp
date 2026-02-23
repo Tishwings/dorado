@@ -1,13 +1,13 @@
 #include "TestUtils.h"
-#include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages/DuplexRead.h"
+#include "read_pipeline/base/messages/ReadPair.h"
 #include "read_pipeline/nodes/StereoDuplexEncoderNode.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <torch/torch.h>
+#include <torch/serialize.h>
 
 #include <algorithm>
 #include <filesystem>
-#include <vector>
 
 #define TEST_GROUP "StereoDuplexTest"
 
@@ -22,14 +22,14 @@ std::filesystem::path DataPath(std::string_view filename) {
 void generate_raw_data(dorado::DuplexReadPtr& duplex_read_ptr) {
     dorado::Message message = std::move(duplex_read_ptr);
     materialise_read_raw_data(message);
-    duplex_read_ptr = std::move(std::get<dorado::DuplexReadPtr>(message));
+    duplex_read_ptr = message.take<dorado::DuplexReadPtr>();
 }
 
 }  // namespace
 
 // Tests stereo encoder output for a real sample signal against known good output.
 CATCH_TEST_CASE(TEST_GROUP "Encoder") {
-    dorado::ReadPair::ReadData template_read{};
+    dorado::ReadPair::ReadData template_read;
     {
         template_read.read_common.seq = ReadFileIntoString(DataPath("template_seq"));
         template_read.read_common.qstring = ReadFileIntoString(DataPath("template_qstring"));
@@ -43,7 +43,7 @@ CATCH_TEST_CASE(TEST_GROUP "Encoder") {
         template_read.seq_end = template_read.read_common.seq.length();
     }
 
-    dorado::ReadPair::ReadData complement_read{};
+    dorado::ReadPair::ReadData complement_read;
     {
         complement_read.read_common.seq = ReadFileIntoString(DataPath("complement_seq"));
         complement_read.read_common.qstring = ReadFileIntoString(DataPath("complement_qstring"));

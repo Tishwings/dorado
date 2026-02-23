@@ -3,7 +3,7 @@
 #include "torch_utils/tensor_utils.h"
 #include "utils/ssize.h"
 
-#include <torch/types.h>
+#include <ATen/TensorIndexing.h>
 
 #include <ostream>
 #include <span>
@@ -156,8 +156,8 @@ void merge_adjacent_samples_in_place(Sample& lh, const Sample& rh) {
     const size_t width = std::size(lh.positions_major);
 
     // Merge the tensors.
-    lh.features = torch::cat({std::move(lh.features), rh.features});
-    lh.depth = torch::cat({std::move(lh.depth), rh.depth});
+    lh.features = at::cat({std::move(lh.features), rh.features});
+    lh.depth = at::cat({std::move(lh.depth), rh.depth});
 
     // Insert positions vectors.
     lh.positions_major.reserve(width + std::size(rh.positions_major));

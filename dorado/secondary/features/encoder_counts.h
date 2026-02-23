@@ -5,7 +5,6 @@
 #include "secondary/features/encoder_base.h"
 
 #include <ATen/ATen.h>
-#include <torch/types.h>
 
 #include <cstdint>
 #include <mutex>

@@ -5,7 +5,7 @@
 #include "demux/adapter_info.h"
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/ClientInfo.h"
-#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/PostCondition.h"
 #include "utils/context_container.h"
 #include "utils/log_utils.h"
@@ -42,16 +42,16 @@ void AdapterDetectorNode::restart() {
 void AdapterDetectorNode::input_thread_fn() {
     Message message;
     while (get_input_message(message)) {
-        if (std::holds_alternative<BamMessage>(message)) {
-            auto bam_message = std::get<BamMessage>(std::move(message));
+        if (message.holds<BamMessage>()) {
+            auto bam_message = message.take<BamMessage>();
             // If the read is a secondary or supplementary read, ignore it.
             if (bam_message.data->bam_ptr->core.flag & (BAM_FSUPPLEMENTARY | BAM_FSECONDARY)) {
                 continue;
             }
             process_read(bam_message);
             send_message_to_sink(std::move(bam_message));
-        } else if (std::holds_alternative<SimplexReadPtr>(message)) {
-            auto read = std::get<SimplexReadPtr>(std::move(message));
+        } else if (message.holds<SimplexReadPtr>()) {
+            auto read = message.take<SimplexReadPtr>();
             process_read(*read);
             send_message_to_sink(std::move(read));
         } else {

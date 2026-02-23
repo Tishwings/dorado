@@ -5,10 +5,11 @@
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 #include "utils/sequence_utils.h"
 #include "utils/time_utils.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/zeros.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <htslib/sam.h>
@@ -96,15 +97,13 @@ DEFINE_TEST("Split read pairing") {
 
     // the 4 split reads generate one additional readpair
     CATCH_CHECK(messages.size() == 9);
-    auto num_reads =
-            std::count_if(messages.begin(), messages.end(), [](const dorado::Message& message) {
-                return std::holds_alternative<dorado::SimplexReadPtr>(message);
-            });
+    auto num_reads = std::count_if(
+            messages.begin(), messages.end(),
+            [](const dorado::Message& message) { return message.holds<dorado::SimplexReadPtr>(); });
     CATCH_CHECK(num_reads == 7);
-    auto num_pairs =
-            std::count_if(messages.begin(), messages.end(), [](const dorado::Message& message) {
-                return std::holds_alternative<dorado::ReadPairPtr>(message);
-            });
+    auto num_pairs = std::count_if(
+            messages.begin(), messages.end(),
+            [](const dorado::Message& message) { return message.holds<dorado::ReadPairPtr>(); });
     CATCH_CHECK(num_pairs == 2);
 }
 

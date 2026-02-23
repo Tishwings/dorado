@@ -4,29 +4,24 @@
 #include "utils/PostCondition.h"
 #include "utils/math_utils.h"
 
-#include <ATen/Functions.h>
 #include <ATen/cuda/CUDAContext.h>
+#include <ATen/ops/matmul.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 #include <spdlog/spdlog.h>
+#include <torch/cuda.h>
 
 #include <algorithm>
-#include <array>
 #include <cassert>
-#include <chrono>
 #include <exception>
 #include <iomanip>
-#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
-
-using namespace std::chrono;
 
 namespace dorado::utils {
 
@@ -337,7 +332,7 @@ void print_cuda_alloc_info(const std::string &label) {
 
 // Note that in general the torch caching allocator may be consuming
 // significant memory that could be freed if required.
-size_t available_memory(torch::Device device) {
+size_t available_memory(c10::Device device) {
     size_t free, total;
     c10::cuda::CUDAGuard device_guard(device);
     cudaMemGetInfo(&free, &total);
@@ -386,7 +381,7 @@ bool try_parse_device_ids(const std::string &device_string,
 void matmul_f16_cublas(const at::Tensor &A, const at::Tensor &B, at::Tensor &C) {
     constexpr uint16_t HALF_ZERO = 0;      // 0.0 in __half format
     constexpr uint16_t HALF_ONE = 0x3C00;  // 1.0 in __half format
-    assert(A.dtype() == torch::kF16 && B.dtype() == torch::kF16 && C.dtype() == torch::kF16);
+    assert(A.dtype() == at::kHalf && B.dtype() == at::kHalf && C.dtype() == at::kHalf);
     assert(A.stride(1) == 1 && B.stride(1) == 1 && C.stride(1) == 1);
     assert(A.size(0) == C.size(0));  // M
     assert(B.size(1) == C.size(1));  // N
@@ -403,7 +398,7 @@ void matmul_f16_cublas(const at::Tensor &A, const at::Tensor &B, at::Tensor &C) 
 }
 
 void matmul_f16_torch(const at::Tensor &A, const at::Tensor &B, at::Tensor &C) {
-    torch::matmul_out(C, A, B);
+    at::matmul_out(C, A, B);
 }
 
 }  // namespace details

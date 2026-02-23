@@ -1,8 +1,9 @@
 #include "read_pipeline/nodes/ReadFilterNode.h"
 
 #include "MessageSinkUtils.h"
+#include "read_pipeline/base/messages/SimplexRead.h"
 
-#include <ATen/Functions.h>
+#include <ATen/ops/empty.h>
 #include <catch2/catch_test_macros.hpp>
 
 #define TEST_GROUP "[read_pipeline][ReadFilterNode]"

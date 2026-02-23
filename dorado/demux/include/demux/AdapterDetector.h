@@ -1,7 +1,6 @@
 #pragma once
 #include "adapter_info.h"
 #include "hts_utils/hts_types.h"
-#include "utils/stats.h"
 #include "utils/types.h"
 
 #include <mutex>
