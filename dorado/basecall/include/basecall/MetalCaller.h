@@ -79,6 +79,8 @@ public:
 
     at::Tensor create_input_tensor() const override;
 
+    static int get_batch_size_granularity();
+
 private:
     void set_chunk_batch_size(const config::BasecallModelConfig &model_config,
                               const std::vector<at::Tensor> &state_dict,
@@ -121,6 +123,8 @@ public:
     ~MetalTxCaller();
 
     at::Tensor create_input_tensor() const override;
+
+    static int get_batch_size_granularity();
 
 private:
     void load_tx_model(const config::BasecallModelConfig &model_config);

@@ -271,6 +271,8 @@ at::Tensor MetalLSTMCaller::create_input_tensor() const {
     return at::zeros({m_batch_size, m_in_chunk_size, m_config.num_features}, at::kHalf);
 }
 
+int MetalLSTMCaller::get_batch_size_granularity() { return MTL_CORE_BATCH_SIZE; }
+
 void MetalLSTMCaller::set_chunk_batch_size(const BasecallModelConfig &model_config,
                                            const std::vector<at::Tensor> &state_dict,
                                            int chunk_size,
@@ -560,6 +562,8 @@ at::Tensor MetalTxCaller::create_input_tensor() const {
     // NCT
     return at::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, at::kHalf);
 }
+
+int MetalTxCaller::get_batch_size_granularity() { return 8; }
 
 void MetalTxCaller::load_tx_model(const BasecallModelConfig &model_config) {
     const auto device_type = torch::kMPS;
