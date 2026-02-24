@@ -56,10 +56,10 @@ inline size_t CountSinkReads(const std::filesystem::path& data_path,
     pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
-    dorado::DataLoader loader(*pipeline, device, num_worker_threads, max_reads,
-                              std::move(read_list), std::move(read_ignore_list));
+    dorado::data_loader::DataLoader loader(*pipeline, device, num_worker_threads, max_reads,
+                                           std::move(read_list), std::move(read_ignore_list));
 
-    auto input_pod5_files = dorado::DataLoader::InputFiles::search_pod5s(data_path, false);
+    auto input_pod5_files = dorado::data_loader::InputFiles::search_pod5s(data_path, false);
     loader.load_reads(input_pod5_files, dorado::ReadOrder::UNRESTRICTED);
     pipeline->terminate({.fast = dorado::utils::AsyncQueueTerminateFast::No});
     return messages.size();

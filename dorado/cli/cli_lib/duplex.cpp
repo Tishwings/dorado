@@ -100,7 +100,7 @@ ModBaseBatchParams validate_modbase_params(const std::vector<std::filesystem::pa
 }
 
 DuplexModels load_duplex_models(const argparse::ArgumentParser& parser,
-                                const DataLoader::InputFiles& input_pod5_files,
+                                const data_loader::InputFiles& input_pod5_files,
                                 const std::string& context) {
     try {
         DuplexModelResolver resolver{
@@ -308,9 +308,9 @@ int duplex(int argc, char* argv[]) {
 
         const bool recursive_file_loading = parser.get<bool>("--recursive");
 
-        DataLoader::InputFiles input_pod5_files;
+        data_loader::InputFiles input_pod5_files;
         try {
-            input_pod5_files = DataLoader::InputFiles::search_pod5s(reads, recursive_file_loading);
+            input_pod5_files = data_loader::InputFiles::search_pod5s(reads, recursive_file_loading);
         } catch (const std::exception& e) {
             spdlog::error("Failed to load pod5 data: '{}'", e.what());
             return EXIT_FAILURE;
@@ -630,7 +630,8 @@ int duplex(int argc, char* argv[]) {
             const auto& hts_writer_ref = pipeline->get_node_ref<WriterNode>(hts_writer);
             hts_writer_ref.set_shared_header(std::move(hdr));
 
-            DataLoader loader(*pipeline, "cpu", num_devices, 0, std::move(read_list), {});
+            data_loader::DataLoader loader(*pipeline, "cpu", num_devices, 0, std::move(read_list),
+                                           {});
             loader.add_read_initialiser(client_info_init_func);
 
             stats_sampler = std::make_unique<dorado::stats::StatsSampler>(

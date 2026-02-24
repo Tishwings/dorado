@@ -84,13 +84,13 @@ namespace {
  */
 class InputPod5FolderInfo final {
     const std::filesystem::path m_data_path;
-    const DataLoader::InputFiles m_pod5_files;
+    const data_loader::InputFiles m_pod5_files;
 
 public:
-    InputPod5FolderInfo(std::filesystem::path data_path, DataLoader::InputFiles pod5_files)
+    InputPod5FolderInfo(std::filesystem::path data_path, data_loader::InputFiles pod5_files)
             : m_data_path(std::move(data_path)), m_pod5_files(std::move(pod5_files)) {}
     const std::filesystem::path& path() const { return m_data_path; }
-    const DataLoader::InputFiles& files() const { return m_pod5_files; }
+    const data_loader::InputFiles& files() const { return m_pod5_files; }
 };
 
 void set_dorado_basecaller_args(argparse::ArgumentParser& parser, int& verbosity) {
@@ -729,8 +729,8 @@ void setup(const std::vector<std::string>& args,
 
     // Start feeding data into the pipeline.
     {
-        DataLoader loader(*pipeline, "cpu", thread_allocations.loader_threads, max_reads, read_list,
-                          reads_already_processed);
+        data_loader::DataLoader loader(*pipeline, "cpu", thread_allocations.loader_threads,
+                                       max_reads, read_list, reads_already_processed);
         loader.add_read_initialiser(
                 [client_info](ReadCommon& read) { read.client_info = client_info; });
         // This is blocking on all reads
@@ -793,9 +793,9 @@ int basecaller(int argc, char* argv[]) {
     const std::filesystem::path data_path = parser.get<std::string>("data");
     const bool recursive_file_loading = parser.get<bool>("--recursive");
 
-    DataLoader::InputFiles input_pod5s;
+    data_loader::InputFiles input_pod5s;
     try {
-        input_pod5s = DataLoader::InputFiles::search_pod5s(data_path, recursive_file_loading);
+        input_pod5s = data_loader::InputFiles::search_pod5s(data_path, recursive_file_loading);
     } catch (const std::exception& e) {
         spdlog::error("Failed to load pod5 data: '{}'", e.what());
         return EXIT_FAILURE;

@@ -65,8 +65,8 @@ CATCH_TEST_CASE(TEST_GROUP " Load data sorted by channel id.", TEST_GROUP) {
     pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
-    dorado::DataLoader loader(*pipeline, "cpu", 1, 0, std::nullopt, {});
-    auto input_pod5_files = dorado::DataLoader::InputFiles::search_pod5s(data_path, false);
+    dorado::data_loader::DataLoader loader(*pipeline, "cpu", 1, 0, std::nullopt, {});
+    auto input_pod5_files = dorado::data_loader::InputFiles::search_pod5s(data_path, false);
     if (input_pod5_files.get().empty()) {
         throw std::runtime_error("No pod5 files in " + data_path.string());
     }
@@ -108,8 +108,8 @@ CATCH_TEST_CASE(TEST_GROUP " Test correct previous and next read ids when loaded
     pipeline_desc.add_node<MessageSinkToVector>({}, 10, messages);
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
-    dorado::DataLoader loader(*pipeline, "cpu", 1, 0, std::nullopt, {});
-    auto input_pod5_files = dorado::DataLoader::InputFiles::search_pod5s(data_path, false);
+    dorado::data_loader::DataLoader loader(*pipeline, "cpu", 1, 0, std::nullopt, {});
+    auto input_pod5_files = dorado::data_loader::InputFiles::search_pod5s(data_path, false);
     if (input_pod5_files.get().empty()) {
         throw std::runtime_error("No pod5 files in " + data_path.string());
     }

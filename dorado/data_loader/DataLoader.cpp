@@ -23,12 +23,9 @@
 #include <string_view>
 #include <vector>
 
-namespace dorado {
+namespace dorado::data_loader {
 
 namespace {
-
-// ReadID should be a drop-in replacement for read_id_t
-static_assert(sizeof(dorado::ReadID) == sizeof(read_id_t));
 
 // 37 = number of bytes in UUID (32 hex digits + 4 dashes + null terminator)
 const uint32_t POD5_READ_ID_LEN = 37;
@@ -622,12 +619,14 @@ DataLoader::DataLoader(Pipeline& pipeline,
           m_thread_pool(num_worker_threads, on_worker_start),
           m_allowed_read_ids(std::move(read_list)),
           m_ignored_read_ids(std::move(read_ignore_list)) {
+    // ReadID should be a drop-in replacement for read_id_t
+    static_assert(sizeof(ReadID) == sizeof(read_id_t));
+
     m_max_reads = max_reads == 0 ? std::numeric_limits<decltype(m_max_reads)>::max() : max_reads;
     assert(m_thread_pool.n_threads() > 0);
 }
 
-DataLoader::InputFiles DataLoader::InputFiles::search_pod5s(const std::filesystem::path& path,
-                                                            bool recursive) {
+InputFiles InputFiles::search_pod5s(const std::filesystem::path& path, bool recursive) {
     auto entries = collect_pod5_dataset(utils::fetch_directory_entries(path, recursive));
 
     // Intentionally returning a valid object even if there are 0 entries since duplex uses that
@@ -637,8 +636,6 @@ DataLoader::InputFiles DataLoader::InputFiles::search_pod5s(const std::filesyste
     return files;
 }
 
-const std::vector<std::filesystem::directory_entry>& DataLoader::InputFiles::get() const {
-    return m_entries;
-}
+const std::vector<std::filesystem::directory_entry>& InputFiles::get() const { return m_entries; }
 
-}  // namespace dorado
+}  // namespace dorado::data_loader
