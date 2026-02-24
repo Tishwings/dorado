@@ -263,6 +263,14 @@ MetalLSTMCaller::MetalLSTMCaller(const BasecallModelConfig &model_config,
 
 MetalLSTMCaller::~MetalLSTMCaller() = default;
 
+at::Tensor MetalLSTMCaller::create_input_tensor() const {
+    // Metal convolution kernels operate with channel ordering (N, T, C).  If m_input
+    // is to be submitted directly then it must also have this arrangement.
+    // Note that this is not the same as other caller implementations, which
+    // have T innermost.
+    return at::zeros({m_batch_size, m_in_chunk_size, m_config.num_features}, at::kHalf);
+}
+
 void MetalLSTMCaller::set_chunk_batch_size(const BasecallModelConfig &model_config,
                                            const std::vector<at::Tensor> &state_dict,
                                            int chunk_size,
@@ -547,6 +555,11 @@ MetalTxCaller::MetalTxCaller(const BasecallModelConfig &model_config) : MetalCal
 }
 
 MetalTxCaller::~MetalTxCaller() = default;
+
+at::Tensor MetalTxCaller::create_input_tensor() const {
+    // NCT
+    return at::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, at::kHalf);
+}
 
 void MetalTxCaller::load_tx_model(const BasecallModelConfig &model_config) {
     const auto device_type = torch::kMPS;

@@ -221,6 +221,11 @@ std::pair<int, int> CudaCaller::batch_timeouts_ms() const {
                    : std::make_pair(DEFAULT_FIRST_CHUNK_TIMEOUT_MS, DEFAULT_LAST_CHUNK_TIMEOUT_MS);
 }
 
+int CudaCaller::get_batch_size_granularity(const config::BasecallModelConfig &model_config) {
+    // TODO: we may want to use different numbers based on model type and GPU arch
+    return model_config.is_tx_model() ? 32 : 64;
+}
+
 std::vector<decode::DecodedChunk> CudaCaller::call_chunks(at::Tensor &input,
                                                           at::Tensor &output,
                                                           int num_chunks,

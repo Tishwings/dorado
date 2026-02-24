@@ -5,7 +5,6 @@
 #include "torch_utils/metal_utils.h"
 
 #include <ATen/core/TensorBody.h>
-#include <ATen/ops/zeros.h>
 #include <c10/core/ScalarType.h>
 
 #include <atomic>
@@ -78,13 +77,7 @@ public:
     MetalLSTMCaller(const config::BasecallModelConfig &model_config, float memory_limit_fraction);
     ~MetalLSTMCaller();
 
-    at::Tensor create_input_tensor() const override {
-        // Metal convolution kernels operate with channel ordering (N, T, C).  If m_input
-        // is to be submitted directly then it must also have this arrangement.
-        // Note that this is not the same as other caller implementations, which
-        // have T innermost.
-        return at::zeros({m_batch_size, m_in_chunk_size, m_config.num_features}, at::kHalf);
-    }
+    at::Tensor create_input_tensor() const override;
 
 private:
     void set_chunk_batch_size(const config::BasecallModelConfig &model_config,
@@ -127,10 +120,7 @@ public:
     MetalTxCaller(const config::BasecallModelConfig &model_config);
     ~MetalTxCaller();
 
-    at::Tensor create_input_tensor() const override {
-        // NCT
-        return at::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, at::kHalf);
-    }
+    at::Tensor create_input_tensor() const override;
 
 private:
     void load_tx_model(const config::BasecallModelConfig &model_config);

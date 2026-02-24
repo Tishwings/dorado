@@ -53,14 +53,11 @@ public:
     stats::NamedStats sample_stats() const;
     std::pair<int, int> batch_timeouts_ms() const;
 
+    static int get_batch_size_granularity(const config::BasecallModelConfig &model_config);
+
 private:
     struct GPUTaskQueue;
     GPUTaskQueue &get_task_queue();
-
-    static int get_batch_size_granularity(const config::BasecallModelConfig &model_config) {
-        // TODO: we may want to use different numbers based on model type and GPU arch
-        return model_config.is_tx_model() ? 32 : 64;
-    }
 
     std::pair<int64_t, int64_t> calculate_memory_requirements() const;
     void determine_batch_dims(const BasecallerCreationParams &params);
