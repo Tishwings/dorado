@@ -132,7 +132,7 @@ void BasecallerNode::input_thread_fn() {
             const std::vector<std::pair<std::size_t, std::size_t>> intervals =
                     utils::generate_variable_chunks(raw_size, chunk_size, m_model_stride,
                                                     m_overlap);
-
+            read_chunks.reserve(std::size(intervals));
             for (std::size_t i = 0; i < std::size(intervals); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
                         working_read, intervals[i].first, i,
@@ -141,7 +141,7 @@ void BasecallerNode::input_thread_fn() {
         } else {
             const std::vector<std::size_t> offsets =
                     utils::generate_chunks(raw_size, chunk_size, m_model_stride, m_overlap);
-
+            read_chunks.reserve(std::size(offsets));
             for (std::size_t i = 0; i < std::size(offsets); ++i) {
                 read_chunks.emplace_back(std::make_unique<BasecallingChunk>(
                         working_read, offsets[i], i, chunk_size));
