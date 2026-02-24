@@ -19,9 +19,9 @@ namespace dorado::splitter {
 RNAReadSplitter::ExtRead RNAReadSplitter::create_ext_read(SimplexReadPtr r) const {
     ExtRead ext_read;
     ext_read.read = std::move(r);
-    ext_read.possible_pore_regions =
-            detect_pore_signal<int16_t>(ext_read.read->read_common.raw_data, m_settings.pore_thr,
-                                        m_settings.pore_cl_dist, m_settings.expect_pore_prefix);
+    ext_read.possible_pore_regions = detect_pore_signal<int16_t>(
+            ext_read.read->read_common.raw_data, m_settings.pore_thr, m_settings.pore_cl_dist,
+            m_settings.expect_pore_prefix, m_settings.duration_thr);
     for (const auto& range : ext_read.possible_pore_regions) {
         utils::trace_log("Pore range {}-{} {}", range.start_sample, range.end_sample,
                          ext_read.read->read_common.read_id);

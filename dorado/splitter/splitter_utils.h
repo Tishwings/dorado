@@ -32,8 +32,9 @@ template <typename T>
 SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
                                    T threshold,
                                    uint64_t cluster_dist,
-                                   uint64_t ignore_prefix) {
-    SampleRanges<T> ans;
+                                   uint64_t ignore_prefix,
+                                   uint64_t ignore_spikes_threshold) {
+    SampleRanges<T> clusters;
     auto pore_a = signal.accessor<T, 1>();
     int64_t cl_start = -1;
     int64_t cl_end = -1;
@@ -42,31 +43,59 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
     int64_t cl_argmax = -1;
     for (auto i = ignore_prefix; i < uint64_t(pore_a.size(0)); i++) {
         if (pore_a[i] > threshold) {
-            //check if we need to start new cluster
-            if (cl_end == -1 || i > cl_end + cluster_dist) {
-                //report previous cluster
-                if (cl_end != -1) {
-                    assert(cl_start != -1);
-                    ans.push_back(SampleRange(cl_start, cl_end, cl_argmax, cl_max));
-                }
+            if (cl_start == -1) {
                 cl_start = i;
-                cl_max = std::numeric_limits<T>::min();
             }
+
             if (pore_a[i] >= cl_max) {
                 cl_max = pore_a[i];
                 cl_argmax = i;
             }
             cl_end = i + 1;
+        } else if (cl_end != -1) {
+            // report cluster
+            assert(cl_start != -1);
+            clusters.push_back(SampleRange(cl_start, cl_end, cl_argmax, cl_max));
+            cl_start = -1;
+            cl_end = -1;
+            cl_argmax = i;
+            cl_max = std::numeric_limits<T>::min();
         }
     }
-    //report last cluster
+
+    // report last cluster
     if (cl_end != -1) {
         assert(cl_start != -1);
         assert(cl_start < pore_a.size(0) && cl_end <= pore_a.size(0));
-        ans.push_back(SampleRange(cl_start, cl_end, cl_argmax, cl_max));
+        clusters.push_back(SampleRange(cl_start, cl_end, cl_argmax, cl_max));
     }
 
-    return ans;
+    // merge clusters
+    SampleRanges<T> merged_clusters;
+    for (auto&& cluster : clusters) {
+        if (cluster.end_sample - cluster.start_sample < ignore_spikes_threshold) {
+            // discard spurious clusters
+            continue;
+        }
+
+        if (merged_clusters.empty()) {
+            merged_clusters.push_back(std::move(cluster));
+            continue;
+        }
+
+        auto& last_cluster = merged_clusters.back();
+        if (cluster.start_sample - last_cluster.end_sample < cluster_dist) {
+            last_cluster.end_sample = cluster.end_sample;
+            if (cluster.max_val >= last_cluster.max_val) {
+                last_cluster.max_val = cluster.max_val;
+                last_cluster.argmax_sample = cluster.argmax_sample;
+            }
+        } else {
+            merged_clusters.push_back(std::move(cluster));
+        }
+    }
+
+    return merged_clusters;
 }
 
 }  // namespace dorado::splitter
