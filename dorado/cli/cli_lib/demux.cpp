@@ -34,6 +34,7 @@
 
 #include <chrono>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -74,10 +75,8 @@ int demuxer(int argc, char* argv[]) {
     argparse::ArgumentParser parser("dorado demux", DORADO_VERSION,
                                     argparse::default_arguments::help);
     parser.add_description("Barcode demultiplexing tool. Users need to specify the kit name(s).");
-    parser.add_argument("reads")
-            .help("An input file or the folder containing input file(s) (any HTS format).")
-            .nargs(argparse::nargs_pattern::optional)
-            .default_value(std::string{});
+    parser.add_argument("reads").help(
+            "An input file or the folder containing input file(s) (any HTS format).");
 
     int verbosity = 0;
     parser.add_argument("-v", "--verbose")
@@ -182,6 +181,11 @@ int demuxer(int argc, char* argv[]) {
     }
 
     const std::string reads(parser.get<std::string>("reads"));
+    if (reads.empty()) {
+        spdlog::error("'reads' argument must not be empty.");
+        return EXIT_FAILURE;
+    }
+
     const std::string output_dir = cli::get_output_dir(parser).value();
     const bool recursive_input(parser.get<bool>("recursive"));
     const cli::EmitArgs emit = cli::get_emit_args(parser);
@@ -190,12 +194,6 @@ int demuxer(int argc, char* argv[]) {
 
     auto strip_alignment = !no_trim;
     std::vector<std::string> args(argv, argv + argc);
-
-    // Only allow `reads` to be empty if we're accepting input from a pipe
-    if (reads.empty() && utils::is_fd_tty(stdin)) {
-        std::cout << parser << '\n';
-        return EXIT_FAILURE;
-    }
 
     const auto all_files = cli::collect_inputs(reads, recursive_input);
     if (all_files.empty()) {
