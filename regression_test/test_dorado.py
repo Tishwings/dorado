@@ -92,7 +92,7 @@ class TestDorado(unittest.TestCase):
 
             for run in runs:
                 suffix = "cram" if run.emit_cram else "bam"
-                expected_files = {"txt": 1}
+                expected_files = {"txt": 1, "tsv": 1}
                 if USE_PYSAM:
                     expected_files[suffix] = 1
 
@@ -127,7 +127,7 @@ class TestDorado(unittest.TestCase):
                                     outfile=outfile,
                                     errfile=errfile,
                                 )
-                            # Now generate a post-run summary file, which we check for regressions but don't validate against the spec.
+                            # Now generate a post-run summary file
                             # Specifically make this a ".tsv" file so we don't mix it up with the inline summary
                             make_summary(
                                 output_file, "summary.tsv", DEFAULT_MAX_TIMEOUT
@@ -192,7 +192,7 @@ class TestDorado(unittest.TestCase):
 
             for run in runs:
                 suffix = "cram" if run.emit_cram else "bam"
-                expected_files = {"txt": 1}
+                expected_files = {"txt": 1, "tsv": 1}
                 if USE_PYSAM:
                     expected_files[suffix] = 1
 
