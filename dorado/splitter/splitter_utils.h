@@ -84,14 +84,16 @@ SampleRanges<T> detect_pore_signal(const at::Tensor& signal,
         }
 
         auto& last_cluster = merged_clusters.back();
-        if (cluster.start_sample - last_cluster.end_sample < cluster_dist) {
+        if (cluster.start_sample - last_cluster.end_sample > cluster_dist) {
+            // new cluster is too far away to merge, just accept it
+            merged_clusters.push_back(std::move(cluster));
+        } else {
+            // extend previous cluster and update metadata
             last_cluster.end_sample = cluster.end_sample;
             if (cluster.max_val >= last_cluster.max_val) {
                 last_cluster.max_val = cluster.max_val;
                 last_cluster.argmax_sample = cluster.argmax_sample;
             }
-        } else {
-            merged_clusters.push_back(std::move(cluster));
         }
     }
 
