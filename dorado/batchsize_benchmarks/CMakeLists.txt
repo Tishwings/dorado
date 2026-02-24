@@ -6,7 +6,7 @@ dorado_add_library(dorado_benchmarks
     SOURCES_PUBLIC
         batchsize_benchmarks.h
     SOURCES_PRIVATE
-        #batchsize_benchmarks.cpp
+        batchsize_benchmarks.cpp
         BenchmarkCache.cpp
         BenchmarkCache.h
         BenchmarkSink.cpp
@@ -18,6 +18,7 @@ dorado_add_library(dorado_benchmarks
         dorado_api
         dorado_basecall
         dorado_config
+        dorado_io_lib
         dorado_read_pipeline
         dorado_utils
         spdlog::spdlog
