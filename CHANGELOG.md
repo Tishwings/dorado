@@ -2,6 +2,13 @@
 
 All notable changes to Dorado will be documented in this file.
 
+# [1.1.2] (1 May 2026)
+
+This release of Dorado introduces a minor update to RNA read splitting.
+
+* 4ae60e8ecadc38b0eb1a8349b543e5a18b060f71 - Avoid overzealous RNA read splitting in the presence of crosstalk from adjacent channels
+
+
 # [1.4.0] (19 February 2026)
 
 This release of Dorado introduces new RNA v5.3.0 basecalling models, CRAM support, and a variety of other improvements and fixes.
