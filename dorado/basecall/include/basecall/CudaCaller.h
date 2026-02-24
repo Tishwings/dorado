@@ -54,6 +54,7 @@ public:
     std::pair<int, int> batch_timeouts_ms() const;
 
     static int get_batch_size_granularity(const config::BasecallModelConfig &model_config);
+    static int64_t get_gpu_mem_limit(c10::Device device, float memory_limit_fraction);
 
 private:
     struct GPUTaskQueue;

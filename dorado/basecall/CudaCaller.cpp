@@ -226,6 +226,37 @@ int CudaCaller::get_batch_size_granularity(const config::BasecallModelConfig &mo
     return model_config.is_tx_model() ? 32 : 64;
 }
 
+int64_t CudaCaller::get_gpu_mem_limit(c10::Device device, float memory_limit_fraction) {
+    c10::cuda::CUDAGuard device_guard(device);
+    c10::cuda::CUDACachingAllocator::emptyCache();
+    const int64_t available = utils::available_memory(device);
+    spdlog::debug("{}:{} memory available: {:.2f}GB", c10::DeviceTypeName(device.type()),
+                  device.index(), available / GB);
+
+    // If running on a Jetson device with unified memory for CPU and GPU we can't use all
+    // the available memory for GPU tasks. This way we leave at least half for the CPU,
+    // though it's not clear what the ideal split would be.
+    cudaDeviceProp *prop = at::cuda::getCurrentDeviceProperties();
+    bool is_unified_memory_device = (prop->major == 5 && prop->minor == 3) ||   // TX1
+                                    (prop->major == 6 && prop->minor == 2) ||   // TX2
+                                    (prop->major == 7 && prop->minor == 2) ||   // Xavier
+                                    (prop->major == 8 && prop->minor == 7) ||   // Orin
+                                    (prop->major == 11 && prop->minor == 0) ||  // Thor
+                                    (prop->major == 12 && prop->minor == 1);    // DGX Spark
+    if (is_unified_memory_device) {
+        memory_limit_fraction *= 0.5f;
+    }
+
+    if (is_unified_memory_device && prop->major >= 8 && available > (32 * GB)) {
+        // restrict Orin and Thor further as there's no benefit to the largest batch sizes
+        // and definite down sides to using all the memory
+        memory_limit_fraction *= 0.5f;
+    }
+
+    // Apply limit fraction.
+    return static_cast<int64_t>(available * memory_limit_fraction);
+}
+
 std::vector<decode::DecodedChunk> CudaCaller::call_chunks(at::Tensor &input,
                                                           at::Tensor &output,
                                                           int num_chunks,
@@ -379,8 +410,6 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
 
     c10::cuda::CUDAGuard device_guard(m_options.device());
     c10::cuda::CUDACachingAllocator::emptyCache();
-    int64_t available = utils::available_memory(m_options.device());
-    spdlog::debug("{} memory available: {:.2f}GB", m_device, available / GB);
     const int batch_granularity = get_batch_size_granularity(m_config);
     const int chunk_granularity = m_config.chunk_size_granularity();
     const int stride = m_config.stride;
@@ -422,26 +451,9 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
         m_batch_dims.push_back({batch_granularity, *iter * stride, *iter});
     }
 
-    // If running on a Jetson device with unified memory for CPU and GPU we can't use all
-    // the available memory for GPU tasks. This way we leave at least half for the CPU,
-    // though it's not clear what the ideal split would be.
-    cudaDeviceProp *prop = at::cuda::getCurrentDeviceProperties();
-    bool is_unified_memory_device = (prop->major == 5 && prop->minor == 3) ||   // TX1
-                                    (prop->major == 6 && prop->minor == 2) ||   // TX2
-                                    (prop->major == 7 && prop->minor == 2) ||   // Xavier
-                                    (prop->major == 8 && prop->minor == 7) ||   // Orin
-                                    (prop->major == 11 && prop->minor == 0) ||  // Thor
-                                    (prop->major == 12 && prop->minor == 1);    // DGX Spark
-    float memory_limit_fraction =
-            params.memory_limit_fraction * (is_unified_memory_device ? 0.5f : 1.f);
-    if (is_unified_memory_device && prop->major >= 8 && available > (32 * GB)) {
-        // restrict Orin and Thor further as there's no benefit to the largest batch sizes
-        // and definite down sides to using all the memory
-        memory_limit_fraction *= 0.5f;
-    }
-
-    // Apply limit fraction, and allow 1GB for model weights, etc.
-    int64_t gpu_mem_limit = int64_t(available * memory_limit_fraction - GB);
+    // Allow 1GB for model weights, etc.
+    const int64_t gpu_mem_limit =
+            get_gpu_mem_limit(m_options.device(), params.memory_limit_fraction) - GB;
     if (gpu_mem_limit < 0) {
         spdlog::warn("Failed to determine safe batch size. Less than 1GB GPU memory available.");
         return;
@@ -517,6 +529,7 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
     const std::string model_name = m_config.model_path.filename().string();
 
     // See if we can find cached values for the chunk timings for this run condition
+    cudaDeviceProp *prop = at::cuda::getCurrentDeviceProperties();
     const auto chunk_benchmarks =
             CudaChunkBenchmarks::instance().get_chunk_timings(prop->name, model_name);
     if (!chunk_benchmarks || params.run_batchsize_benchmarks) {
