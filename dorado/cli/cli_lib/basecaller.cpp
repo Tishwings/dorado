@@ -370,6 +370,52 @@ auto create_runners(const BasecallModelConfig& model_config,
     return std::make_tuple(num_devices, std::move(runners), std::move(modbase_runners));
 }
 
+auto create_writers(ProgressTracker& tracker,
+                    [[maybe_unused]] const std::string& device,
+                    const cli::EmitArgs& emit,
+                    const std::string& ref,
+                    hts_writer::SummaryFileWriter::FieldFlags writer_flags,
+                    const std::optional<std::string>& output_dir,
+                    const utils::ThreadAllocations& thread_allocations) {
+    std::vector<std::unique_ptr<hts_writer::IWriter>> writers;
+
+    std::string gpu_names;
+#if DORADO_CUDA_BUILD
+    gpu_names = utils::get_cuda_gpu_names(device);
+#endif
+
+    auto progress_callback = utils::ProgressCallback([&tracker](size_t progress) {
+        tracker.update_post_processing_progress(static_cast<float>(progress));
+    });
+    auto description_callback = utils::DescriptionCallback(
+            [&tracker](const std::string& description) { tracker.set_description(description); });
+    auto hts_writer_builder = hts_writer::BasecallHtsFileWriterBuilder(
+            emit.fastq, emit.sam, emit.cram, !ref.empty(), output_dir,
+            thread_allocations.writer_threads, progress_callback, description_callback, gpu_names);
+
+    std::unique_ptr<hts_writer::HtsFileWriter> hts_file_writer = hts_writer_builder.build();
+    if (hts_file_writer == nullptr) {
+        throw std::runtime_error("Failed to create hts file writer");
+    }
+
+    if (!ref.empty() && emit.cram) {
+        hts_file_writer->set_cram_reference(ref);
+    }
+
+    tracker.set_post_processing_percentage(hts_file_writer->finalise_is_noop() ? 0.0f : 0.5f);
+    writers.push_back(std::move(hts_file_writer));
+
+    if (emit.summary) {
+        auto summary_output = output_dir.has_value() ? std::filesystem::path(output_dir.value())
+                                                     : std::filesystem::current_path();
+        auto summary_writer =
+                std::make_unique<hts_writer::SummaryFileWriter>(summary_output, writer_flags);
+        writers.push_back(std::move(summary_writer));
+    }
+
+    return writers;
+}
+
 Models load_basecaller_models(const argparse::ArgumentParser& parser,
                               const InputPod5FolderInfo& pod5_folder_info,
                               const std::string& context) {
@@ -432,6 +478,11 @@ void setup(const std::vector<std::string>& args,
     auto [num_devices, runners, modbase_runners] = create_runners(
             model_config, models.get_modbase_model_paths(), device, num_runners, modbase_params,
             run_batchsize_benchmarks, emit_batchsize_benchmarks, variable_chunk_sizes);
+    if (emit.fastq && !modbase_runners.empty()) {
+        throw std::runtime_error(
+                "--emit-fastq cannot be used with modbase models as FASTQ cannot store modbase "
+                "results.");
+    }
 
     auto read_groups = file_info::load_read_groups(
             pod5_folder_info.files().get(), models.get_simplex_config().stride,
@@ -444,72 +495,22 @@ void setup(const std::vector<std::string>& args,
             int(num_devices), !modbase_runners.empty() ? int(modbase_params.threads) : 0,
             enable_aligner, barcoding_info != nullptr, adapter_trimming_enabled);
 
-    std::string gpu_names{};
-#if DORADO_CUDA_BUILD
-    gpu_names = utils::get_cuda_gpu_names(device);
-#endif
-
     std::optional<std::string> barcode_kit;
     const utils::SampleSheet* sample_sheet = nullptr;
     if (barcoding_info) {
         barcode_kit = barcoding_info->kit_name;
         sample_sheet = barcoding_info->sample_sheet.get();
     }
-
     utils::HeaderMapper header_mapper(read_groups, barcode_kit, sample_sheet);
-    std::vector<std::unique_ptr<hts_writer::IWriter>> writers;
-    {
-        auto progress_callback = utils::ProgressCallback([&tracker](size_t progress) {
-            tracker.update_post_processing_progress(static_cast<float>(progress));
-        });
-        auto description_callback =
-                utils::DescriptionCallback([&tracker](const std::string& description) {
-                    tracker.set_description(description);
-                });
-        auto hts_writer_builder = hts_writer::BasecallHtsFileWriterBuilder(
-                emit.fastq, emit.sam, emit.cram, !ref.empty(), output_dir,
-                thread_allocations.writer_threads, progress_callback, description_callback,
-                gpu_names);
 
-        if (hts_writer_builder.get_output_mode() == OutputMode::FASTQ && !modbase_runners.empty()) {
-            throw std::runtime_error(
-                    "--emit-fastq cannot be used with modbase models as FASTQ cannot store modbase "
-                    "results.");
-        }
-
-        std::unique_ptr<hts_writer::HtsFileWriter> hts_file_writer = hts_writer_builder.build();
-        if (hts_file_writer == nullptr) {
-            throw std::runtime_error("Failed to create hts file writer");
-        }
-
-        if (!ref.empty() && emit.cram) {
-            hts_file_writer->set_cram_reference(ref);
-        }
-
-        tracker.set_post_processing_percentage(hts_file_writer->finalise_is_noop() ? 0.0f : 0.5f);
-        writers.push_back(std::move(hts_file_writer));
-    }
-
-    if (emit.summary) {
-        using namespace hts_writer;
-        auto summary_output = output_dir.has_value() ? std::filesystem::path(output_dir.value())
-                                                     : std::filesystem::current_path();
-
-        SummaryFileWriter::FieldFlags flags =
-                SummaryFileWriter::BASECALLING_FIELDS | SummaryFileWriter::EXPERIMENT_FIELDS;
-        if (enable_aligner) {
-            flags |= SummaryFileWriter::ALIGNMENT_FIELDS;
-        }
-        if (estimate_poly_a) {
-            flags |= SummaryFileWriter::POLYA_FIELDS;
-        }
-        if (barcoding_info) {
-            flags |= SummaryFileWriter::BARCODING_FIELDS;
-        }
-        auto summary_writer =
-                std::make_unique<hts_writer::SummaryFileWriter>(summary_output, flags);
-        writers.push_back(std::move(summary_writer));
-    }
+    const hts_writer::SummaryFileWriter::FieldFlags writer_flags =
+            hts_writer::SummaryFileWriter::BASECALLING_FIELDS |
+            hts_writer::SummaryFileWriter::EXPERIMENT_FIELDS |
+            (enable_aligner ? hts_writer::SummaryFileWriter::ALIGNMENT_FIELDS : 0) |
+            (estimate_poly_a ? hts_writer::SummaryFileWriter::POLYA_FIELDS : 0) |
+            (barcoding_info ? hts_writer::SummaryFileWriter::BARCODING_FIELDS : 0);
+    std::vector<std::unique_ptr<hts_writer::IWriter>> writers = create_writers(
+            tracker, device, emit, ref, writer_flags, output_dir, thread_allocations);
 
     spdlog::info("> Creating basecall pipeline");
     PipelineDescriptor pipeline_desc;
@@ -793,9 +794,6 @@ int basecaller(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
-    models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
-
     bool trim_barcodes = true, trim_primers = true, trim_adapters = true;
     auto trim_options = parser.get<std::string>("--trim");
     if (parser.get<bool>("--no-trim")) {
@@ -893,10 +891,12 @@ int basecaller(int argc, char* argv[]) {
     const bool run_batchsize_benchmarks = parser.get<bool>("--emit-batchsize-benchmarks") ||
                                           parser.get<bool>("--run-batchsize-benchmarks");
 
+    Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
+    models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
+
     size_t device_count = 1;
 #if DORADO_CUDA_BUILD
-    auto initial_device_info = utils::get_cuda_device_info(device, false);
-    device_count = initial_device_info.size();
+    device_count = utils::get_cuda_device_info(device, false).size();
 #endif
 
     const auto modbase_params =
