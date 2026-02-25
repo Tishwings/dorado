@@ -99,7 +99,7 @@ int trim(int argc, char* argv[]) {
     auto reads(parser.get<std::vector<std::string>>("reads"));
     auto threads(parser.get<int>("threads"));
     auto max_reads(parser.get<int>("max-reads"));
-    std::vector<std::string> args(argv, argv + argc);
+    std::vector<std::string_view> args(argv, argv + argc);
 
     threads = threads == 0 ? std::thread::hardware_concurrency() : threads;
     // The input thread is the total number of threads to use for dorado

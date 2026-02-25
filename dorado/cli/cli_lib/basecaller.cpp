@@ -538,7 +538,7 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
     }
 }
 
-void update_headers(const std::vector<std::string>& args,
+void update_headers(std::span<std::string_view> args,
                     const Models& models,
                     const InputPod5FolderInfo& pod5_folder_info,
                     const std::string& device,
@@ -653,7 +653,7 @@ std::unordered_set<std::string> process_resume_file(const Models& models,
     return resume_loader.get_processed_read_ids();
 }
 
-void setup(const std::vector<std::string>& args,
+void setup(std::span<std::string_view> args,
            const Models& models,
            const InputPod5FolderInfo& pod5_folder_info,
            const std::string& device,
@@ -816,7 +816,7 @@ int basecaller(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    std::vector<std::string> args(argv, argv + argc);
+    std::vector<std::string_view> args(argv, argv + argc);
 
     if (parser.get<bool>("--verbose")) {
         utils::SetVerboseLogging(static_cast<dorado::utils::VerboseLogLevel>(verbosity));

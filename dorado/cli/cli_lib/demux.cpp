@@ -193,7 +193,7 @@ int demuxer(int argc, char* argv[]) {
     std::size_t max_reads(parser.get<int>("max-reads"));
 
     auto strip_alignment = !no_trim;
-    std::vector<std::string> args(argv, argv + argc);
+    std::vector<std::string_view> args(argv, argv + argc);
 
     const auto all_files = cli::collect_inputs(reads, recursive_input);
     if (all_files.empty()) {

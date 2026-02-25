@@ -22,13 +22,11 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
-#include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -62,8 +60,8 @@ inline std::pair<int, int> worker_vs_writer_thread_allocation(int available_thre
 }
 
 inline void add_pg_hdr(sam_hdr_t* hdr,
-                       const std::string& pg_id,
-                       const std::vector<std::string>& args,
+                       const char* pg_id,
+                       std::span<std::string_view> args,
                        const std::string& device) {
     utils::add_hd_header_line(hdr);
 
@@ -83,8 +81,8 @@ inline void add_pg_hdr(sam_hdr_t* hdr,
     (void)device;
 #endif
 
-    auto ds_str = ds.str();
-    sam_hdr_add_pg(hdr, pg_id.c_str(), "PN", "dorado", "VN", DORADO_VERSION, "CL", cl.str().c_str(),
+    auto const& ds_str = ds.str();
+    sam_hdr_add_pg(hdr, pg_id, "PN", "dorado", "VN", DORADO_VERSION, "CL", cl.str().c_str(),
                    ds_str.empty() ? nullptr : "DS", ds_str.empty() ? nullptr : ds_str.c_str(),
                    nullptr);
 }

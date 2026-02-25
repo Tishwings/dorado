@@ -271,7 +271,7 @@ int duplex(int argc, char* argv[]) {
         auto min_qscore(parser.get<int>("--min-qscore"));
         auto ref = parser.get<std::string>("--reference");
         auto bed = parser.get<std::string>("--bed-file");
-        std::vector<std::string> args(argv, argv + argc);
+        std::vector<std::string_view> args(argv, argv + argc);
         if (parser.get<bool>("--verbose")) {
             utils::SetVerboseLogging(static_cast<dorado::utils::VerboseLogLevel>(verbosity));
         }
