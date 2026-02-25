@@ -538,6 +538,58 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
     }
 }
 
+void update_headers(const std::vector<std::string>& args,
+                    const Models& models,
+                    const InputPod5FolderInfo& pod5_folder_info,
+                    const std::string& device,
+                    const std::optional<std::string>& output_dir,
+                    const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
+                    Pipeline& pipeline,
+                    NodeHandle aligner_idx,
+                    NodeHandle hts_writer_idx) {
+    auto read_groups = file_info::load_read_groups(
+            pod5_folder_info.files().get(), models.get_simplex_config().stride,
+            models.get_simplex_model_name(), utils::join(models.get_modbase_model_names(), ","));
+
+    std::optional<std::string> barcode_kit;
+    const utils::SampleSheet* sample_sheet = nullptr;
+    if (barcoding_info) {
+        barcode_kit = barcoding_info->kit_name;
+        sample_sheet = barcoding_info->sample_sheet.get();
+    }
+    utils::HeaderMapper header_mapper(read_groups, barcode_kit, sample_sheet);
+
+    auto modify_hdr = utils::HeaderMapper::Modifier([&args, &device](sam_hdr_t* hdr) {
+        utils::add_hd_header_line(hdr);
+        cli::add_pg_hdr(hdr, "basecaller", args, device);
+    });
+    header_mapper.modify_headers(modify_hdr);
+
+    auto update_sequence_headers = utils::HeaderMapper::Modifier([&](sam_hdr_t* hdr) {
+        if (aligner_idx != PipelineDescriptor::InvalidNodeHandle) {
+            // At present, header output file header writing relies on direct node method calls
+            // rather than the pipeline framework - because we must guarantee that the header is set
+            // BEFORE we write any reads.
+            const auto& aligner_ref = pipeline.get_node_ref<AlignerNode>(aligner_idx);
+            utils::add_sq_hdr(hdr, aligner_ref.get_sequence_records_for_header());
+        }
+    });
+
+    // Set the headers for all writers
+    const auto& hts_writer_ref = pipeline.get_node_ref<WriterNode>(hts_writer_idx);
+    if (output_dir.has_value()) {
+        header_mapper.modify_headers(update_sequence_headers);
+        hts_writer_ref.set_dynamic_header(header_mapper.get_merged_headers_map());
+    } else {
+        // Convert the dynamic header into a single merged sharable header
+        // Strip the alignments and add them back in because merge header finalise
+        // can change the tid / sq line indexing
+        auto shared_merged_header = header_mapper.get_shared_merged_header(true);
+        update_sequence_headers(shared_merged_header.get());
+        hts_writer_ref.set_shared_header(std::move(shared_merged_header));
+    }
+}
+
 std::unordered_set<std::string> process_resume_file(const Models& models,
                                                     const InputPod5FolderInfo& pod5_folder_info,
                                                     const std::optional<std::string>& output_dir,
@@ -650,24 +702,12 @@ void setup(const std::vector<std::string>& args,
                 "results.");
     }
 
-    auto read_groups = file_info::load_read_groups(
-            pod5_folder_info.files().get(), models.get_simplex_config().stride,
-            models.get_simplex_model_name(), utils::join(models.get_modbase_model_names(), ","));
-
     const bool enable_aligner = !ref.empty();
     const bool adapter_trimming_enabled =
             (adapter_info && (adapter_info->trim_adapters || adapter_info->trim_primers));
     const auto thread_allocations = utils::default_thread_allocations(
             int(num_devices), !modbase_runners.empty() ? int(modbase_params.threads) : 0,
             enable_aligner, barcoding_info != nullptr, adapter_trimming_enabled);
-
-    std::optional<std::string> barcode_kit;
-    const utils::SampleSheet* sample_sheet = nullptr;
-    if (barcoding_info) {
-        barcode_kit = barcoding_info->kit_name;
-        sample_sheet = barcoding_info->sample_sheet.get();
-    }
-    utils::HeaderMapper header_mapper(read_groups, barcode_kit, sample_sheet);
 
     const hts_writer::SummaryFileWriter::FieldFlags writer_flags =
             hts_writer::SummaryFileWriter::BASECALLING_FIELDS |
@@ -689,38 +729,8 @@ void setup(const std::vector<std::string>& args,
         throw std::runtime_error("Failed to create pipeline");
     }
 
-    auto modify_hdr = utils::HeaderMapper::Modifier([&args, &device](sam_hdr_t* hdr) {
-        utils::add_hd_header_line(hdr);
-        cli::add_pg_hdr(hdr, "basecaller", args, device);
-    });
-
-    header_mapper.modify_headers(modify_hdr);
-
-    auto update_sequence_headers = utils::HeaderMapper::Modifier([&](sam_hdr_t* hdr) {
-        if (enable_aligner) {
-            // At present, header output file header writing relies on direct node method calls
-            // rather than the pipeline framework - because we must guarantee that the header is set
-            // BEFORE we write any reads.
-            const auto& aligner_ref = pipeline->get_node_ref<AlignerNode>(aligner_idx);
-            utils::add_sq_hdr(hdr, aligner_ref.get_sequence_records_for_header());
-        }
-    });
-
-    {
-        // Set the headers for all writers
-        const auto& hts_writer_ref = pipeline->get_node_ref<WriterNode>(hts_writer_idx);
-        if (output_dir.has_value()) {
-            header_mapper.modify_headers(update_sequence_headers);
-            hts_writer_ref.set_dynamic_header(header_mapper.get_merged_headers_map());
-        } else {
-            // Convert the dynamic header into a single merged sharable header
-            // Strip the alignments and add them back in because merge header finalise
-            // can change the tid / sq line indexing
-            auto shared_merged_header = header_mapper.get_shared_merged_header(true);
-            update_sequence_headers(shared_merged_header.get());
-            hts_writer_ref.set_shared_header(std::move(shared_merged_header));
-        }
-    }
+    update_headers(args, models, pod5_folder_info, device, output_dir, barcoding_info, *pipeline,
+                   aligner_idx, hts_writer_idx);
 
     std::unordered_set<std::string> reads_already_processed = process_resume_file(
             models, pod5_folder_info, output_dir, resume_from_file, *pipeline, hts_writer_idx);
