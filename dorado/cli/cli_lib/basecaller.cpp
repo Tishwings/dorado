@@ -538,6 +538,69 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
     }
 }
 
+std::unordered_set<std::string> process_resume_file(const Models& models,
+                                                    const InputPod5FolderInfo& pod5_folder_info,
+                                                    const std::optional<std::string>& output_dir,
+                                                    const std::string& resume_from_file,
+                                                    Pipeline& pipeline,
+                                                    NodeHandle hts_writer_idx) {
+    if (resume_from_file.empty()) {
+        return {};
+    }
+
+    if (output_dir.has_value()) {
+        throw std::runtime_error("--resume-from cannot be used with --output-dir.");
+    }
+
+    spdlog::info("> Inspecting resume file...");
+    // Turn off warning logging as header info is fetched.
+    auto initial_hts_log_level = hts_get_log_level();
+    hts_set_log_level(HTS_LOG_OFF);
+    auto pg_keys = utils::extract_pg_keys_from_hdr(resume_from_file, {"CL"}, "ID", "basecaller");
+    hts_set_log_level(initial_hts_log_level);
+
+    std::vector<std::string> tokens;
+    try {
+        tokens = cli::extract_token_from_cli(pg_keys["CL"]);
+    } catch (const std::exception& e) {
+        spdlog::debug("Caught error: '{}'", e.what());
+        throw std::runtime_error(
+                "Failed to parse resume parameters as --resume-from file 'CL' (Command Line) "
+                "header is invalid. This might happen if the HTS file headers were dropped "
+                "with the default samtools '--no-headers' argument.");
+    }
+
+    // First token is the dorado binary name. Remove that because the
+    // sub parser only knows about the `basecaller` command.
+    tokens.erase(tokens.begin());
+
+    std::vector<std::string> resume_args_excluding_mm2_opts{};
+    alignment::mm2::extract_options_string_arg(tokens, resume_args_excluding_mm2_opts);
+
+    // Create a new basecaller parser to parse the resumed basecaller CLI string
+    argparse::ArgumentParser resume_parser("dorado");
+    int verbosity = 0;
+    set_dorado_basecaller_args(resume_parser, verbosity);
+    resume_parser.parse_known_args(resume_args_excluding_mm2_opts);
+
+    const Models resume_models =
+            load_basecaller_models(resume_parser, pod5_folder_info, "--resume-from");
+
+    if (resume_models != models) {
+        models.print("Current");
+        resume_models.print("Resumed");
+        throw std::runtime_error(
+                "Inconsistent models used in this pipeline and those used in the --resume-from "
+                "file.");
+    }
+
+    // Resume functionality injects reads directly into the writer node.
+    auto& hts_writer_ref = pipeline.get_node_ref<WriterNode>(hts_writer_idx);
+    ResumeLoader resume_loader(hts_writer_ref, resume_from_file);
+    resume_loader.copy_completed_reads();
+    return resume_loader.get_processed_read_ids();
+}
+
 void setup(const std::vector<std::string>& args,
            const Models& models,
            const InputPod5FolderInfo& pod5_folder_info,
@@ -659,61 +722,8 @@ void setup(const std::vector<std::string>& args,
         }
     }
 
-    std::unordered_set<std::string> reads_already_processed;
-    if (!resume_from_file.empty()) {
-        if (output_dir.has_value()) {
-            throw std::runtime_error("--resume-from cannot be used with --output-dir.");
-        }
-
-        spdlog::info("> Inspecting resume file...");
-        // Turn off warning logging as header info is fetched.
-        auto initial_hts_log_level = hts_get_log_level();
-        hts_set_log_level(HTS_LOG_OFF);
-        auto pg_keys =
-                utils::extract_pg_keys_from_hdr(resume_from_file, {"CL"}, "ID", "basecaller");
-        hts_set_log_level(initial_hts_log_level);
-
-        std::vector<std::string> tokens;
-        try {
-            tokens = cli::extract_token_from_cli(pg_keys["CL"]);
-        } catch (const std::exception& e) {
-            spdlog::debug("Caught error: '{}'", e.what());
-            throw std::runtime_error(
-                    "Failed to parse resume parameters as --resume-from file 'CL' (Command Line) "
-                    "header is invalid. This might happen if the HTS file headers were dropped "
-                    "with the default samtools '--no-headers' argument.");
-        }
-
-        // First token is the dorado binary name. Remove that because the
-        // sub parser only knows about the `basecaller` command.
-        tokens.erase(tokens.begin());
-
-        std::vector<std::string> resume_args_excluding_mm2_opts{};
-        alignment::mm2::extract_options_string_arg(tokens, resume_args_excluding_mm2_opts);
-
-        // Create a new basecaller parser to parse the resumed basecaller CLI string
-        argparse::ArgumentParser resume_parser("dorado");
-        int verbosity = 0;
-        set_dorado_basecaller_args(resume_parser, verbosity);
-        resume_parser.parse_known_args(resume_args_excluding_mm2_opts);
-
-        const Models resume_models =
-                load_basecaller_models(resume_parser, pod5_folder_info, "--resume-from");
-
-        if (resume_models != models) {
-            models.print("Current");
-            resume_models.print("Resumed");
-            throw std::runtime_error(
-                    "Inconsistent models used in this pipeline and those used in the --resume-from "
-                    "file.");
-        }
-
-        // Resume functionality injects reads directly into the writer node.
-        auto& hts_writer_ref = pipeline->get_node_ref<WriterNode>(hts_writer_idx);
-        ResumeLoader resume_loader(hts_writer_ref, resume_from_file);
-        resume_loader.copy_completed_reads();
-        reads_already_processed = resume_loader.get_processed_read_ids();
-    }
+    std::unordered_set<std::string> reads_already_processed = process_resume_file(
+            models, pod5_folder_info, output_dir, resume_from_file, *pipeline, hts_writer_idx);
 
     tracker.reset_initialization_time();
     tracker.set_description("Basecalling");
@@ -741,7 +751,8 @@ void setup(const std::vector<std::string>& args,
     // Start feeding data into the pipeline.
     {
         data_loader::DataLoader loader(*pipeline, "cpu", thread_allocations.loader_threads,
-                                       max_reads, read_list, reads_already_processed);
+                                       max_reads, std::move(read_list),
+                                       std::move(reads_already_processed));
         loader.add_read_initialiser(
                 [client_info](ReadCommon& read) { read.client_info = client_info; });
         // This is blocking on all reads
