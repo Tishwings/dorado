@@ -3,7 +3,6 @@
 #include "secondary/consensus/variant_calling_sample.h"
 #include "secondary/features/decoder_base.h"
 #include "torch_utils/tensor_utils.h"
-#include "utils/ssize.h"
 
 #include <ATen/ATen.h>
 #include <catch2/catch_test_macros.hpp>
@@ -33,12 +32,12 @@ at::Tensor make_haploid_probs(const std::string_view symbols,
         lookup[static_cast<int32_t>(symbols[i])] = i;
     }
 
-    const float fp_prob = (1.0 - tp_prob) / (dorado::ssize(symbols) - 1);
+    const float fp_prob = (1.0 - tp_prob) / (std::ssize(symbols) - 1);
 
-    at::Tensor probs = at::full({dorado::ssize(seq), dorado::ssize(symbols)}, fp_prob,
+    at::Tensor probs = at::full({std::ssize(seq), std::ssize(symbols)}, fp_prob,
                                 at::TensorOptions().dtype(at::kFloat).device(at::kCPU));
 
-    for (int64_t row = 0; row < dorado::ssize(seq); ++row) {
+    for (int64_t row = 0; row < std::ssize(seq); ++row) {
         const int64_t col = lookup[static_cast<int32_t>(seq[row])];
         probs.index_put_({row, col}, tp_prob);
     }

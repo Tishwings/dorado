@@ -6,7 +6,6 @@
 #include "secondary/common/bam_file.h"
 #include "secondary/features/kadayashi_utils.h"
 #include "torch_utils/gpu_profiling.h"
-#include "utils/ssize.h"
 
 #include <htslib/faidx.h>
 #include <htslib/khash.h>
@@ -424,7 +423,7 @@ ReadAlignmentData calculate_read_alignment(
         }
         // Set major/minor position indexes, minors hold ins.
         const int64_t col_idx = major_col / (pileup.featlen * pileup.buffer_reads);
-        if ((col_idx < 0) || ((col_idx + max_ins) >= dorado::ssize(pileup.major))) {
+        if ((col_idx < 0) || ((col_idx + max_ins) >= std::ssize(pileup.major))) {
             throw std::runtime_error{
                     "[calculate_read_alignment] Index out of bounds: col_idx = " +
                     std::to_string(col_idx) + ", max_ins = " + std::to_string(max_ins) +

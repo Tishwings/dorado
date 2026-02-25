@@ -2,7 +2,6 @@
 
 #include "dorado_version.h"
 #include "utils/container_utils.h"
-#include "utils/ssize.h"
 
 #include <htslib/vcf.h>
 
@@ -150,7 +149,7 @@ void VCFWriter::write_variant(const Variant& variant) {
                              std::size(genotype_values));
 
         // Update other keys (like genotype quality).
-        for (int64_t i = 0; i < dorado::ssize(format_keys); ++i) {
+        for (int64_t i = 0; i < std::ssize(format_keys); ++i) {
             bcf_update_format_int32(m_header.get(), record.get(), format_keys[i].c_str(),
                                     &format_values[i], 1);
         }

@@ -2,7 +2,6 @@
 
 #include "interval.h"
 #include "region.h"
-#include "utils/ssize.h"
 
 #include <cstdint>
 #include <string>

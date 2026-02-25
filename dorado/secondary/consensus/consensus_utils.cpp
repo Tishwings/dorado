@@ -1,7 +1,5 @@
 #include "secondary/consensus/consensus_utils.h"
 
-#include "utils/ssize.h"
-
 #include <cassert>
 #include <cstddef>
 #include <ostream>
@@ -24,11 +22,11 @@ std::string extract_draft_with_gaps(const std::string_view draft,
                 ", positions_minor.size = " + std::to_string(std::size(positions_minor)));
     }
 
-    const int64_t draft_len = dorado::ssize(draft);
+    const int64_t draft_len = std::ssize(draft);
 
     std::string ret(std::size(positions_major), '*');
 
-    for (int64_t i = 0; i < dorado::ssize(positions_major); ++i) {
+    for (int64_t i = 0; i < std::ssize(positions_major); ++i) {
         if ((positions_major[i] < 0) || (positions_major[i] >= draft_len)) {
             throw std::runtime_error(
                     "The positions_major contains coordinates out of range for the input draft! "
@@ -60,7 +58,7 @@ std::vector<bool> variant_columns(const std::vector<int64_t>& minor,
         return {};
     }
 
-    const int64_t len = dorado::ssize(prediction);
+    const int64_t len = std::ssize(prediction);
     std::vector<bool> ret(len, false);
 
     bool is_var = (reference[0] != prediction[0]);  // Assume start on major.
@@ -172,8 +170,8 @@ void print_slice(std::ostream& os,
         os << '\n';
     };
 
-    slice_end = (slice_end <= 0) ? dorado::ssize(pos_major) : slice_end;
-    rend = (rend <= 0) ? dorado::ssize(pos_major) : rend;
+    slice_end = (slice_end <= 0) ? std::ssize(pos_major) : slice_end;
+    rend = (rend <= 0) ? std::ssize(pos_major) : rend;
 
     // IDX
     os << "    - IDX  : ";

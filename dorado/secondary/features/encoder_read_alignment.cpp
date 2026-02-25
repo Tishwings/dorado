@@ -7,7 +7,6 @@
 #include "torch_utils/gpu_profiling.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
-#include "utils/ssize.h"
 
 #include <spdlog/spdlog.h>
 
@@ -136,7 +135,7 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
 
         std::vector<std::string> prev_rids_out = read_ids_out[0];
 
-        for (int64_t n = 1; n < dorado::ssize(chunks); ++n) {
+        for (int64_t n = 1; n < std::ssize(chunks); ++n) {
             LOG_TRACE("[reorder_reads] Reordering chunk n = {}", n);
 
             auto [reordered_chunk, next_rids_out] =
@@ -208,7 +207,7 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
 
     std::vector<secondary::Sample> results;
 
-    for (int64_t i = 0; i < dorado::ssize(samples); ++i) {
+    for (int64_t i = 0; i < std::ssize(samples); ++i) {
         auto& sample = samples[i];
 
         if (std::empty(sample.positions_major)) {

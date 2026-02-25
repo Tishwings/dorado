@@ -24,7 +24,6 @@
 #include "utils/jthread.h"
 #include "utils/log_utils.h"
 #include "utils/memory_utils.h"
-#include "utils/ssize.h"
 #include "utils/string_utils.h"
 #include "utils/thread_utils.h"
 #include "variant_progress_tracker.h"
@@ -989,7 +988,7 @@ void run_variant_calling(const Options& opt,
 
     // Create windows only for the selected regions.
     std::unordered_map<std::string, std::pair<int64_t, int64_t>> draft_lookup;
-    for (int64_t seq_id = 0; seq_id < dorado::ssize(draft_lens); ++seq_id) {
+    for (int64_t seq_id = 0; seq_id < std::ssize(draft_lens); ++seq_id) {
         draft_lookup[draft_lens[seq_id].first] = {seq_id, draft_lens[seq_id].second};
     }
 
@@ -1139,7 +1138,7 @@ void run_variant_calling(const Options& opt,
         spdlog::debug("[run_variant_calling] =============================");
         spdlog::debug("[run_variant_calling] Processing batch interval of drafts: [{}, {})",
                       batch_interval.start, batch_interval.end);
-        for (int64_t i = 0; i < dorado::ssize(region_batch); ++i) {
+        for (int64_t i = 0; i < std::ssize(region_batch); ++i) {
             spdlog::debug("[run_variant_calling] region_batch i = {}: {}", i,
                           secondary::region_to_string(region_batch[i]));
         }

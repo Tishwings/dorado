@@ -1,7 +1,5 @@
 #include "secondary/consensus/sample_trimming.h"
 
-#include "utils/ssize.h"
-
 #include <spdlog/spdlog.h>
 
 #include <ostream>
@@ -123,8 +121,8 @@ Relationship relative_position(const secondary::Sample& s1, const secondary::Sam
 
     // Sort s1 and s2 by first position, and then by size in descending order
     const secondary::Sample& s1_ord =
-            (std::pair(s1.get_position(0), -dorado::ssize(s1.positions_major)) <=
-             std::pair(s2.get_position(0), -dorado::ssize(s2.positions_major)))
+            (std::pair(s1.get_position(0), -std::ssize(s1.positions_major)) <=
+             std::pair(s2.get_position(0), -std::ssize(s2.positions_major)))
                     ? s1
                     : s2;
     const secondary::Sample& s2_ord = (&s1_ord == &s1) ? s2 : s1;
@@ -148,19 +146,19 @@ std::tuple<int64_t, int64_t, bool> overlap_indices(const secondary::Sample& s1,
     const Relationship rel = relative_position(s1, s2);
 
     if (rel == Relationship::FORWARD_ABUTTED) {
-        return {dorado::ssize(s1.positions_major), 0, false};
+        return {std::ssize(s1.positions_major), 0, false};
     }
 
     // If the relationship is not supported, mark the second sample as filtered (negative value).
     if (rel != Relationship::FORWARD_OVERLAP) {
-        return {dorado::ssize(s1.positions_major), -1, false};
+        return {std::ssize(s1.positions_major), -1, false};
     }
 
     // Linear search over the pairs.
     const auto find_left = [](const secondary::Sample& s,
                               const std::pair<int64_t, int64_t> target) {
         int64_t idx = -1;
-        for (idx = 0; idx < dorado::ssize(s.positions_major); ++idx) {
+        for (idx = 0; idx < std::ssize(s.positions_major); ++idx) {
             const std::pair<int64_t, int64_t> pos = s.get_position(idx);
             if (target < pos) {
                 --idx;
@@ -173,7 +171,7 @@ std::tuple<int64_t, int64_t, bool> overlap_indices(const secondary::Sample& s1,
     const auto find_right = [](const secondary::Sample& s,
                                const std::pair<int64_t, int64_t> target) {
         int64_t idx = 0;
-        for (idx = 0; idx < dorado::ssize(s.positions_major); ++idx) {
+        for (idx = 0; idx < std::ssize(s.positions_major); ++idx) {
             const std::pair<int64_t, int64_t> pos = s.get_position(idx);
             if (target <= pos) {
                 ++idx;
@@ -194,10 +192,10 @@ std::tuple<int64_t, int64_t, bool> overlap_indices(const secondary::Sample& s1,
             << ovl_start_ind1 << ", ovl_end_ind2 = " << ovl_end_ind2 << ", s1 = {" << s1
             << "}, s2 = {" << s2 << "}. Marking the second sample as filtered.";
         spdlog::warn(oss.str());
-        return {dorado::ssize(s1.positions_major), -1, false};
+        return {std::ssize(s1.positions_major), -1, false};
     }
 
-    int64_t end_1_ind = dorado::ssize(s1.positions_major);
+    int64_t end_1_ind = std::ssize(s1.positions_major);
     int64_t start_2_ind = 0;
 
     const auto compare_subvectors = [](const std::vector<int64_t>& a, const int64_t a_start,
@@ -248,12 +246,12 @@ std::tuple<int64_t, int64_t, bool> overlap_indices(const secondary::Sample& s1,
 
         constexpr int64_t UNIQ_MAJ = 3;
 
-        end_1_ind = dorado::ssize(s1.positions_major);
+        end_1_ind = std::ssize(s1.positions_major);
         start_2_ind = 0;
 
         const auto count_unique = [](const std::vector<int64_t>& a, const int64_t start,
                                      const int64_t end) -> int64_t {
-            const int64_t len = dorado::ssize(a);
+            const int64_t len = std::ssize(a);
             if (std::empty(a) || (end <= start) || (start >= len) || (end > len)) {
                 return 0;
             }
@@ -271,7 +269,7 @@ std::tuple<int64_t, int64_t, bool> overlap_indices(const secondary::Sample& s1,
 
         const auto streak_count = [](const std::vector<int64_t>& a,
                                      const int64_t start) -> int64_t {
-            const int64_t len = dorado::ssize(a);
+            const int64_t len = std::ssize(a);
             if (std::empty(a) || (start >= len)) {
                 return 0;
             }
@@ -360,11 +358,11 @@ std::vector<TrimInfo> trim_samples(const std::vector<const secondary::Sample*>& 
     int64_t num_heuristic = 0;
 
     result[0].start = 0;
-    result[0].end = dorado::ssize(samples.front()->positions_major);
+    result[0].end = std::ssize(samples.front()->positions_major);
 
     int64_t max_filtered_idx = -1;
 
-    for (int64_t idx_s2 = 1; idx_s2 < dorado::ssize(samples); ++idx_s2) {
+    for (int64_t idx_s2 = 1; idx_s2 < std::ssize(samples); ++idx_s2) {
         const secondary::Sample& s1 = *samples[idx_s1];
         const secondary::Sample& s2 = *samples[idx_s2];
         bool heuristic = false;
@@ -376,7 +374,7 @@ std::vector<TrimInfo> trim_samples(const std::vector<const secondary::Sample*>& 
 
         // Initialize with no trimming (full sample is used).
         trim2.start = 0;
-        trim2.end = dorado::ssize(s2.positions_major);
+        trim2.end = std::ssize(s2.positions_major);
 
         const auto print_unhandled_warning = [&]() {
             std::ostringstream oss;
@@ -405,7 +403,7 @@ std::vector<TrimInfo> trim_samples(const std::vector<const secondary::Sample*>& 
                 --idx_s1;
             }
             // Reset the end coordinate of the predecessor.
-            result[idx_s1].end = dorado::ssize(samples[idx_s1]->positions_major);
+            result[idx_s1].end = std::ssize(samples[idx_s1]->positions_major);
             // Avoid infinite loops.
             if (idx_s1 == prev_idx) {
                 trim2 = {};
@@ -455,8 +453,8 @@ std::vector<TrimInfo> trim_samples(const std::vector<const secondary::Sample*>& 
         num_heuristic += heuristic;
     }
 
-    if (!std::empty(samples) && (max_filtered_idx != (dorado::ssize(samples) - 1))) {
-        result.back().end = dorado::ssize(samples.back()->positions_major);
+    if (!std::empty(samples) && (max_filtered_idx != (std::ssize(samples) - 1))) {
+        result.back().end = std::ssize(samples.back()->positions_major);
     }
 
     assert(std::size(result) == std::size(samples));
@@ -484,7 +482,7 @@ std::vector<TrimInfo> trim_samples(const std::vector<const secondary::Sample*>& 
                 continue;
             }
 
-            const int64_t num_positions = dorado::ssize(sample.positions_major);
+            const int64_t num_positions = std::ssize(sample.positions_major);
 
             // Trim left.
             for (; (region->start > 0) && (trim.start < num_positions); ++trim.start) {
