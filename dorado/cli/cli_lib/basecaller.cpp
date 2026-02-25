@@ -416,6 +416,109 @@ auto create_writers(ProgressTracker& tracker,
     return writers;
 }
 
+auto create_pipeline(std::vector<dorado::stats::StatsReporter>& stats_reporters,
+                     std::vector<std::unique_ptr<hts_writer::IWriter>> writers,
+                     std::vector<basecall::RunnerPtr> runners,
+                     std::vector<modbase::RunnerPtr> modbase_runners,
+                     const std::string& ref,
+                     const std::string& bed,
+                     const ModBaseBatchParams& modbase_params,
+                     const std::optional<std::string>& output_dir,
+                     const cli::EmitArgs& emit,
+                     size_t min_qscore,
+                     const alignment::Minimap2Options& aligner_options,
+                     bool enable_read_splitting,
+                     bool estimate_poly_a,
+                     const std::string& polya_config,
+                     const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
+                     const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info,
+                     const utils::ThreadAllocations& thread_allocations,
+                     bool adapter_trimming_enabled,
+                     const BasecallModelConfig& model_config) {
+    spdlog::info("> Creating basecall pipeline");
+
+    const bool enable_aligner = !ref.empty();
+
+    PipelineDescriptor pipeline_desc;
+    auto hts_writer = pipeline_desc.add_node<WriterNode>({}, std::move(writers));
+    auto aligner = PipelineDescriptor::InvalidNodeHandle;
+    auto current_sink_node = hts_writer;
+    if (enable_aligner) {
+        auto index_file_access = std::make_shared<alignment::IndexFileAccess>();
+        auto bed_file_access = std::make_shared<alignment::BedFileAccess>();
+        if (!bed.empty()) {
+            if (!bed_file_access->load_bedfile(bed)) {
+                throw std::runtime_error("Could not load bed-file " + bed);
+            }
+        }
+        aligner = pipeline_desc.add_node<AlignerNode>({current_sink_node}, index_file_access,
+                                                      bed_file_access, ref, bed, aligner_options,
+                                                      thread_allocations.aligner_threads);
+        current_sink_node = aligner;
+    }
+    current_sink_node = pipeline_desc.add_node<ReadToBamTypeNode>(
+            {current_sink_node}, emit.moves, thread_allocations.read_converter_threads,
+            modbase_params.threshold, 1000, min_qscore);
+
+    {
+        // When writing to output, write reads below min_qscore to "fail"
+        const size_t maybe_min_qscore = output_dir.has_value() ? 0 : min_qscore;
+
+        current_sink_node = pipeline_desc.add_node<ReadFilterNode>(
+                {current_sink_node}, maybe_min_qscore, default_parameters.min_sequence_length,
+                std::unordered_set<std::string>{}, thread_allocations.read_filter_threads);
+    }
+
+    if ((barcoding_info && barcoding_info->trim) || adapter_trimming_enabled) {
+        current_sink_node = pipeline_desc.add_node<TrimmerNode>({current_sink_node}, 1,
+                                                                is_rna_model(model_config));
+    }
+
+    const bool is_rna_adapter =
+            is_rna_model(model_config) &&
+            (adapter_info->rna_adapters || (barcoding_info && !barcoding_info->kit_name.empty()));
+
+    auto client_info = std::make_shared<DefaultClientInfo>();
+    client_info->contexts().register_context<const demux::AdapterInfo>(adapter_info);
+
+    if (estimate_poly_a) {
+        poly_tail::PolyTailCalibrationCoeffs calibration{
+                .speed = model_config.polya_speed_correction,
+                .offset = model_config.polya_offset_correction};
+        auto poly_tail_calc_selector =
+                std::make_shared<const poly_tail::PolyTailCalculatorSelector>(
+                        polya_config, is_rna_model(model_config), is_rna_adapter, calibration);
+        if (poly_tail_calc_selector->has_enabled_calculator()) {
+            client_info->contexts().register_context<const poly_tail::PolyTailCalculatorSelector>(
+                    poly_tail_calc_selector);
+            current_sink_node = pipeline_desc.add_node<PolyACalculatorNode>(
+                    {current_sink_node}, std::thread::hardware_concurrency(), 1000);
+        }
+    }
+    if (barcoding_info) {
+        client_info->contexts().register_context<const demux::BarcodingInfo>(barcoding_info);
+        current_sink_node = pipeline_desc.add_node<BarcodeClassifierNode>(
+                {current_sink_node}, thread_allocations.barcoder_threads);
+    }
+    if (adapter_trimming_enabled) {
+        current_sink_node = pipeline_desc.add_node<AdapterDetectorNode>(
+                {current_sink_node}, thread_allocations.adapter_threads);
+    }
+
+    auto mean_qscore_start_pos = model_config.mean_qscore_start_pos;
+
+    api::create_simplex_pipeline(pipeline_desc, std::move(runners), std::move(modbase_runners),
+                                 mean_qscore_start_pos, thread_allocations.scaler_node_threads,
+                                 enable_read_splitting, thread_allocations.splitter_node_threads,
+                                 thread_allocations.modbase_threads, current_sink_node,
+                                 PipelineDescriptor::InvalidNodeHandle);
+
+    // Create the Pipeline from our description.
+    auto pipeline = Pipeline::create(std::move(pipeline_desc), &stats_reporters);
+
+    return std::make_tuple(std::move(pipeline), aligner, hts_writer, std::move(client_info));
+}
+
 Models load_basecaller_models(const argparse::ArgumentParser& parser,
                               const InputPod5FolderInfo& pod5_folder_info,
                               const std::string& context) {
@@ -512,84 +615,13 @@ void setup(const std::vector<std::string>& args,
     std::vector<std::unique_ptr<hts_writer::IWriter>> writers = create_writers(
             tracker, device, emit, ref, writer_flags, output_dir, thread_allocations);
 
-    spdlog::info("> Creating basecall pipeline");
-    PipelineDescriptor pipeline_desc;
-    auto hts_writer = pipeline_desc.add_node<WriterNode>({}, std::move(writers));
-    auto aligner = PipelineDescriptor::InvalidNodeHandle;
-    auto current_sink_node = hts_writer;
-    if (enable_aligner) {
-        auto index_file_access = std::make_shared<alignment::IndexFileAccess>();
-        auto bed_file_access = std::make_shared<alignment::BedFileAccess>();
-        if (!bed.empty()) {
-            if (!bed_file_access->load_bedfile(bed)) {
-                throw std::runtime_error("Could not load bed-file " + bed);
-            }
-        }
-        aligner = pipeline_desc.add_node<AlignerNode>({current_sink_node}, index_file_access,
-                                                      bed_file_access, ref, bed, aligner_options,
-                                                      thread_allocations.aligner_threads);
-        current_sink_node = aligner;
-    }
-    current_sink_node = pipeline_desc.add_node<ReadToBamTypeNode>(
-            {current_sink_node}, emit.moves, thread_allocations.read_converter_threads,
-            modbase_params.threshold, 1000, min_qscore);
-
-    {
-        // When writing to output, write reads below min_qscore to "fail"
-        const size_t maybe_min_qscore = output_dir.has_value() ? 0 : min_qscore;
-
-        current_sink_node = pipeline_desc.add_node<ReadFilterNode>(
-                {current_sink_node}, maybe_min_qscore, default_parameters.min_sequence_length,
-                std::unordered_set<std::string>{}, thread_allocations.read_filter_threads);
-    }
-
-    if ((barcoding_info && barcoding_info->trim) || adapter_trimming_enabled) {
-        current_sink_node = pipeline_desc.add_node<TrimmerNode>({current_sink_node}, 1,
-                                                                is_rna_model(model_config));
-    }
-
-    const bool is_rna_adapter =
-            is_rna_model(model_config) &&
-            (adapter_info->rna_adapters || (barcoding_info && !barcoding_info->kit_name.empty()));
-
-    auto client_info = std::make_shared<DefaultClientInfo>();
-    client_info->contexts().register_context<const demux::AdapterInfo>(adapter_info);
-
-    if (estimate_poly_a) {
-        poly_tail::PolyTailCalibrationCoeffs calibration{
-                .speed = model_config.polya_speed_correction,
-                .offset = model_config.polya_offset_correction};
-        auto poly_tail_calc_selector =
-                std::make_shared<const poly_tail::PolyTailCalculatorSelector>(
-                        polya_config, is_rna_model(model_config), is_rna_adapter, calibration);
-        if (poly_tail_calc_selector->has_enabled_calculator()) {
-            client_info->contexts().register_context<const poly_tail::PolyTailCalculatorSelector>(
-                    poly_tail_calc_selector);
-            current_sink_node = pipeline_desc.add_node<PolyACalculatorNode>(
-                    {current_sink_node}, std::thread::hardware_concurrency(), 1000);
-        }
-    }
-    if (barcoding_info) {
-        client_info->contexts().register_context<const demux::BarcodingInfo>(barcoding_info);
-        current_sink_node = pipeline_desc.add_node<BarcodeClassifierNode>(
-                {current_sink_node}, thread_allocations.barcoder_threads);
-    }
-    if (adapter_trimming_enabled) {
-        current_sink_node = pipeline_desc.add_node<AdapterDetectorNode>(
-                {current_sink_node}, thread_allocations.adapter_threads);
-    }
-
-    auto mean_qscore_start_pos = model_config.mean_qscore_start_pos;
-
-    api::create_simplex_pipeline(pipeline_desc, std::move(runners), std::move(modbase_runners),
-                                 mean_qscore_start_pos, thread_allocations.scaler_node_threads,
-                                 enable_read_splitting, thread_allocations.splitter_node_threads,
-                                 thread_allocations.modbase_threads, current_sink_node,
-                                 PipelineDescriptor::InvalidNodeHandle);
-
     // Create the Pipeline from our description.
     std::vector<dorado::stats::StatsReporter> stats_reporters{dorado::stats::sys_stats_report};
-    auto pipeline = Pipeline::create(std::move(pipeline_desc), &stats_reporters);
+    auto [pipeline, aligner_idx, hts_writer_idx, client_info] = create_pipeline(
+            stats_reporters, std::move(writers), std::move(runners), std::move(modbase_runners),
+            ref, bed, modbase_params, output_dir, emit, min_qscore, aligner_options,
+            enable_read_splitting, estimate_poly_a, polya_config, barcoding_info, adapter_info,
+            thread_allocations, adapter_trimming_enabled, model_config);
     if (pipeline == nullptr) {
         throw std::runtime_error("Failed to create pipeline");
     }
@@ -606,14 +638,14 @@ void setup(const std::vector<std::string>& args,
             // At present, header output file header writing relies on direct node method calls
             // rather than the pipeline framework - because we must guarantee that the header is set
             // BEFORE we write any reads.
-            const auto& aligner_ref = pipeline->get_node_ref<AlignerNode>(aligner);
+            const auto& aligner_ref = pipeline->get_node_ref<AlignerNode>(aligner_idx);
             utils::add_sq_hdr(hdr, aligner_ref.get_sequence_records_for_header());
         }
     });
 
     {
         // Set the headers for all writers
-        const auto& hts_writer_ref = pipeline->get_node_ref<WriterNode>(hts_writer);
+        const auto& hts_writer_ref = pipeline->get_node_ref<WriterNode>(hts_writer_idx);
         if (output_dir.has_value()) {
             header_mapper.modify_headers(update_sequence_headers);
             hts_writer_ref.set_dynamic_header(header_mapper.get_merged_headers_map());
@@ -677,7 +709,7 @@ void setup(const std::vector<std::string>& args,
         }
 
         // Resume functionality injects reads directly into the writer node.
-        auto& hts_writer_ref = pipeline->get_node_ref<WriterNode>(hts_writer);
+        auto& hts_writer_ref = pipeline->get_node_ref<WriterNode>(hts_writer_idx);
         ResumeLoader resume_loader(hts_writer_ref, resume_from_file);
         resume_loader.copy_completed_reads();
         reads_already_processed = resume_loader.get_processed_read_ids();
