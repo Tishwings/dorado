@@ -12,7 +12,7 @@ namespace dorado::model_resolution {
 
 class Models {
 public:
-    Models(const ModelSources& sources);
+    Models(ModelSources sources);
     Models(const Models&) = delete;
 
     ~Models() { cleanup_temporary_models(); };
