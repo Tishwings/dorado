@@ -370,16 +370,6 @@ auto create_runners(const BasecallModelConfig& model_config,
     return std::make_tuple(num_devices, std::move(runners), std::move(modbase_runners));
 }
 
-void terminate_runners(std::vector<dorado::basecall::RunnerPtr>& runners,
-                       std::vector<dorado::modbase::RunnerPtr>& modbase_runners) {
-    for (auto& runner : runners) {
-        runner->terminate();
-    }
-    for (auto& runner : modbase_runners) {
-        runner->terminate();
-    }
-}
-
 Models load_basecaller_models(const argparse::ArgumentParser& parser,
                               const InputPod5FolderInfo& pod5_folder_info,
                               const std::string& context) {
@@ -395,8 +385,7 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
 
         return Models(resolver.resolve());
     } catch (const std::exception& e) {
-        spdlog::error("Failed to resolve {} models: {}", context, e.what());
-        std::exit(EXIT_FAILURE);
+        throw std::runtime_error(fmt::format("Failed to resolve {} models: {}", context, e.what()));
     }
 }
 
@@ -409,7 +398,7 @@ void setup(const std::vector<std::string>& args,
            size_t num_runners,
            const ModBaseBatchParams& modbase_params,
            const std::optional<std::string>& output_dir,
-           const cli::EmitArgs emit,
+           const cli::EmitArgs& emit,
            size_t max_reads,
            size_t min_qscore,
            const std::string& read_list_file_path,
@@ -426,10 +415,6 @@ void setup(const std::vector<std::string>& args,
            const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
            const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info,
            const int run_for_arg) {
-    if (cli::emit_cram_with_mmi_reference(emit, ref)) {
-        std::exit(EXIT_FAILURE);
-    }
-
     const BasecallModelConfig& model_config = models.get_simplex_config();
     spdlog::trace(model_config.to_string());
     spdlog::trace(modbase_params.to_string());
@@ -437,8 +422,8 @@ void setup(const std::vector<std::string>& args,
     auto read_list = utils::load_read_list(read_list_file_path);
     size_t num_reads = file_info::get_num_reads(pod5_folder_info.files().get(), read_list, {});
     if (num_reads == 0) {
-        spdlog::error("No reads found in path: " + pod5_folder_info.path().string());
-        std::exit(EXIT_FAILURE);
+        throw std::runtime_error(
+                fmt::format("No reads found in path: {}", pod5_folder_info.path().string()));
     }
     num_reads = max_reads == 0 ? num_reads : std::min(num_reads, max_reads);
 
@@ -487,18 +472,14 @@ void setup(const std::vector<std::string>& args,
                 gpu_names);
 
         if (hts_writer_builder.get_output_mode() == OutputMode::FASTQ && !modbase_runners.empty()) {
-            spdlog::error(
+            throw std::runtime_error(
                     "--emit-fastq cannot be used with modbase models as FASTQ cannot store modbase "
                     "results.");
-            terminate_runners(runners, modbase_runners);
-            std::exit(EXIT_FAILURE);
         }
 
         std::unique_ptr<hts_writer::HtsFileWriter> hts_file_writer = hts_writer_builder.build();
         if (hts_file_writer == nullptr) {
-            spdlog::error("Failed to create hts file writer");
-            terminate_runners(runners, modbase_runners);
-            std::exit(EXIT_FAILURE);
+            throw std::runtime_error("Failed to create hts file writer");
         }
 
         if (!ref.empty() && emit.cram) {
@@ -609,8 +590,7 @@ void setup(const std::vector<std::string>& args,
     std::vector<dorado::stats::StatsReporter> stats_reporters{dorado::stats::sys_stats_report};
     auto pipeline = Pipeline::create(std::move(pipeline_desc), &stats_reporters);
     if (pipeline == nullptr) {
-        spdlog::error("Failed to create pipeline");
-        std::exit(EXIT_FAILURE);
+        throw std::runtime_error("Failed to create pipeline");
     }
 
     auto modify_hdr = utils::HeaderMapper::Modifier([&args, &device](sam_hdr_t* hdr) {
@@ -649,8 +629,7 @@ void setup(const std::vector<std::string>& args,
     std::unordered_set<std::string> reads_already_processed;
     if (!resume_from_file.empty()) {
         if (output_dir.has_value()) {
-            spdlog::error("--resume-from cannot be used with --output-dir.");
-            std::exit(EXIT_FAILURE);
+            throw std::runtime_error("--resume-from cannot be used with --output-dir.");
         }
 
         spdlog::info("> Inspecting resume file...");
@@ -666,11 +645,10 @@ void setup(const std::vector<std::string>& args,
             tokens = cli::extract_token_from_cli(pg_keys["CL"]);
         } catch (const std::exception& e) {
             spdlog::debug("Caught error: '{}'", e.what());
-            spdlog::error(
+            throw std::runtime_error(
                     "Failed to parse resume parameters as --resume-from file 'CL' (Command Line) "
                     "header is invalid. This might happen if the HTS file headers were dropped "
                     "with the default samtools '--no-headers' argument.");
-            std::exit(EXIT_FAILURE);
         }
 
         // First token is the dorado binary name. Remove that because the
@@ -690,12 +668,11 @@ void setup(const std::vector<std::string>& args,
                 load_basecaller_models(resume_parser, pod5_folder_info, "--resume-from");
 
         if (resume_models != models) {
-            spdlog::error(
-                    "Inconsistent models used in this pipeline and those used in the --resume-from "
-                    "file.");
             models.print("Current");
             resume_models.print("Resumed");
-            std::exit(EXIT_FAILURE);
+            throw std::runtime_error(
+                    "Inconsistent models used in this pipeline and those used in the --resume-from "
+                    "file.");
         }
 
         // Resume functionality injects reads directly into the writer node.
@@ -931,10 +908,15 @@ int basecaller(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    const auto emit = cli::get_emit_args(parser);
+    const auto& ref = parser.get<std::string>("--reference");
+    if (cli::emit_cram_with_mmi_reference(emit, ref)) {
+        return EXIT_FAILURE;
+    }
+
     try {
-        setup(args, models, pod5_folder_info, device, parser.get<std::string>("--reference"),
-              parser.get<std::string>("--bed-file"), default_parameters.num_runners, modbase_params,
-              cli::get_output_dir(parser), cli::get_emit_args(parser),
+        setup(args, models, pod5_folder_info, device, ref, parser.get<std::string>("--bed-file"),
+              default_parameters.num_runners, modbase_params, cli::get_output_dir(parser), emit,
               parser.get<int>("--max-reads"), parser.get<int>("--min-qscore"),
               parser.get<std::string>("--read-ids"), *minimap_options,
               parser.get<std::string>("--dump_stats_file"),
