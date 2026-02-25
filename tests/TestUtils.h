@@ -57,7 +57,7 @@ public:
         }
     }
 
-    TempDir(TempDir&& other) { std::swap(m_path, other.m_path); }
+    TempDir(TempDir&& other) noexcept { std::swap(m_path, other.m_path); }
     TempDir& operator=(TempDir&& other) = delete;
 
     TempDir(const TempDir&) = delete;
