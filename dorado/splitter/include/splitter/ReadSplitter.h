@@ -39,6 +39,8 @@ struct RNASplitSettings {
     uint64_t max_pore_region = 500;
     //in samples
     uint64_t expect_pore_prefix = 2000;
+    //ignore signal spikes with duration < threshold (in samples)
+    uint64_t duration_thr = 2;
 };
 
 struct DuplexSplitSettings {
@@ -48,6 +50,8 @@ struct DuplexSplitSettings {
     uint64_t pore_cl_dist = 500;  // in samples
     //maximal 'open pore' region to consider (bp)
     uint64_t max_pore_region = 500;
+    //ignore signal spikes with duration < threshold (in samples)
+    uint64_t duration_thr = 0;
     //only use position with signal maximal as a tentative open pore
     bool use_argmax = true;
     //number of bases to check quality (starting with pore region start)

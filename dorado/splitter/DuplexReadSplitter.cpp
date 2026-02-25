@@ -139,9 +139,9 @@ DuplexReadSplitter::ExtRead DuplexReadSplitter::create_ext_read(SimplexReadPtr r
 PosRanges DuplexReadSplitter::possible_pore_regions(const DuplexReadSplitter::ExtRead& read) const {
     utils::trace_log("Analyzing signal in read {}", read.read->read_common.read_id);
 
-    auto pore_sample_ranges =
-            detect_pore_signal<c10::Half>(read.read->read_common.raw_data, m_settings.pore_thr,
-                                          m_settings.pore_cl_dist, m_settings.expect_pore_prefix);
+    auto pore_sample_ranges = detect_pore_signal<c10::Half>(
+            read.read->read_common.raw_data, m_settings.pore_thr, m_settings.pore_cl_dist,
+            m_settings.expect_pore_prefix, m_settings.duration_thr);
 
     std::vector<std::pair<float, PosRange>> candidate_regions;
     for (auto pore_sample_range : pore_sample_ranges) {
