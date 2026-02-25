@@ -530,6 +530,7 @@ void setup(const std::vector<std::string>& args,
         writers.push_back(std::move(summary_writer));
     }
 
+    spdlog::info("> Creating basecall pipeline");
     PipelineDescriptor pipeline_desc;
     auto hts_writer = pipeline_desc.add_node<WriterNode>({}, std::move(writers));
     auto aligner = PipelineDescriptor::InvalidNodeHandle;
@@ -864,12 +865,12 @@ int basecaller(int argc, char* argv[]) {
 
         if (!demux::try_configure_custom_barcode_sequences(
                     parser.present<std::string>("--barcode-sequences"))) {
-            std::exit(EXIT_FAILURE);
+            return EXIT_FAILURE;
         }
 
         if (!demux::try_configure_custom_barcode_arrangement(
                     parser.present<std::string>("--barcode-arrangement"))) {
-            std::exit(EXIT_FAILURE);
+            return EXIT_FAILURE;
         }
 
         auto barcode_sample_sheet = parser.get<std::string>("--sample-sheet");
@@ -884,7 +885,7 @@ int basecaller(int argc, char* argv[]) {
                     "{} is not a valid barcode kit name. Please run the help "
                     "command to find out available barcode kits.",
                     barcoding_info->kit_name);
-            std::exit(EXIT_FAILURE);
+            return EXIT_FAILURE;
         }
     }
 
@@ -894,7 +895,7 @@ int basecaller(int argc, char* argv[]) {
     auto primer_sequences = parser.present<std::string>("--primer-sequences");
     if (primer_sequences) {
         if (!adapter_info->set_primer_sequences(*primer_sequences)) {
-            std::exit(EXIT_FAILURE);
+            return EXIT_FAILURE;
         }
     }
     adapter_info->rna_adapters = parser.get<bool>("--rna-adapters");
@@ -903,8 +904,6 @@ int basecaller(int argc, char* argv[]) {
         const barcode_kits::KitInfo& kit_info = provider.get_kit_info(barcoding_info->kit_name);
         adapter_info->rna_adapters = kit_info.rna_barcodes;
     }
-
-    spdlog::info("> Creating basecall pipeline");
 
     std::string err_msg{};
     auto minimap_options = alignment::mm2::try_parse_options(mm2_option_string, err_msg);
