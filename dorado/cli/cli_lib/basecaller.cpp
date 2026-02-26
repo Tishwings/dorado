@@ -779,15 +779,15 @@ std::unordered_set<std::string> process_resume_file(const BasecallerOptions& opt
     return resume_loader.get_processed_read_ids();
 }
 
-void setup(const BasecallerOptions& options,
-           std::span<std::string_view> args,
-           const Models& models,
-           size_t num_runners,
-           const ModBaseBatchParams& modbase_params,
-           std::optional<std::unordered_set<std::string>> read_list,
-           const alignment::Minimap2Options& aligner_options,
-           const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
-           const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info) {
+void run(const BasecallerOptions& options,
+         std::span<std::string_view> args,
+         const Models& models,
+         size_t num_runners,
+         const ModBaseBatchParams& modbase_params,
+         std::optional<std::unordered_set<std::string>> read_list,
+         const alignment::Minimap2Options& aligner_options,
+         const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
+         const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info) {
     const BasecallModelConfig& model_config = models.get_simplex_config();
     spdlog::trace(model_config.to_string());
     spdlog::trace(modbase_params.to_string());
@@ -1035,9 +1035,9 @@ int basecaller(int argc, char* argv[]) {
                 .run_batchsize_benchmarks = run_batchsize_benchmarks,
                 .variable_chunk_sizes = !parser.get<bool>("--disable-variable-chunk-sizes"),
         };
-        setup(options, args, models, default_parameters.num_runners, modbase_params,
-              utils::load_read_list(parser.get<std::string>("--read-ids")), *minimap_options,
-              std::move(infos->barcoding_info), std::move(infos->adapter_info));
+        run(options, args, models, default_parameters.num_runners, modbase_params,
+            utils::load_read_list(parser.get<std::string>("--read-ids")), *minimap_options,
+            std::move(infos->barcoding_info), std::move(infos->adapter_info));
     } catch (const std::exception& e) {
         spdlog::error("{}", e.what());
         return EXIT_FAILURE;
