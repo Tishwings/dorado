@@ -278,7 +278,7 @@ void set_dorado_basecaller_args(argparse::ArgumentParser& parser, int& verbosity
 }
 
 ModBaseBatchParams validate_modbase_params(const std::vector<std::filesystem::path>& paths,
-                                           argparse::ArgumentParser& parser,
+                                           const argparse::ArgumentParser& parser,
                                            size_t device_count) {
     // Convert path to params.
     auto params = get_modbase_params(paths, device_count);
@@ -308,6 +308,84 @@ ModBaseBatchParams validate_modbase_params(const std::vector<std::filesystem::pa
 
     // All looks good.
     return params;
+}
+
+struct Infos {
+    std::shared_ptr<demux::AdapterInfo> adapter_info;
+    std::shared_ptr<demux::BarcodingInfo> barcoding_info;
+};
+std::optional<Infos> validate_infos(const argparse::ArgumentParser& parser) {
+    bool trim_barcodes = true, trim_primers = true, trim_adapters = true;
+    auto trim_options = parser.get<std::string>("--trim");
+    if (parser.get<bool>("--no-trim")) {
+        if (!trim_options.empty()) {
+            spdlog::error("Only one of --no-trim and --trim can be used.");
+            return std::nullopt;
+        }
+        trim_barcodes = trim_primers = trim_adapters = false;
+    }
+    if (trim_options == "none") {
+        trim_barcodes = trim_primers = trim_adapters = false;
+    } else if (trim_options == "adapters") {
+        trim_barcodes = trim_primers = false;
+    } else if (!trim_options.empty() && trim_options != "all") {
+        spdlog::error("Unsupported --trim value '{}'.", trim_options);
+        return std::nullopt;
+    }
+
+    std::shared_ptr<demux::BarcodingInfo> barcoding_info;
+    if (parser.is_used("--kit-name")) {
+        barcoding_info = std::make_shared<demux::BarcodingInfo>();
+        barcoding_info->kit_name = parser.get<std::string>("--kit-name");
+        barcoding_info->barcode_both_ends = parser.get<bool>("--barcode-both-ends");
+        barcoding_info->trim = trim_barcodes;
+
+        if (!demux::try_configure_custom_barcode_sequences(
+                    parser.present<std::string>("--barcode-sequences"))) {
+            return std::nullopt;
+        }
+
+        if (!demux::try_configure_custom_barcode_arrangement(
+                    parser.present<std::string>("--barcode-arrangement"))) {
+            return std::nullopt;
+        }
+
+        auto barcode_sample_sheet = parser.get<std::string>("--sample-sheet");
+        if (!barcode_sample_sheet.empty()) {
+            barcoding_info->sample_sheet =
+                    std::make_shared<const utils::SampleSheet>(barcode_sample_sheet, false);
+            barcoding_info->allowed_barcodes = barcoding_info->sample_sheet->get_barcode_values();
+        }
+
+        if (!barcode_kits::is_valid_barcode_kit(barcoding_info->kit_name)) {
+            spdlog::error(
+                    "{} is not a valid barcode kit name. Please run the help "
+                    "command to find out available barcode kits.",
+                    barcoding_info->kit_name);
+            return std::nullopt;
+        }
+    }
+
+    auto adapter_info = std::make_shared<demux::AdapterInfo>();
+    adapter_info->trim_adapters = trim_adapters;
+    adapter_info->trim_primers = trim_primers;
+    auto primer_sequences = parser.present<std::string>("--primer-sequences");
+    if (primer_sequences) {
+        if (!adapter_info->set_primer_sequences(*primer_sequences)) {
+            return std::nullopt;
+        }
+    }
+    adapter_info->rna_adapters = parser.get<bool>("--rna-adapters");
+    if (barcoding_info && !barcoding_info->kit_name.empty()) {
+        demux::KitInfoProvider provider(barcoding_info->kit_name);
+        const barcode_kits::KitInfo& kit_info = provider.get_kit_info(barcoding_info->kit_name);
+        adapter_info->rna_adapters = kit_info.rna_barcodes;
+    }
+
+    return Infos{
+            .adapter_info = std::move(adapter_info),
+            .barcoding_info = std::move(barcoding_info),
+    };
 }
 
 struct Runners {
@@ -870,29 +948,9 @@ int basecaller(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    const auto device = cli::parse_device(parser);
-
     if (parser.get<std::string>("--reference").empty() &&
         !parser.get<std::string>("--bed-file").empty()) {
         spdlog::error("--bed-file cannot be used without --reference.");
-        return EXIT_FAILURE;
-    }
-
-    bool trim_barcodes = true, trim_primers = true, trim_adapters = true;
-    auto trim_options = parser.get<std::string>("--trim");
-    if (parser.get<bool>("--no-trim")) {
-        if (!trim_options.empty()) {
-            spdlog::error("Only one of --no-trim and --trim can be used.");
-            return EXIT_FAILURE;
-        }
-        trim_barcodes = trim_primers = trim_adapters = false;
-    }
-    if (trim_options == "none") {
-        trim_barcodes = trim_primers = trim_adapters = false;
-    } else if (trim_options == "adapters") {
-        trim_barcodes = trim_primers = false;
-    } else if (!trim_options.empty() && trim_options != "all") {
-        spdlog::error("Unsupported --trim value '{}'.", trim_options);
         return EXIT_FAILURE;
     }
 
@@ -916,53 +974,9 @@ int basecaller(int argc, char* argv[]) {
         }
     }
 
-    std::shared_ptr<demux::BarcodingInfo> barcoding_info{};
-    if (parser.is_used("--kit-name")) {
-        barcoding_info = std::make_shared<demux::BarcodingInfo>();
-        barcoding_info->kit_name = parser.get<std::string>("--kit-name");
-        barcoding_info->barcode_both_ends = parser.get<bool>("--barcode-both-ends");
-        barcoding_info->trim = trim_barcodes;
-
-        if (!demux::try_configure_custom_barcode_sequences(
-                    parser.present<std::string>("--barcode-sequences"))) {
-            return EXIT_FAILURE;
-        }
-
-        if (!demux::try_configure_custom_barcode_arrangement(
-                    parser.present<std::string>("--barcode-arrangement"))) {
-            return EXIT_FAILURE;
-        }
-
-        auto barcode_sample_sheet = parser.get<std::string>("--sample-sheet");
-        if (!barcode_sample_sheet.empty()) {
-            barcoding_info->sample_sheet =
-                    std::make_shared<const utils::SampleSheet>(barcode_sample_sheet, false);
-            barcoding_info->allowed_barcodes = barcoding_info->sample_sheet->get_barcode_values();
-        }
-
-        if (!barcode_kits::is_valid_barcode_kit(barcoding_info->kit_name)) {
-            spdlog::error(
-                    "{} is not a valid barcode kit name. Please run the help "
-                    "command to find out available barcode kits.",
-                    barcoding_info->kit_name);
-            return EXIT_FAILURE;
-        }
-    }
-
-    auto adapter_info = std::make_shared<demux::AdapterInfo>();
-    adapter_info->trim_adapters = trim_adapters;
-    adapter_info->trim_primers = trim_primers;
-    auto primer_sequences = parser.present<std::string>("--primer-sequences");
-    if (primer_sequences) {
-        if (!adapter_info->set_primer_sequences(*primer_sequences)) {
-            return EXIT_FAILURE;
-        }
-    }
-    adapter_info->rna_adapters = parser.get<bool>("--rna-adapters");
-    if (barcoding_info && !barcoding_info->kit_name.empty()) {
-        demux::KitInfoProvider provider(barcoding_info->kit_name);
-        const barcode_kits::KitInfo& kit_info = provider.get_kit_info(barcoding_info->kit_name);
-        adapter_info->rna_adapters = kit_info.rna_barcodes;
+    auto infos = validate_infos(parser);
+    if (!infos.has_value()) {
+        return EXIT_FAILURE;
     }
 
     std::string err_msg{};
@@ -976,6 +990,7 @@ int basecaller(int argc, char* argv[]) {
     const bool run_batchsize_benchmarks = parser.get<bool>("--emit-batchsize-benchmarks") ||
                                           parser.get<bool>("--run-batchsize-benchmarks");
 
+    const auto device = cli::parse_device(parser);
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
     models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
 
@@ -1022,7 +1037,7 @@ int basecaller(int argc, char* argv[]) {
         };
         setup(options, args, models, default_parameters.num_runners, modbase_params,
               utils::load_read_list(parser.get<std::string>("--read-ids")), *minimap_options,
-              std::move(barcoding_info), std::move(adapter_info));
+              std::move(infos->barcoding_info), std::move(infos->adapter_info));
     } catch (const std::exception& e) {
         spdlog::error("{}", e.what());
         return EXIT_FAILURE;
