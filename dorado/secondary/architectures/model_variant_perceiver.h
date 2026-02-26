@@ -63,38 +63,45 @@ private:
 };
 TORCH_MODULE(SwiGLU);
 
-class MultiSequenceCrossAttentionBlockImpl : public torch::nn::Module {
+class MultiHeadCrossAttentionImpl : public torch::nn::Module {
 public:
-    MultiSequenceCrossAttentionBlockImpl(int64_t dim,
-                                         int64_t ploidy,
-                                         int64_t n_pos,
-                                         int64_t num_heads,
-                                         int64_t max_depth,
-                                         float dropout,
-                                         bool qkv_bias,
-                                         const std::optional<int64_t>& attn_window);
+    MultiHeadCrossAttentionImpl(int64_t d_model,
+                                int64_t q_max_depth,   // currently not used
+                                int64_t kv_max_depth,  // currently not used
+                                int64_t nhead,
+                                bool embed_features,  // currently not used
+                                // std::string& embedding_type,  // currently not used
+                                bool qkv_bias,
+                                bool out_bias,
+                                const std::optional<int64_t>& rotary_dim,
+                                const std::optional<int64_t>& attn_window);
 
     /**
      * \brief Update the `update_seq` tensor by attending to the `cross_attn_seqs` tensor.
-     * \param x Tensor of shape (batch_size, num_positions, num_sequences, input_dim).
-     * \param cross_attn_seq Tensor of shape (batch_size, num_positions, num_sequences, input_dim).
+     * \param x Tensor of shape (batch_size, num_positions, num_sequences_q, input_dim).
+     * \param y Tensor of shape (batch_size, num_positions, num_sequences_kv, input_dim).
+     * \param pos_mask Tensor of shape (batch_size, num_heads, num_positions * num_sequences_q, num_positions * num_sequences_kv).
      * \returns out Tensor of shape (batch_size, num_positions, num_sequences, output_dim).
      */
-    at::Tensor forward(at::Tensor x, const at::Tensor& cross_attn_seqs);
+    at::Tensor forward(at::Tensor x,
+                       const at::Tensor& y,
+                       const std::optional<at::Tensor>& pos_mask);
 
 private:
-    int64_t m_num_heads{0};
+    int64_t m_d_model{0};
+    int64_t m_nhead{0};
     int64_t m_head_dim{0};
+    bool m_embed_features{false};  // placeholder for possible future implementation
+    // std::string m_embedding_type{std:nullptr};  // placeholder for possible future implementation
+    std::optional<int64_t> m_rotary_dim{std::nullopt};
     std::optional<int64_t> m_attn_window{std::nullopt};
 
     torch::nn::Linear m_kv_proj{nullptr};
     torch::nn::Linear m_q_proj{nullptr};
-    torch::nn::Embedding m_read_embeddings{nullptr};
+    torch::nn::Linear m_out_proj{nullptr};
+    torch::nn::Identity m_q_embedding{nullptr};  // placeholder for possible future implementation
+    torch::nn::Identity m_k_embedding{nullptr};  // placeholder for possible future implementation
     RotaryEmbedding m_positional_embeddings{nullptr};
-    SwiGLU m_out_proj{nullptr};
-    nn::RMSNorm m_norm1{nullptr};
-    nn::RMSNorm m_norm2{nullptr};
-    // torch::nn::Dropout m_attn_dropout{nullptr};
 
     /**
      * \brief Implements the following masking logic:
@@ -107,30 +114,67 @@ private:
                                     const int64_t num_kv_seqs,
                                     const int64_t attn_window) const;
 
-    at::Tensor attn_fn(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v) const;
+    at::Tensor attn_fn(const at::Tensor& q,
+                       const at::Tensor& k,
+                       const at::Tensor& v,
+                       const std::optional<at::Tensor>& pos_mask) const;
+};
+TORCH_MODULE(MultiHeadCrossAttention);
+
+class MultiSequenceCrossAttentionBlockImpl : public torch::nn::Module {
+public:
+    MultiSequenceCrossAttentionBlockImpl(int64_t d_model,
+                                         int64_t q_max_depth,   // currently not used
+                                         int64_t kv_max_depth,  // currently not used
+                                         int64_t nhead,
+                                         bool embed_features,  // currently not used
+                                         // std::string embedding_type;  // currently not used
+                                         bool qkv_bias,
+                                         bool out_bias,
+                                         const std::optional<int64_t>& rotary_dim,
+                                         const std::optional<int64_t>& attn_window,
+                                         int64_t dim_feedforward,
+                                         const float deepnorm_alpha);
+
+    at::Tensor forward(at::Tensor& x,
+                       const at::Tensor& y,
+                       const std::optional<at::Tensor>& pos_mask);
+
+private:
+    at::Tensor m_deepnorm_alpha{torch::empty({})};
+
+    MultiHeadCrossAttention m_attention{nullptr};
+    SwiGLU m_ff{nullptr};
+    nn::RMSNorm m_norm1{nullptr};
+    nn::RMSNorm m_norm2{nullptr};
 };
 TORCH_MODULE(MultiSequenceCrossAttentionBlock);
 
-class SelfAttentionBlockImpl : public torch::nn::Module {
+class SelfAttentionBlockImpl : public MultiSequenceCrossAttentionBlockImpl {
 public:
-    SelfAttentionBlockImpl(int64_t dim,
-                           int64_t num_heads,
-                           float dropout,
-                           const std::optional<int64_t>& attn_window);
+    SelfAttentionBlockImpl(int64_t d_model,
+                           int64_t max_depth,  // currently not used
+                           int64_t nhead,
+                           bool embed_features,  // currently not used
+                           // std::string embedding_type;  // currently not used
+                           bool qkv_bias,
+                           bool out_bias,
+                           const std::optional<int64_t>& rotary_dim,
+                           const std::optional<int64_t>& attn_window,
+                           int64_t dim_feedforward,
+                           const float deepnorm_alpha);
 
-    at::Tensor forward(const at::Tensor& x);
-
-private:
-    MultiSequenceCrossAttentionBlock m_self_attention{nullptr};
-    nn::RMSNorm m_norm{nullptr};
+    at::Tensor forward(at::Tensor& x);
 };
 TORCH_MODULE(SelfAttentionBlock);
 
 class MessagePassingBlockImpl : public torch::nn::Module {
 public:
     MessagePassingBlockImpl(int64_t dim,
+                            int64_t read_max_dim,
                             int64_t num_heads,
-                            float dropout,
+                            bool embed_features,
+                            // std::string embedding_type,
                             bool update_read_embeddings,
                             bool cross_attend_read_embeddings,
                             const std::optional<int64_t>& attn_window);
@@ -139,9 +183,12 @@ public:
      * \brief Forward function of the MessagePassingBlock module.
      * \param read_seqs Tensor of shape (batch_size, num_positions, num_sequences, dim).
      * \param hap_seqs Tensor of shape (batch_size, num_positions, num_sequences, dim).
+     * \param mask Tensor of shape (batch_size, num_sequences (read), num_positions).
      * \return out Tensor of shape (batch_size, num_positions, num_sequences, dim).
      */
-    std::pair<at::Tensor, at::Tensor> forward(at::Tensor read_seqs, at::Tensor hap_seqs);
+    std::pair<at::Tensor, at::Tensor> forward(at::Tensor read_seqs,
+                                              at::Tensor hap_seqs,
+                                              const at::Tensor& mask);
 
 private:
     bool m_update_read_embeddings{false};
@@ -149,18 +196,15 @@ private:
     MultiSequenceCrossAttentionBlock m_reads_to_haplotypes{nullptr};
     SelfAttentionBlock m_haplotype_self_attention{nullptr};
     MultiSequenceCrossAttentionBlock m_haplotypes_to_reads{nullptr};
-
-    nn::RMSNorm m_norm_1{nullptr};
-    nn::RMSNorm m_norm_2{nullptr};
 };
 TORCH_MODULE(MessagePassingBlock);
 
 class ModelVariantPerceiver : public ModelTorchBase {
 public:
     ModelVariantPerceiver(const MustConstructWithFactory& ctor_tag,
+                          int32_t read_max_depth,
                           int32_t ploidy,
                           int32_t num_classes,
-                          int32_t read_embedding_size,
                           int32_t cnn_size,
                           const std::vector<int32_t>& kernel_sizes,
                           int32_t dimension,
@@ -174,7 +218,10 @@ public:
                           int32_t bases_embedding_size,
                           // bool time_steps,
                           bool use_decoder_lstm,
+                          bool use_per_read_embedding,
+                          // std::string& embedding_type,
                           bool update_read_embeddings,
+                          // std::optional<int32_t> attn_window,
                           const FeatureColumnMap& feature_column_map);
 
     /**
@@ -195,7 +242,6 @@ private:
 
     int32_t m_ploidy{2};
     int32_t m_num_classes{5};
-    int32_t m_read_embedding_size{128};
     int32_t m_cnn_size{128};
     std::vector<int32_t> m_kernel_sizes{1, 17};
     int32_t m_dimension{256};
@@ -232,7 +278,13 @@ private:
 
     void validate_feature_tensor(const at::Tensor& x) const;
 
-    at::Tensor create_embedded_features(const at::Tensor& in_x);
+    /**
+     * \brief Preprocessing of input tensor.
+     * \param in_x Tensor of shape (batch_size, num_positions, num_sequences, num_features).
+     * \return embedding tensor of shape (batch_size, num_positions, num_sequences, dim),
+               mask tensor of shape (batch_size, num_sequences, num_positions).
+     */
+    std::pair<at::Tensor, const at::Tensor> create_embedded_features(const at::Tensor& in_x);
 
     at::Tensor forward_impl(const at::Tensor& x);
 };

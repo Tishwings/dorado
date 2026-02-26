@@ -283,10 +283,9 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
     } else if (model_type == ModelType::VARIANT_PERCEIVER) {
         spdlog::debug("Constructing a VARIANT_PERCEIVER model.");
 
+        const int32_t read_max_depth = std::stoi(get_value(config.model_kwargs, "read_max_depth"));
         const int32_t ploidy = std::stoi(get_value(config.model_kwargs, "ploidy"));
         const int32_t num_classes = std::stoi(get_value(config.model_kwargs, "num_classes"));
-        const int32_t read_embedding_size =
-                std::stoi(get_value(config.model_kwargs, "read_embedding_size"));
         const int32_t cnn_size = std::stoi(get_value(config.model_kwargs, "cnn_size"));
         const std::vector<int32_t> kernel_sizes =
                 utils::parse_int32_vector(get_value(config.model_kwargs, "kernel_sizes"), ',');
@@ -312,11 +311,16 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
         const bool update_read_embeddings =
                 (get_value(config.model_kwargs, "update_read_embeddings") == "true");
 
+        const bool use_per_read_embedding(
+                get_value(config.model_kwargs, "use_per_read_embedding") == "true");
+        // const std::string embedding_type
+        //         (get_value(config.model_kwargs, "embedding_type"));
+
         model = ModelVariantPerceiver::make<ModelVariantPerceiver>(
-                ploidy, num_classes, read_embedding_size, cnn_size, kernel_sizes, dimension,
-                num_blocks, num_heads, use_mapqc, use_dwells, use_haplotags, use_snp_qv,
-                bases_alphabet_size, bases_embedding_size, use_decoder_lstm, update_read_embeddings,
-                feature_column_map);
+                read_max_depth, ploidy, num_classes, cnn_size, kernel_sizes, dimension, num_blocks,
+                num_heads, use_mapqc, use_dwells, use_haplotags, use_snp_qv, bases_alphabet_size,
+                bases_embedding_size, use_decoder_lstm, use_per_read_embedding,
+                /*embedding_type,*/ update_read_embeddings, feature_column_map);
 
     } else {
         throw std::runtime_error("Unsupported model type!");
