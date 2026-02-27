@@ -23,3 +23,14 @@ dorado_add_library(dorado_benchmarks
         dorado_utils
         spdlog::spdlog
 )
+
+# Bake the benchmark timings.
+include(compile_benchmarks.cmake)
+set(compiled_timings_cpp "${CMAKE_CURRENT_BINARY_DIR}/compiled_timings.cpp")
+dorado_compile_benchmarks(
+    FILES
+        "timings/test.csv"
+    OUTPUT
+        ${compiled_timings_cpp}
+)
+target_sources(dorado_benchmarks PRIVATE ${compiled_timings_cpp})
