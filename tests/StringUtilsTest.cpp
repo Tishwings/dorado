@@ -142,9 +142,12 @@ DEFINE_TEST("rtrim_view") {
 DEFINE_TEST("from_chars") {
     CATCH_CHECK(from_chars<int>("123") == 123);
     CATCH_CHECK(from_chars<std::int64_t>("-10") == -10);
+    CATCH_CHECK(from_chars<float>("1.25") == 1.25);
+    CATCH_CHECK(from_chars<double>("123.456") == 123.456);
 
     CATCH_CHECK(from_chars<int>("not a number") == std::nullopt);
     CATCH_CHECK(from_chars<std::uint8_t>("256") == std::nullopt);
+    CATCH_CHECK(from_chars<float>("invalid") == std::nullopt);
 }
 
 template <typename T>

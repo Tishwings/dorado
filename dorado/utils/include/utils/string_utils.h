@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cstdlib>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -10,6 +11,23 @@
 #include <string_view>
 #include <type_traits>
 #include <vector>
+
+// libcxx doesn't implement from_chars<float> on macOS yet.
+// TODO: this can be removed when we bump minimum macOS to 16.0
+#if !defined(_LIBCPP_VERSION) || (defined(_LIBCPP_AVAILABILITY_HAS_FROM_CHARS_FLOATING_POINT) && \
+                                  _LIBCPP_AVAILABILITY_HAS_FROM_CHARS_FLOATING_POINT)
+#define DORADO_HAS_FROM_CHARS_FLOATING_POINT 1
+#else
+#define DORADO_HAS_FROM_CHARS_FLOATING_POINT 0
+namespace {
+struct StrToF {
+    static constexpr auto func = &std::strtof;
+};
+struct StrToD {
+    static constexpr auto func = &std::strtod;
+};
+}  // namespace
+#endif
 
 namespace dorado::utils {
 
@@ -94,16 +112,28 @@ inline void rtrim(std::string& s) {
 
 template <typename T>
 [[nodiscard]] inline std::optional<T> from_chars(std::string_view str) {
-    static_assert(std::is_integral_v<T>,
-                  "libc++ (macOS) won't provide floating point support until they're on LLVM 20 "
-                  "(_LIBCPP_VERSION >= 200000)");
-
-    T value = 0;
-    const auto res = std::from_chars(str.data(), str.data() + str.size(), value);
-    if (res.ec != std::errc{}) {
-        return std::nullopt;
+#if !DORADO_HAS_FROM_CHARS_FLOATING_POINT
+    // Fallback for platforms that don't have std::from_chars<float>() yet.
+    if constexpr (std::is_floating_point_v<T>) {
+        const std::string temp(str);
+        char* end = nullptr;
+        const auto StrTo = std::conditional_t<std::is_same_v<T, float>, StrToF, StrToD>::func;
+        const T value = StrTo(temp.c_str(), &end);
+        if (end == temp.c_str()) {
+            return std::nullopt;
+        }
+        return value;
+    } else {
+#endif
+        T value = 0;
+        const auto res = std::from_chars(str.data(), str.data() + str.size(), value);
+        if (res.ec != std::errc{}) {
+            return std::nullopt;
+        }
+        return value;
+#if !DORADO_HAS_FROM_CHARS_FLOATING_POINT
     }
-    return value;
+#endif
 }
 
 namespace detail {
