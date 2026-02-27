@@ -41,6 +41,9 @@ function(dorado_add_library)
     # Anything linking to us can use our public includes only.
     target_include_directories(${arg_NAME} PUBLIC include)
 
+    # Anything internal can see what's inside.
+    target_include_directories(${arg_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
     # All of our code should compile with warnings enabled.
     enable_warnings_as_errors(${arg_NAME})
 
