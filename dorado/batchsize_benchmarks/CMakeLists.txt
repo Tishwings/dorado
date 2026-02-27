@@ -13,6 +13,7 @@ dorado_add_library(dorado_benchmarks
         BenchmarkSink.h
         compiled_timings.h
         csv_helpers.h
+        SpeedEntry.h
     DEPENDS_PUBLIC
         # nothing
     DEPENDS_PRIVATE

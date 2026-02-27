@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SpeedEntry.h"
+
 #include <filesystem>
 #include <map>
 #include <mutex>
@@ -8,12 +10,6 @@
 #include <vector>
 
 namespace dorado::batchsize_benchmarks {
-
-struct SpeedEntry {
-    std::uint32_t batch_size;
-    double basecall_speed;
-    std::uint64_t memory_used;
-};
 
 class BenchmarkCache final {
 public:

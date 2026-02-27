@@ -1,6 +1,6 @@
 #pragma once
 
-#include "BenchmarkCache.h"
+#include "SpeedEntry.h"
 #include "utils/SeparatedStream.h"
 #include "utils/string_utils.h"
 
