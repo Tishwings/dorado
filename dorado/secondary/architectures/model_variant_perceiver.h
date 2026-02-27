@@ -173,6 +173,7 @@ public:
     MessagePassingBlockImpl(int64_t dim,
                             int64_t read_max_dim,
                             int64_t num_heads,
+                            int64_t self_attn_layers_per_block,
                             bool embed_features,
                             // std::string embedding_type,
                             bool update_read_embeddings,
@@ -194,7 +195,7 @@ private:
     bool m_update_read_embeddings{false};
     bool m_cross_attend_read_embeddings{false};
     MultiSequenceCrossAttentionBlock m_reads_to_haplotypes{nullptr};
-    SelfAttentionBlock m_haplotype_self_attention{nullptr};
+    torch::nn::ModuleList m_haplotype_self_attention{nullptr};
     MultiSequenceCrossAttentionBlock m_haplotypes_to_reads{nullptr};
 };
 TORCH_MODULE(MessagePassingBlock);
@@ -210,6 +211,7 @@ public:
                           int32_t dimension,
                           int32_t num_blocks,
                           int32_t num_heads,
+                          int32_t self_attn_layers_per_block,
                           bool use_mapqc,
                           bool use_dwells,
                           bool use_haplotags,

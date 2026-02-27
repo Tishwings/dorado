@@ -391,13 +391,15 @@ at::Tensor SelfAttentionBlockImpl::forward(at::Tensor& x) {
 MessagePassingBlockImpl::MessagePassingBlockImpl(const int64_t dim,
                                                  const int64_t read_max_depth,
                                                  const int64_t num_heads,
+                                                 const int64_t self_attn_layers_per_block,
                                                  const bool embed_features,
                                                  // const std::string embedding_type,
                                                  const bool update_read_embeddings,
                                                  const bool cross_attend_read_embeddings,
                                                  const std::optional<int64_t>& attn_window)
         : m_update_read_embeddings{update_read_embeddings},
-          m_cross_attend_read_embeddings{cross_attend_read_embeddings} {
+          m_cross_attend_read_embeddings{cross_attend_read_embeddings},
+          m_haplotype_self_attention{} {
     if (m_cross_attend_read_embeddings) {
         // Use the attention window in the cross attention.
         m_reads_to_haplotypes =
@@ -417,20 +419,22 @@ MessagePassingBlockImpl::MessagePassingBlockImpl(const int64_t dim,
                                                                ));
     }
 
-    // No attention window in the self attention.
-    m_haplotype_self_attention = register_module(
-            "haplotype_self_attention", SelfAttentionBlock(dim,       /*d_model*/
-                                                           1,         /*max_depth*/
-                                                           num_heads, /*nhead*/
-                                                           false,     /*embed_features*/
-                                                           // embedding_type, /*embedding_type*/
-                                                           false,        /*qkv_bias*/
-                                                           true,         /*out_bias*/
-                                                           std::nullopt, /*rotary_dim*/
-                                                           std::nullopt, /*attn_window*/
-                                                           dim,          /*dim_feedforward*/
-                                                           1.0f          /*deepnorm_alhpa*/
-                                                           ));
+    for (int32_t i = 0; i < self_attn_layers_per_block; ++i) {
+        SelfAttentionBlock block(dim,       /*d_model*/
+                                 1,         /*max_depth*/
+                                 num_heads, /*nhead*/
+                                 false,     /*embed_features*/
+                                 // embedding_type, /*embedding_type*/
+                                 false,        /*qkv_bias*/
+                                 true,         /*out_bias*/
+                                 std::nullopt, /*rotary_dim*/
+                                 std::nullopt, /*attn_window*/
+                                 dim,          /*dim_feedforward*/
+                                 1.0f          /*deepnorm_alhpa*/
+        );
+        m_haplotype_self_attention->push_back(block);
+    }
+    register_module("haplotype_self_attention", m_haplotype_self_attention);
 
     if (m_update_read_embeddings) {
         // Use the attention window in the cross attention.
@@ -476,7 +480,9 @@ std::pair<at::Tensor, at::Tensor> MessagePassingBlockImpl::forward(at::Tensor re
                 torch::toString(hap_seqs.scalar_type()), torch::toString(read_seqs.scalar_type()));
     }
 
-    hap_seqs = m_haplotype_self_attention(hap_seqs);
+    for (auto& layer : *m_haplotype_self_attention) {
+        hap_seqs = layer->as<SelfAttentionBlock>()->forward(hap_seqs);
+    }
 
     LOG_TRACE_DTYPE(
             "[MessagePassingBlockImpl] Self-attention (hap_seqs): hap_seqs.dtype() = {}, "
@@ -506,6 +512,7 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
                                              const int32_t dimension,
                                              const int32_t num_blocks,
                                              const int32_t num_heads,
+                                             const int32_t self_attn_layers_per_block,
                                              const bool use_mapqc,
                                              const bool use_dwells,
                                              const bool use_haplotags,
@@ -557,6 +564,7 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
         const std::optional<int64_t> curr_attn_window = std::nullopt;
         // blocks.emplace_back(
         MessagePassingBlock block(m_dimension, read_max_depth, num_heads,
+                                  self_attn_layers_per_block,
                                   /*embed_features=*/use_per_read_embedding,
                                   // embedding_type,
                                   curr_update, CURR_CROSS_ATTEND, curr_attn_window);
@@ -572,10 +580,10 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
                 add_nonpersistent_buffer(std::move(buffer_name));
             }
 
-            {
+            for (int32_t j = 0; j < self_attn_layers_per_block; ++j) {
                 std::string buffer_name = fmt::format(
-                        "blocks.{}.haplotype_self_attention.crossattn.positional_embeddings.{}", i,
-                        name);
+                        "blocks.{}.haplotype_self_attention.{}.crossattn.positional_embeddings.{}",
+                        i, j, name);
                 add_nonpersistent_buffer(std::move(buffer_name));
             }
 

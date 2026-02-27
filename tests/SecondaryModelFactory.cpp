@@ -216,6 +216,7 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},
                                 {"use_haplotags", "true"},
@@ -741,6 +742,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Use dwells
                                 {"use_haplotags", "true"},  // <- Use haplotags
@@ -777,6 +779,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Use dwells
                                 {"use_haplotags", "true"},  // <- Use haplotags
@@ -816,6 +819,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Use dwells
                                 {"use_haplotags", "true"},  // <- Use haplotags
@@ -855,6 +859,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Use dwells
                                 {"use_haplotags", "true"},  // <- Use haplotags
@@ -896,6 +901,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "false"},     // <- No dwells
                                 {"use_haplotags", "false"},  // <- No haplotags
@@ -936,6 +942,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},      // <- Use dwells
                                 {"use_haplotags", "false"},  // <- No haplotags
@@ -979,6 +986,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "false"},    // <- No dwells
                                 {"use_haplotags", "true"},  // <- Has haplotags
@@ -1022,6 +1030,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "false"},     // <- No dwells
                                 {"use_haplotags", "false"},  // <- No haplotags
@@ -1063,6 +1072,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Has dwells
                                 {"use_haplotags", "true"},  // <- Has haplotags

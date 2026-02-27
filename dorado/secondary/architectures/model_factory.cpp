@@ -292,6 +292,8 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
         const int32_t dimension = std::stoi(get_value(config.model_kwargs, "dimension"));
         const int32_t num_blocks = std::stoi(get_value(config.model_kwargs, "num_blocks"));
         const int32_t num_heads = std::stoi(get_value(config.model_kwargs, "num_heads"));
+        const int32_t self_attn_layers_per_block =
+                std::stoi(get_value(config.model_kwargs, "self_attn_layers_per_block"));
 
         const bool use_mapqc = (get_value(config.model_kwargs, "use_mapqc") == "true");
         const bool use_dwells = (get_value(config.model_kwargs, "use_dwells") == "true");
@@ -318,8 +320,9 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
 
         model = ModelVariantPerceiver::make<ModelVariantPerceiver>(
                 read_max_depth, ploidy, num_classes, cnn_size, kernel_sizes, dimension, num_blocks,
-                num_heads, use_mapqc, use_dwells, use_haplotags, use_snp_qv, bases_alphabet_size,
-                bases_embedding_size, use_decoder_lstm, use_per_read_embedding,
+                num_heads, self_attn_layers_per_block, use_mapqc, use_dwells, use_haplotags,
+                use_snp_qv, bases_alphabet_size, bases_embedding_size, use_decoder_lstm,
+                use_per_read_embedding,
                 /*embedding_type,*/ update_read_embeddings, feature_column_map);
 
     } else {
