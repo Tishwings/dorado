@@ -126,6 +126,8 @@ def generate_graphs(
                     device_suffix = "_v100"
                 elif "A6000" in test_name:
                     device_suffix = "_a6000"
+                elif "RTX6000PRO" in test_name:
+                    device_suffix = "_rtx6000pro"
                 else:
                     device_suffix = ""
                 if "fast" in config:
