@@ -80,6 +80,11 @@
   tags:
     - benchmark-a100
 
+.linux_benchmark_runner_rtx6000:
+  tags:
+    - gpu-rtx6000pro
+    - ubuntu-24.04
+
 .windows_benchmark_runner_a6000:
   tags:
     - windows-10
@@ -340,6 +345,26 @@ regression_tests:speed:linux:x86:A100:
   extends:
     - .regression_tests:speed:linux:x86
     - .linux_benchmark_runner_a100
+
+regression_tests:speed:linux:x86:RTX6000PRO:
+  parallel:
+      matrix:
+          - REGRESSION_TEST_NAME:
+            - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
+            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
+            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
+            - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
+            - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
+            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
+            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
+            - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
+  variables:
+    GPU_DEVICE_NAME: "RTX6000PRO"
+  needs:
+    - build_archive:linux:x86:cuda13
+  extends:
+    - .regression_tests:speed:linux:x86
+    - .linux_benchmark_runner_rtx6000
 
 regression_tests:speed:windows:A6000:
   parallel:
