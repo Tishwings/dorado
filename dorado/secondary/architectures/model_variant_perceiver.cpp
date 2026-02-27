@@ -277,8 +277,8 @@ at::Tensor MultiHeadCrossAttentionImpl::forward(at::Tensor x,
     std::vector<torch::Tensor> kv_unbound;
     {
         utils::ScopedProfileRange spr2("MultiHeadCrossAttentionImpl::forward-kv_proj", 4);
-        const at::Tensor kv = m_kv_proj(y).view({N, T, N_KV, 2, m_nhead, m_head_dim});
-        kv_unbound = kv.unbind(/*dim=*/3);
+        const at::Tensor kv = m_kv_proj(y).view({N, T, N_KV, m_nhead, m_head_dim, 2});
+        kv_unbound = kv.unbind(/*dim=*/-1);
         if (std::ssize(kv_unbound) != 2) {
             throw std::runtime_error{"Wrong size of the unbound tensors! kv_unbound.size = " +
                                      std::to_string(std::size(kv_unbound)) + ", expected = 2"};
