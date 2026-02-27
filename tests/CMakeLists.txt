@@ -174,36 +174,7 @@ foreach(TEST_BIN dorado_tests dorado_smoke_tests)
     endif()
 
     # Add the test.
-    add_test(
-        NAME ${TEST_BIN}
-        COMMAND ${TEST_BIN}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    )
-
-    # The tests need to be able to find the libs in order to run.
-    # We also want these libs to take priority over any installed on the system, so prepend them.
-    if (MSVC)
-        set_property(TEST ${TEST_BIN} APPEND PROPERTY ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${CMAKE_INSTALL_PREFIX}/bin")
-    elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64*|^arm*" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
-        set_property(TEST ${TEST_BIN} APPEND PROPERTY ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${CMAKE_INSTALL_PREFIX}/lib")
-    endif()
-
-    # For some reason when TSan is enabled on x64/Linux we get a failure to load dependencies of torch, so add it explicitly to the path
-    if (ECM_ENABLE_SANITIZERS AND (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64") AND (CMAKE_SYSTEM_NAME STREQUAL "Linux"))
-        set_property(TEST ${TEST_BIN} APPEND PROPERTY ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_append:${TORCH_LIB}/lib")
-    endif()
-
-    # Enable the metal validation layer when running tests.
-    if (APPLE)
-        set_property(TEST ${TEST_BIN} APPEND PROPERTY ENVIRONMENT_MODIFICATION "MTL_DEBUG_LAYER=set:1")
-        # We can't have warnings as errors because of the MPS backend in torch. Even enabling it in
-        # logging mode is too spammy.
-        #set_property(TEST ${TEST_BIN} APPEND PROPERTY ENVIRONMENT_MODIFICATION "MTL_DEBUG_LAYER_WARNING_MODE=set:nslog")
-
-        # It would be nice to enable this fully for the simulator, however the simulator simulates old hardware
-        # which we don't plan on supporting (256MB maxBufferLength, lack of compute memory barriers, etc...).
-        #set_property(TEST ${TEST_BIN} APPEND PROPERTY ENVIRONMENT_MODIFICATION "SIMCTL_CHILD_MTL_DEBUG_LAYER=set:1")
-    endif()
+    dorado_add_test(${TEST_BIN})
 endforeach()
 
 # GCC 8 ICEs trying to compile this file with ASAN+optimisations enabled, so knock down the optimisation to try and help it out.
