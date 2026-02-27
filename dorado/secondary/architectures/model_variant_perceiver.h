@@ -20,6 +20,14 @@
 
 namespace dorado::secondary {
 
+enum class EmbeddingType {
+    ROTATIONAL,
+    WRAP_LEARNED,
+    IDENTITY,
+};
+
+EmbeddingType parse_embedding_type(const std::string& type);
+
 /**
  * \brief Rotary embedding implementation.
  *
@@ -31,12 +39,12 @@ class RotaryEmbeddingImpl : public torch::nn::Module {
 public:
     RotaryEmbeddingImpl(int64_t dim,
                         float theta,
-                        const int64_t max_seq_len,
+                        int64_t max_seq_len,
                         const at::TensorOptions& options);
 
     std::pair<at::Tensor, at::Tensor> forward(at::Tensor q, at::Tensor k);
 
-private:
+protected:
     int64_t m_dim{0};
     float m_theta{0};
     at::Tensor m_cos_freqs{nullptr};
@@ -45,6 +53,29 @@ private:
     at::Tensor rotate_half(const at::Tensor& x) const;
 };
 TORCH_MODULE(RotaryEmbedding);
+
+class AbsoluteRotaryEmbeddingImpl : public RotaryEmbeddingImpl {
+public:
+    AbsoluteRotaryEmbeddingImpl(int64_t dim,
+                                float theta,
+                                int64_t max_read_depth,
+                                const at::TensorOptions& options);
+
+    at::Tensor forward(at::Tensor x);
+};
+TORCH_MODULE(AbsoluteRotaryEmbedding);
+
+class EmbeddingWrapperImpl : public torch::nn::Module {
+public:
+    EmbeddingWrapperImpl(int64_t max_depth, int64_t dimension);
+
+    at::Tensor forward(at::Tensor x);
+
+private:
+    int64_t m_max_depth{0};
+    torch::nn::Embedding m_embedding{nullptr};
+};
+TORCH_MODULE(EmbeddingWrapper);
 
 /**
  * \brief SwiGLU implementation.
@@ -66,11 +97,11 @@ TORCH_MODULE(SwiGLU);
 class MultiHeadCrossAttentionImpl : public torch::nn::Module {
 public:
     MultiHeadCrossAttentionImpl(int64_t d_model,
-                                int64_t q_max_depth,   // currently not used
-                                int64_t kv_max_depth,  // currently not used
+                                int64_t q_max_depth,
+                                int64_t kv_max_depth,
                                 int64_t nhead,
-                                bool embed_features,  // currently not used
-                                // std::string& embedding_type,  // currently not used
+                                bool embed_features,
+                                EmbeddingType embedding_type,
                                 bool qkv_bias,
                                 bool out_bias,
                                 const std::optional<int64_t>& rotary_dim,
@@ -83,25 +114,28 @@ public:
      * \param pos_mask Tensor of shape (batch_size, num_heads, num_positions * num_sequences_q, num_positions * num_sequences_kv).
      * \returns out Tensor of shape (batch_size, num_positions, num_sequences, output_dim).
      */
-    at::Tensor forward(at::Tensor x,
+    at::Tensor forward(const at::Tensor& x,
                        const at::Tensor& y,
                        const std::optional<at::Tensor>& pos_mask);
 
 private:
-    int64_t m_d_model{0};
     int64_t m_nhead{0};
     int64_t m_head_dim{0};
-    bool m_embed_features{false};  // placeholder for possible future implementation
-    // std::string m_embedding_type{std:nullptr};  // placeholder for possible future implementation
+    EmbeddingType m_q_embedding_type{EmbeddingType::IDENTITY};
+    EmbeddingType m_k_embedding_type{EmbeddingType::IDENTITY};
     std::optional<int64_t> m_rotary_dim{std::nullopt};
     std::optional<int64_t> m_attn_window{std::nullopt};
 
     torch::nn::Linear m_kv_proj{nullptr};
     torch::nn::Linear m_q_proj{nullptr};
     torch::nn::Linear m_out_proj{nullptr};
-    torch::nn::Identity m_q_embedding{nullptr};  // placeholder for possible future implementation
-    torch::nn::Identity m_k_embedding{nullptr};  // placeholder for possible future implementation
     RotaryEmbedding m_positional_embeddings{nullptr};
+    torch::nn::Identity m_q_embedding_ident{nullptr};
+    torch::nn::Identity m_k_embedding_ident{nullptr};
+    AbsoluteRotaryEmbedding m_q_embedding_rot{nullptr};
+    AbsoluteRotaryEmbedding m_k_embedding_rot{nullptr};
+    EmbeddingWrapper m_q_embedding_wrap{nullptr};
+    EmbeddingWrapper m_k_embedding_wrap{nullptr};
 
     /**
      * \brief Implements the following masking logic:
@@ -109,10 +143,10 @@ private:
      *
      * TODO: Cache results of the mask to avoid recomputation.
      */
-    at::Tensor local_attention_mask(const int64_t T,
-                                    const int64_t num_q_seqs,
-                                    const int64_t num_kv_seqs,
-                                    const int64_t attn_window) const;
+    at::Tensor local_attention_mask(int64_t T,
+                                    int64_t num_q_seqs,
+                                    int64_t num_kv_seqs,
+                                    int64_t attn_window) const;
 
     at::Tensor attn_fn(const at::Tensor& q,
                        const at::Tensor& k,
@@ -124,19 +158,19 @@ TORCH_MODULE(MultiHeadCrossAttention);
 class MultiSequenceCrossAttentionBlockImpl : public torch::nn::Module {
 public:
     MultiSequenceCrossAttentionBlockImpl(int64_t d_model,
-                                         int64_t q_max_depth,   // currently not used
-                                         int64_t kv_max_depth,  // currently not used
+                                         int64_t q_max_depth,
+                                         int64_t kv_max_depth,
                                          int64_t nhead,
-                                         bool embed_features,  // currently not used
-                                         // std::string embedding_type;  // currently not used
+                                         bool embed_features,
+                                         EmbeddingType embedding_type,
                                          bool qkv_bias,
                                          bool out_bias,
                                          const std::optional<int64_t>& rotary_dim,
                                          const std::optional<int64_t>& attn_window,
                                          int64_t dim_feedforward,
-                                         const float deepnorm_alpha);
+                                         float deepnorm_alpha);
 
-    at::Tensor forward(at::Tensor& x,
+    at::Tensor forward(at::Tensor x,
                        const at::Tensor& y,
                        const std::optional<at::Tensor>& pos_mask);
 
@@ -153,18 +187,18 @@ TORCH_MODULE(MultiSequenceCrossAttentionBlock);
 class SelfAttentionBlockImpl : public MultiSequenceCrossAttentionBlockImpl {
 public:
     SelfAttentionBlockImpl(int64_t d_model,
-                           int64_t max_depth,  // currently not used
+                           int64_t max_depth,
                            int64_t nhead,
-                           bool embed_features,  // currently not used
-                           // std::string embedding_type;  // currently not used
+                           bool embed_features,
+                           EmbeddingType embedding_type,
                            bool qkv_bias,
                            bool out_bias,
                            const std::optional<int64_t>& rotary_dim,
                            const std::optional<int64_t>& attn_window,
                            int64_t dim_feedforward,
-                           const float deepnorm_alpha);
+                           float deepnorm_alpha);
 
-    at::Tensor forward(at::Tensor& x);
+    at::Tensor forward(const at::Tensor& x);
 };
 TORCH_MODULE(SelfAttentionBlock);
 
@@ -175,7 +209,7 @@ public:
                             int64_t num_heads,
                             int64_t self_attn_layers_per_block,
                             bool embed_features,
-                            // std::string embedding_type,
+                            EmbeddingType embedding_type,
                             bool update_read_embeddings,
                             bool cross_attend_read_embeddings,
                             const std::optional<int64_t>& attn_window);
@@ -221,7 +255,7 @@ public:
                           // bool time_steps,
                           bool use_decoder_lstm,
                           bool use_per_read_embedding,
-                          // std::string& embedding_type,
+                          EmbeddingType embedding_type,
                           bool update_read_embeddings,
                           // std::optional<int32_t> attn_window,
                           const FeatureColumnMap& feature_column_map);
@@ -248,7 +282,6 @@ private:
     std::vector<int32_t> m_kernel_sizes{1, 17};
     int32_t m_dimension{256};
     int32_t m_num_blocks{4};
-    int32_t m_num_heads{8};
     bool m_use_mapqc{false};
     bool m_use_dwells{false};
     bool m_use_haplotags{false};
@@ -256,7 +289,6 @@ private:
     int32_t m_bases_alphabet_size{6};
     int32_t m_bases_embedding_size{6};
     bool m_use_decoder_lstm{false};
-    bool m_update_read_embeddings{false};
     FeatureColumnMap m_feature_column_map{};
 
     torch::nn::Embedding m_base_embedder{nullptr};
@@ -286,7 +318,7 @@ private:
      * \return embedding tensor of shape (batch_size, num_positions, num_sequences, dim),
                mask tensor of shape (batch_size, num_sequences, num_positions).
      */
-    std::pair<at::Tensor, const at::Tensor> create_embedded_features(const at::Tensor& in_x);
+    std::pair<at::Tensor, at::Tensor> create_embedded_features(const at::Tensor& in_x);
 
     at::Tensor forward_impl(const at::Tensor& x);
 };

@@ -26,6 +26,17 @@
 
 namespace dorado::secondary {
 
+EmbeddingType parse_embedding_type(const std::string& type) {
+    if (type == "rotational") {
+        return EmbeddingType::ROTATIONAL;
+    } else if (type == "learned") {
+        return EmbeddingType::WRAP_LEARNED;
+    } else if (type == "none") {
+        return EmbeddingType::IDENTITY;
+    }
+    throw std::runtime_error{"Unknown embedding type: '" + type + "'!"};
+}
+
 SwiGLUImpl::SwiGLUImpl(const int32_t in_features, const int32_t hidden_features, const bool bias) {
     m_fc1 = register_module(
             "fc1", torch::nn::Linear(
@@ -67,12 +78,8 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
             pos, inv_freq);  // Equivalent to: torch::einsum("i,j->ij", {pos, m_inv_freq});
     const at::Tensor emb = torch::cat({freqs, freqs}, /*dim=*/-1);
 
-    m_cos_freqs = torch::cos(emb)         // [T, D]
-                          .unsqueeze(0)   // [1, T, D]
-                          .unsqueeze(2)   // [1, T, 1, D]
-                          .unsqueeze(3);  // [1, T, 1, 1, D]
-
-    m_sin_freqs = torch::sin(emb).unsqueeze(0).unsqueeze(2).unsqueeze(3);
+    m_cos_freqs = torch::cos(emb);  // [T, D]
+    m_sin_freqs = torch::sin(emb);
 
     // NOTE: There is no `persistent` option in Libtorch unlike Pytorch:
     //      register_buffer("inv_freq", m_inv_freq, /*persistent=*/false);
@@ -112,8 +119,14 @@ std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at:
     const int64_t T = q.size(1);
 
     // View only the number of values needed.
-    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 1, /*start*/ 0, /*end*/ T);
-    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 1, /* start*/ 0, /*end*/ T);
+    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 0, /*start*/ 0, /*end*/ T)
+                                        .unsqueeze(0)   // [1, T, D]
+                                        .unsqueeze(2)   // [1, T, 1, D]
+                                        .unsqueeze(2);  // [1, T, 1, 1, D]
+    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 0, /* start*/ 0, /*end*/ T)
+                                        .unsqueeze(0)   // [1, T, D]
+                                        .unsqueeze(2)   // [1, T, 1, D]
+                                        .unsqueeze(2);  // [1, T, 1, 1, D]
 
     q = rotate_half(q).mul_(sin_vals).add_(cos_vals * q);
     k = rotate_half(k).mul_(sin_vals).add_(cos_vals * k);
@@ -129,18 +142,89 @@ at::Tensor RotaryEmbeddingImpl::rotate_half(const at::Tensor& x) const {
     return torch::cat({-chunks[1], chunks[0]}, /*dim=*/-1);
 }
 
+AbsoluteRotaryEmbeddingImpl::AbsoluteRotaryEmbeddingImpl(int64_t dim,
+                                                         float theta,
+                                                         const int64_t max_read_depth,
+                                                         const at::TensorOptions& options)
+        : RotaryEmbeddingImpl::RotaryEmbeddingImpl(dim, theta, max_read_depth, options) {};
+
+at::Tensor AbsoluteRotaryEmbeddingImpl::forward(at::Tensor x) {
+    utils::ScopedProfileRange spr1("AbsoluteRotaryEmbeddingImpl::forward", 4);
+
+    if (std::size(x.sizes()) != 5) {
+        throw std::runtime_error{"x tensor should be 5D. Given: x.shape = " +
+                                 utils::tensor_shape_as_string(x)};
+    }
+    if (!x.defined()) {
+        throw std::runtime_error{"Cannot run RotaryEmbedding::forward on an undefined x tensor."};
+    }
+
+    LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Input: x.dtype() = {}",
+                    torch::toString(x.scalar_type()));
+
+    // Dimensions: N, T, C, H, D = batch_size, num_positions, num_sequences, num_heads, head_dim
+    const int64_t C = x.size(2);
+
+    // View only the number of values needed.
+    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 0, /*start*/ 0, /*end*/ C)
+                                        .unsqueeze(0)   // [1, C, D]
+                                        .unsqueeze(0)   // [1, 1, C, D]
+                                        .unsqueeze(3);  // [1, 1, C, 1, D]
+    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 0, /* start*/ 0, /*end*/ C)
+                                        .unsqueeze(0)   // [1, C, D]
+                                        .unsqueeze(0)   // [1, 1, C, D]
+                                        .unsqueeze(3);  // [1, 1, C, 1, D]
+
+    // x = x * cos_vals + rotate_half(x) * sin_vals;
+    // k = k * cos_vals + rotate_half(k) * sin_vals;
+
+    x = rotate_half(x).mul_(sin_vals).add_(cos_vals * x);
+
+    LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Output: x.dtype() = {}",
+                    torch::toString(x.scalar_type()));
+
+    return x;
+}
+
+EmbeddingWrapperImpl::EmbeddingWrapperImpl(const int64_t max_depth, const int64_t dimension)
+        : m_max_depth{max_depth} {
+    m_embedding = register_module("embedding", torch::nn::Embedding(max_depth, dimension));
+}
+
+at::Tensor EmbeddingWrapperImpl::forward(at::Tensor x) {
+    utils::ScopedProfileRange spr1("EmbeddingWrapperImpl::forward", 4);
+
+    const int64_t C = x.size(2);  // x: N, T, C, H, D
+    if (C > m_max_depth) {
+        throw std::runtime_error{"x tensor depth " + std::to_string(C) +
+                                 " is larger than the maximum embedding depth " +
+                                 std::to_string(m_max_depth)};
+    }
+    const auto device = this->parameters()[0].device();
+    const auto opts = torch::TensorOptions().dtype(torch::kInt64).device(device);
+
+    const at::Tensor indices = torch::arange(C, opts);
+    const auto emb = m_embedding->forward(indices)
+                             .unsqueeze(0)   // [1, C, D]
+                             .unsqueeze(0)   // [1, 1, C, D]
+                             .unsqueeze(3);  // [1, 1, C, 1, D]
+    x = x.add_(emb);
+
+    return x;
+}
+
 MultiHeadCrossAttentionImpl::MultiHeadCrossAttentionImpl(
         const int64_t d_model,
-        const int64_t /*q_max_depth*/ /*=100*/,
-        const int64_t /*kv_max_depth*/ /*=1*/,
+        const int64_t q_max_depth,
+        const int64_t kv_max_depth,
         const int64_t nhead /*=4*/,
-        const bool /*embed_features*/ /*=false*/,
-        // const std::string& /*embedding_type*/ /*=""*/,
+        const bool embed_features /*=false*/,
+        const EmbeddingType embedding_type /*=""*/,
         const bool qkv_bias, /*=false*/
         const bool out_bias, /*=true*/
         const std::optional<int64_t>& /*rotary_dim*/,
         const std::optional<int64_t>& attn_window)
-        : m_d_model{d_model}, m_nhead{nhead}, m_attn_window{attn_window} {
+        : m_nhead{nhead}, m_attn_window{attn_window} {
     if (nhead <= 0) {
         throw std::runtime_error{"Number of heads should be > 0, given: " + std::to_string(nhead)};
     }
@@ -155,11 +239,53 @@ MultiHeadCrossAttentionImpl::MultiHeadCrossAttentionImpl(
     m_out_proj = register_module(
             "out_proj",
             torch::nn::Linear(torch::nn::LinearOptions(d_model, d_model).bias(out_bias)));
-    m_q_embedding = register_module("q_embedding", torch::nn::Identity());
-    m_k_embedding = register_module("k_embedding", torch::nn::Identity());
     m_positional_embeddings =
             register_module("positional_embeddings",
                             RotaryEmbedding(m_head_dim / 2, 10000.0f, 100000, at::TensorOptions{}));
+    if (embed_features && (q_max_depth > 1)) {
+        m_q_embedding_type = embedding_type;
+        switch (m_q_embedding_type) {
+        case EmbeddingType::ROTATIONAL:
+            m_q_embedding_rot = register_module(
+                    "q_embedding", AbsoluteRotaryEmbedding(m_head_dim / 2, 10000.0f, q_max_depth,
+                                                           at::TensorOptions{}));
+            break;
+        case EmbeddingType::WRAP_LEARNED:
+            m_q_embedding_wrap =
+                    register_module("q_embedding", EmbeddingWrapper(q_max_depth, m_head_dim / 2));
+            break;
+        case EmbeddingType::IDENTITY:
+            m_q_embedding_ident = register_module("q_embedding", torch::nn::Identity());
+            break;
+        default:
+            throw std::runtime_error{"Unrecognised embedding_type"};
+        }
+    } else {
+        m_q_embedding_type = EmbeddingType::IDENTITY;
+        m_q_embedding_ident = register_module("q_embedding", torch::nn::Identity());
+    }
+    if (embed_features && (kv_max_depth > 1)) {
+        m_k_embedding_type = embedding_type;
+        switch (m_k_embedding_type) {
+        case EmbeddingType::ROTATIONAL:
+            m_k_embedding_rot = register_module(
+                    "k_embedding", AbsoluteRotaryEmbedding(m_head_dim / 2, 10000.0f, kv_max_depth,
+                                                           at::TensorOptions{}));
+            break;
+        case EmbeddingType::WRAP_LEARNED:
+            m_k_embedding_wrap =
+                    register_module("k_embedding", EmbeddingWrapper(kv_max_depth, m_head_dim / 2));
+            break;
+        case EmbeddingType::IDENTITY:
+            m_k_embedding_ident = register_module("k_embedding", torch::nn::Identity());
+            break;
+        default:
+            throw std::runtime_error{"Unrecognised embedding_type"};
+        }
+    } else {
+        m_k_embedding_type = EmbeddingType::IDENTITY;
+        m_k_embedding_ident = register_module("k_embedding", torch::nn::Identity());
+    }
 }
 
 at::Tensor MultiHeadCrossAttentionImpl::local_attention_mask(const int64_t T,
@@ -256,7 +382,7 @@ at::Tensor MultiHeadCrossAttentionImpl::attn_fn(const at::Tensor& q,
     return attn;
 }
 
-at::Tensor MultiHeadCrossAttentionImpl::forward(at::Tensor x,
+at::Tensor MultiHeadCrossAttentionImpl::forward(const at::Tensor& x,
                                                 const at::Tensor& y,
                                                 const std::optional<at::Tensor>& pos_mask) {
     utils::ScopedProfileRange spr1("MultiHeadCrossAttentionImpl::forward", 3);
@@ -286,12 +412,34 @@ at::Tensor MultiHeadCrossAttentionImpl::forward(at::Tensor x,
     }
     at::Tensor k = kv_unbound[0];
     const auto& v = kv_unbound[1];
-    auto q_chunked = q.chunk(2, /*dim=*/-1);
-    auto k_chunked = k.chunk(2, /*dim=*/-1);
+    std::vector<at::Tensor> q_chunked = q.chunk(2, /*dim=*/-1);
+    std::vector<at::Tensor> k_chunked = k.chunk(2, /*dim=*/-1);
 
     auto [q_rot, k_rot] = m_positional_embeddings(q_chunked[0], k_chunked[0]);
-    auto q_emb = m_q_embedding(q_chunked[1]);
-    auto k_emb = m_k_embedding(k_chunked[1]);
+    at::Tensor q_emb;
+    at::Tensor k_emb;
+    switch (m_q_embedding_type) {
+    case EmbeddingType::ROTATIONAL:
+        q_emb = m_q_embedding_rot(q_chunked[1]);
+        break;
+    case EmbeddingType::WRAP_LEARNED:
+        q_emb = m_q_embedding_wrap(q_chunked[1]);
+        break;
+    case EmbeddingType::IDENTITY:
+    default:
+        q_emb = m_q_embedding_ident(q_chunked[1]);
+    }
+    switch (m_k_embedding_type) {
+    case EmbeddingType::ROTATIONAL:
+        k_emb = m_k_embedding_rot(k_chunked[1]);
+        break;
+    case EmbeddingType::WRAP_LEARNED:
+        k_emb = m_k_embedding_wrap(k_chunked[1]);
+        break;
+    case EmbeddingType::IDENTITY:
+    default:
+        k_emb = m_k_embedding_ident(k_chunked[1]);
+    }
     q = at::concat({q_rot, q_emb}, /*dim=*/-1);
     k = at::concat({k_rot, k_emb}, /*dim=*/-1);
 
@@ -314,32 +462,32 @@ at::Tensor MultiHeadCrossAttentionImpl::forward(at::Tensor x,
 
 MultiSequenceCrossAttentionBlockImpl::MultiSequenceCrossAttentionBlockImpl(
         // arguments forwarded to MultiHeadCrossAttentionImpl
-        int64_t d_model,
-        int64_t q_max_depth,   // currently not used
-        int64_t kv_max_depth,  // currently not used
-        int64_t nhead,
-        bool embed_features,  // currently not used
-        // std::string embedding_type,  // currently not used
-        bool qkv_bias,
-        bool out_bias,
+        const int64_t d_model,
+        const int64_t q_max_depth,
+        const int64_t kv_max_depth,
+        const int64_t nhead,
+        const bool embed_features,
+        const EmbeddingType embedding_type,
+        const bool qkv_bias,
+        const bool out_bias,
         const std::optional<int64_t>& rotary_dim,
         const std::optional<int64_t>& attn_window,
         // additional arguments for this module
-        int64_t /*dim_feedforward*/,
+        const int64_t /*dim_feedforward*/,
         const float deepnorm_alpha) {
     m_deepnorm_alpha = at::tensor(deepnorm_alpha);
     register_buffer("deepnorm_alpha", m_deepnorm_alpha);
     m_attention = register_module(
-            "crossattn", MultiHeadCrossAttention(d_model, q_max_depth, kv_max_depth, nhead,
-                                                 embed_features, /*embedding_type,*/ qkv_bias,
-                                                 out_bias, rotary_dim, attn_window));
+            "crossattn",
+            MultiHeadCrossAttention(d_model, q_max_depth, kv_max_depth, nhead, embed_features,
+                                    embedding_type, qkv_bias, out_bias, rotary_dim, attn_window));
     m_ff = register_module("ff", SwiGLU(d_model, d_model, false));
     m_norm1 = register_module("norm1", nn::RMSNorm(d_model));
     m_norm2 = register_module("norm2", nn::RMSNorm(d_model));
 }
 
 at::Tensor MultiSequenceCrossAttentionBlockImpl::forward(
-        at::Tensor& x,
+        at::Tensor x,
         const at::Tensor& y,
         const std::optional<at::Tensor>& pos_mask) {
     // Computation here is the same as in TxEncoderImpl except for args to the attn function.
@@ -359,7 +507,7 @@ SelfAttentionBlockImpl::SelfAttentionBlockImpl(int64_t d_model,
                                                int64_t max_depth,
                                                int64_t nhead,
                                                bool embed_features,
-                                               // const std::string embedding_type,
+                                               const EmbeddingType embedding_type,
                                                bool qkv_bias,
                                                bool out_bias,
                                                const std::optional<int64_t>& rotary_dim,
@@ -372,7 +520,7 @@ SelfAttentionBlockImpl::SelfAttentionBlockImpl(int64_t d_model,
                   max_depth,
                   nhead,
                   embed_features,
-                  // embedding_type,
+                  embedding_type,
                   qkv_bias,
                   out_bias,
                   rotary_dim,
@@ -380,7 +528,7 @@ SelfAttentionBlockImpl::SelfAttentionBlockImpl(int64_t d_model,
                   dim_feedforward,
                   deepnorm_alpha) {};
 
-at::Tensor SelfAttentionBlockImpl::forward(at::Tensor& x) {
+at::Tensor SelfAttentionBlockImpl::forward(const at::Tensor& x) {
     utils::ScopedProfileRange spr1("SelfAttentionBlockImpl::forward", 3);
     at::Tensor ret = this->as<MultiSequenceCrossAttentionBlock>()->forward(x, x, std::nullopt);
     LOG_TRACE_DTYPE("[SelfAttentionBlockImpl] x.dtype() = {}, ret.dtype() = {}",
@@ -393,7 +541,7 @@ MessagePassingBlockImpl::MessagePassingBlockImpl(const int64_t dim,
                                                  const int64_t num_heads,
                                                  const int64_t self_attn_layers_per_block,
                                                  const bool embed_features,
-                                                 // const std::string embedding_type,
+                                                 const EmbeddingType embedding_type,
                                                  const bool update_read_embeddings,
                                                  const bool cross_attend_read_embeddings,
                                                  const std::optional<int64_t>& attn_window)
@@ -403,34 +551,34 @@ MessagePassingBlockImpl::MessagePassingBlockImpl(const int64_t dim,
     if (m_cross_attend_read_embeddings) {
         // Use the attention window in the cross attention.
         m_reads_to_haplotypes =
-                register_module("reads_to_haplotypes", MultiSequenceCrossAttentionBlock(
-                                                               dim,            /*d_model*/
-                                                               1,              /*q_max_depth*/
-                                                               read_max_depth, /*kv_max_depth*/
-                                                               num_heads,      /*nhead*/
-                                                               embed_features, /*embed_features*/
-                                                               // embedding_type, /*embedding_type*/
-                                                               false,        /*qkv_bias*/
-                                                               true,         /*out_bias*/
-                                                               std::nullopt, /*rotary_dim*/
-                                                               attn_window,  /*attn_window*/
-                                                               dim,          /*dim_feedforward*/
-                                                               1.0f          /*deepnorm_alhpa*/
-                                                               ));
+                register_module("reads_to_haplotypes",
+                                MultiSequenceCrossAttentionBlock(dim,            /*d_model*/
+                                                                 1,              /*q_max_depth*/
+                                                                 read_max_depth, /*kv_max_depth*/
+                                                                 num_heads,      /*nhead*/
+                                                                 embed_features, /*embed_features*/
+                                                                 embedding_type, /*embedding_type*/
+                                                                 false,          /*qkv_bias*/
+                                                                 true,           /*out_bias*/
+                                                                 std::nullopt,   /*rotary_dim*/
+                                                                 attn_window,    /*attn_window*/
+                                                                 dim,            /*dim_feedforward*/
+                                                                 1.0f            /*deepnorm_alhpa*/
+                                                                 ));
     }
 
     for (int32_t i = 0; i < self_attn_layers_per_block; ++i) {
-        SelfAttentionBlock block(dim,       /*d_model*/
-                                 1,         /*max_depth*/
-                                 num_heads, /*nhead*/
-                                 false,     /*embed_features*/
-                                 // embedding_type, /*embedding_type*/
-                                 false,        /*qkv_bias*/
-                                 true,         /*out_bias*/
-                                 std::nullopt, /*rotary_dim*/
-                                 std::nullopt, /*attn_window*/
-                                 dim,          /*dim_feedforward*/
-                                 1.0f          /*deepnorm_alhpa*/
+        SelfAttentionBlock block(dim,                     /*d_model*/
+                                 1,                       /*max_depth*/
+                                 num_heads,               /*nhead*/
+                                 false,                   /*embed_features*/
+                                 EmbeddingType::IDENTITY, /*embedding_type*/
+                                 false,                   /*qkv_bias*/
+                                 true,                    /*out_bias*/
+                                 std::nullopt,            /*rotary_dim*/
+                                 std::nullopt,            /*attn_window*/
+                                 dim,                     /*dim_feedforward*/
+                                 1.0f                     /*deepnorm_alhpa*/
         );
         m_haplotype_self_attention->push_back(block);
     }
@@ -439,20 +587,20 @@ MessagePassingBlockImpl::MessagePassingBlockImpl(const int64_t dim,
     if (m_update_read_embeddings) {
         // Use the attention window in the cross attention.
         m_haplotypes_to_reads =
-                register_module("haplotypes_to_reads", MultiSequenceCrossAttentionBlock(
-                                                               dim,            /*d_model*/
-                                                               read_max_depth, /*q_max_depth*/
-                                                               1,              /*kv_max_depth*/
-                                                               num_heads,      /*nhead*/
-                                                               embed_features, /*embed_features*/
-                                                               // embedding_type, /*embedding_type*/
-                                                               false,        /*qkv_bias*/
-                                                               true,         /*out_bias*/
-                                                               std::nullopt, /*rotary_dim*/
-                                                               attn_window,  /*attn_window*/
-                                                               dim,          /*dim_feedforward*/
-                                                               1.0f          /*deepnorm_alhpa*/
-                                                               ));
+                register_module("haplotypes_to_reads",
+                                MultiSequenceCrossAttentionBlock(dim,            /*d_model*/
+                                                                 read_max_depth, /*q_max_depth*/
+                                                                 1,              /*kv_max_depth*/
+                                                                 num_heads,      /*nhead*/
+                                                                 embed_features, /*embed_features*/
+                                                                 embedding_type, /*embedding_type*/
+                                                                 false,          /*qkv_bias*/
+                                                                 true,           /*out_bias*/
+                                                                 std::nullopt,   /*rotary_dim*/
+                                                                 attn_window,    /*attn_window*/
+                                                                 dim,            /*dim_feedforward*/
+                                                                 1.0f            /*deepnorm_alhpa*/
+                                                                 ));
     }
 }
 
@@ -522,7 +670,7 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
                                              // bool time_steps,
                                              const bool use_decoder_lstm,
                                              const bool use_per_read_embedding,
-                                             // const std::string& embedding_type,
+                                             const EmbeddingType embedding_type,
                                              const bool update_read_embeddings,
                                              // const std::optional<int32_t> attn_window,
                                              const FeatureColumnMap& feature_column_map)
@@ -565,33 +713,35 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
         // blocks.emplace_back(
         MessagePassingBlock block(m_dimension, read_max_depth, num_heads,
                                   self_attn_layers_per_block,
-                                  /*embed_features=*/use_per_read_embedding,
-                                  // embedding_type,
+                                  /*embed_features=*/use_per_read_embedding, embedding_type,
                                   curr_update, CURR_CROSS_ATTEND, curr_attn_window);
         m_blocks->push_back(block);
 
         // Manually store the names of the non-persistent buffers because Libtorch doesn't have this feature (unlike Pytorch).
         // This will be cross-referenced during model loading.
         for (const std::string_view name : {"cos_freqs", "sin_freqs"}) {
-            {
-                std::string buffer_name = fmt::format(
-                        "blocks.{}.reads_to_haplotypes.crossattn.positional_embeddings.{}", i,
-                        name);
-                add_nonpersistent_buffer(std::move(buffer_name));
-            }
+            // Add frequency components for read embedding in case it's a rotational module.
+            // This should probably be conditional but there doesn't seem to be any harm in running it always.
+            for (const std::string_view module_name :
+                 {"positional_embeddings", "q_embedding", "k_embedding"}) {
+                {
+                    std::string buffer_name = fmt::format(
+                            "blocks.{}.reads_to_haplotypes.crossattn.{}.{}", i, module_name, name);
+                    add_nonpersistent_buffer(std::move(buffer_name));
+                }
 
-            for (int32_t j = 0; j < self_attn_layers_per_block; ++j) {
-                std::string buffer_name = fmt::format(
-                        "blocks.{}.haplotype_self_attention.{}.crossattn.positional_embeddings.{}",
-                        i, j, name);
-                add_nonpersistent_buffer(std::move(buffer_name));
-            }
+                for (int32_t j = 0; j < self_attn_layers_per_block; ++j) {
+                    std::string buffer_name =
+                            fmt::format("blocks.{}.haplotype_self_attention.{}.crossattn.{}.{}", i,
+                                        j, module_name, name);
+                    add_nonpersistent_buffer(std::move(buffer_name));
+                }
 
-            if (curr_update) {
-                std::string buffer_name = fmt::format(
-                        "blocks.{}.haplotypes_to_reads.crossattn.positional_embeddings.{}", i,
-                        name);
-                add_nonpersistent_buffer(std::move(buffer_name));
+                if (curr_update) {
+                    std::string buffer_name = fmt::format(
+                            "blocks.{}.haplotypes_to_reads.crossattn.{}.{}", i, module_name, name);
+                    add_nonpersistent_buffer(std::move(buffer_name));
+                }
             }
         }
     }
@@ -705,7 +855,7 @@ void ModelVariantPerceiver::validate_feature_tensor(const at::Tensor& x) const {
     }
 }
 
-std::pair<at::Tensor, const at::Tensor> ModelVariantPerceiver::create_embedded_features(
+std::pair<at::Tensor, at::Tensor> ModelVariantPerceiver::create_embedded_features(
         const at::Tensor& in_x) {
     /**
      * Example:
