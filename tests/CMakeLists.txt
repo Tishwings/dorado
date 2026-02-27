@@ -1,5 +1,4 @@
 option(DORADO_DISABLE_TESTS "Disable building the tests" OFF)
-option(DORADO_RUN_TESTS "Run the tests. Certain platforms don't have the infrastructure to do this atm" ON)
 option(DORADO_ENABLE_BENCHMARK_TESTS "Enable benchmarks to run as part of the tests" OFF)
 
 if (DORADO_DISABLE_TESTS)
@@ -166,11 +165,6 @@ foreach(TEST_BIN dorado_tests dorado_smoke_tests)
     else()
         # Add -Wno-trigraphs because one of the tests uses a qstring that has a trigraph sequence.
         target_compile_options(${TEST_BIN} PRIVATE "-Wno-trigraphs")
-    endif()
-
-    # Don't add the test if we can't run it
-    if (NOT DORADO_RUN_TESTS)
-        continue()
     endif()
 
     # Add the test.
