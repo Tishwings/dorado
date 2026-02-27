@@ -297,8 +297,6 @@ regression_tests:speed:linux:arm64:jammy:
     BUILD_TYPE: Release
     BUILD_CUDA: 1
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
-  needs:
-    - build_archive:linux:x86:cuda12
   extends:
     - .linux_regression_dependencies
     - .speed_regression_test
