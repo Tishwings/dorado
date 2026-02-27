@@ -100,6 +100,13 @@ void csv_read_lines(std::ifstream &in, Callback &&callback) {
 void BenchmarkCache::CacheProxy::add_timings(std::string gpu_name,
                                              std::string model_name,
                                              std::vector<SpeedEntry> entries) {
+    // Entries need to be sorted for lookup to work.
+    // Note that we intentionally keep all of the timings in the runtime cache so that
+    // they all get written out.
+    std::sort(entries.begin(), entries.end(), [](const SpeedEntry &lhs, const SpeedEntry &rhs) {
+        return lhs.batch_size < rhs.batch_size;
+    });
+
     auto key = Key(std::move(gpu_name), std::move(model_name));
     auto &speeds = m_cache.m_runtime_cache[std::move(key)];
     speeds.swap(entries);
