@@ -43,3 +43,6 @@
 [submodule "dorado/3rdparty/CxxUrl"]
 	path = dorado/3rdparty/CxxUrl
 	url = https://github.com/chmike/CxxUrl
+[submodule "dorado/3rdparty/flashattention"]
+	path = dorado/3rdparty/flashattention
+	url = https://github.com/Dao-AILab/flash-attention.git
