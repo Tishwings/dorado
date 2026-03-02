@@ -100,9 +100,9 @@ bool download_variant_via_resolver(const argparse::ArgumentParser& parser) {
     const auto recursive = parser.get<bool>("--recursive");
 
     try {
-        DataLoader::InputFiles input_files;
+        data_loader::InputFiles input_files;
         if (!data.empty()) {
-            input_files = DataLoader::InputFiles::search_pod5s(data, recursive);
+            input_files = data_loader::InputFiles::search_pod5s(data, recursive);
             if (input_files.get().empty()) {
                 spdlog::error("No POD5 files found in '{}' recursive:'{}'.", data, recursive);
                 return false;

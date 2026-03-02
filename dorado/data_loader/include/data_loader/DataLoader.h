@@ -16,15 +16,22 @@
 #include <vector>
 
 namespace dorado {
-
 class Pipeline;
 class ReadCommon;
 class SimplexRead;
 using SimplexReadPtr = std::unique_ptr<SimplexRead>;
+}  // namespace dorado
 
-constexpr size_t POD5_READ_ID_SIZE = 16;
-using ReadID = std::array<uint8_t, POD5_READ_ID_SIZE>;
-typedef std::map<int, std::vector<ReadID>> channel_to_read_id_t;
+namespace dorado::data_loader {
+
+// Holds the directory entries for the pod5 files from the input path.
+class InputFiles final {
+    std::vector<std::filesystem::directory_entry> m_entries;
+
+public:
+    static InputFiles search_pod5s(const std::filesystem::path& path, bool recursive);
+    const std::vector<std::filesystem::directory_entry>& get() const;
+};
 
 class DataLoader {
 public:
@@ -35,15 +42,6 @@ public:
                std::optional<std::unordered_set<std::string>> read_list,
                std::unordered_set<std::string> read_ignore_list);
     ~DataLoader() = default;
-
-    // Holds the directory entries for the pod5 files from the input path.
-    class InputFiles final {
-        std::vector<std::filesystem::directory_entry> m_entries;
-
-    public:
-        static InputFiles search_pod5s(const std::filesystem::path& path, bool recursive);
-        const std::vector<std::filesystem::directory_entry>& get() const;
-    };
 
     void load_reads(const InputFiles& input_files, ReadOrder traversal_order);
 
@@ -59,6 +57,10 @@ public:
     }
 
 private:
+    static constexpr size_t POD5_READ_ID_SIZE = 16;
+    using ReadID = std::array<uint8_t, POD5_READ_ID_SIZE>;
+    using channel_to_read_id_t = std::map<int, std::vector<ReadID>>;
+
     void load_pod5_reads_from_file(const std::string& path);
     void load_pod5_reads_from_file_by_read_ids(const std::string& path,
                                                const std::vector<ReadID>& read_ids);
@@ -91,4 +93,4 @@ private:
     std::atomic<bool> m_log_unknown_chemistry{true};
 };
 
-}  // namespace dorado
+}  // namespace dorado::data_loader
