@@ -21,7 +21,7 @@ inline void csv_write_entries(std::ostream &out,
         out << model_name << ',';
         out << entry.batch_size << ',';
         out << entry.basecall_speed << ',';
-        out << entry.memory_used;
+        out << entry.memory_used << '\n';
     }
 }
 
@@ -44,6 +44,12 @@ inline void csv_read_lines(std::istream &in, Callback &&callback) {
         if (stream.eof()) {
             // Ignore this line if any of the components are missing.
             spdlog::warn("Line doesn't have enough entries: {}", line);
+            continue;
+        }
+
+        // Check that the GPU and model are set.
+        if (gpu_name.value().empty() || model_name.value().empty()) {
+            spdlog::warn("Failed to parse line: {}", line);
             continue;
         }
 

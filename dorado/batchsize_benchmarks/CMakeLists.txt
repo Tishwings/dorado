@@ -14,6 +14,8 @@ dorado_add_library(dorado_benchmarks
         compiled_timings.h
         csv_helpers.h
         SpeedEntry.h
+    SOURCES_TEST
+        test_csv.cpp
     DEPENDS_PUBLIC
         # nothing
     DEPENDS_PRIVATE
