@@ -45,7 +45,7 @@ function(dorado_add_library)
             # All test files must exist in the test dir.
             target_sources(${test_name} PUBLIC tests/${src})
         endforeach()
-        target_link_libraries(${test_name} PRIVATE dorado_tests_common)
+        target_link_libraries(${test_name} PRIVATE ${arg_NAME} dorado_tests_common)
         dorado_add_test(${test_name})
         list(APPEND targets ${test_name})
     endif()
