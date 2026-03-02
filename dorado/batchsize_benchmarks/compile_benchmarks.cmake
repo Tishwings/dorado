@@ -19,7 +19,10 @@ function(dorado_compile_benchmarks)
         file(STRINGS "${csv_file}" csv_lines)
         foreach(csv_line IN LISTS csv_lines)
             # Break the line up.
-            if (NOT csv_line MATCHES "^([^,]+),([^,]+),([^,]+),([^,]+),([^,]+)$")
+            if (csv_line MATCHES "^#")
+                # Ignore comments.
+                continue()
+            elseif (NOT csv_line MATCHES "^([^,]+),([^,]+),([^,]+),([^,]+),([^,]+)$")
                 message(FATAL_ERROR "Failed to parse line: ${csv_line}")
                 continue()
             endif()

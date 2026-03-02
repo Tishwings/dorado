@@ -1,9 +1,9 @@
 #include "SpeedEntry.h"
 #include "csv_helpers.h"
+#include "entries_equal.h"
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <algorithm>
 #include <sstream>
 #include <unordered_map>
 #include <utility>
@@ -14,15 +14,6 @@
 using namespace dorado::batchsize_benchmarks;
 
 namespace {
-
-// SpeedEntry shouldn't need an equality check outside of the tests, so add that here.
-bool entries_equal(std::span<const SpeedEntry> lhs, std::span<const SpeedEntry> rhs) {
-    const auto compare = [](const SpeedEntry& a, const SpeedEntry& b) {
-        return a.batch_size == b.batch_size && a.basecall_speed == b.basecall_speed &&
-               a.memory_used == b.memory_used;
-    };
-    return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), compare);
-}
 
 DEFINE_TEST("Writing and reading") {
     const SpeedEntry gpu0_model0[]{
@@ -69,7 +60,7 @@ DEFINE_TEST("Writing and reading") {
         CATCH_CAPTURE(test.gpu_name, test.model_name);
         auto it = read_entries.find(make_key(test.gpu_name, test.model_name));
         CATCH_REQUIRE(it != read_entries.end());
-        CATCH_CHECK(entries_equal(it->second, test.entries));
+        CATCH_CHECK(tests::entries_equal(it->second, test.entries));
     }
 }
 

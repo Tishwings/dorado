@@ -1,0 +1,110 @@
+#include "BenchmarkCache.h"
+#include "SpeedEntry.h"
+#include "entries_equal.h"
+
+#include <catch2/catch_test_macros.hpp>
+
+#define CUT_TAG "[batchsize_benchmarks]"
+#define DEFINE_TEST(name) CATCH_TEST_CASE(CUT_TAG " " name, CUT_TAG)
+
+using namespace dorado::batchsize_benchmarks;
+
+namespace {
+
+DEFINE_TEST("Compiled cache works") {
+    // This test relies on the "test.csv" timings being baked in.
+    const SpeedEntry expected_0_0[]{
+            {1, 2, 3},
+            {4, 5, 6},
+    };
+    const SpeedEntry expected_0_1[]{
+            {7, 8, 9},
+            {10, 11, 12},
+    };
+    const SpeedEntry expected_1_0[]{
+            {13, 14, 15},
+            {16, 17, 18},
+            {19, 20, 21},
+    };
+    const SpeedEntry expected_1_2[]{
+            {22, 23, 24},
+    };
+
+    BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
+        CATCH_CHECK(tests::entries_equal(proxy.get_timings("fake gpu 0", "fake model 0"),
+                                         expected_0_0));
+        CATCH_CHECK(tests::entries_equal(proxy.get_timings("fake gpu 0", "fake model 1"),
+                                         expected_0_1));
+        CATCH_CHECK(tests::entries_equal(proxy.get_timings("fake gpu 1", "fake model 0"),
+                                         expected_1_0));
+        CATCH_CHECK(tests::entries_equal(proxy.get_timings("fake gpu 1", "fake model 2"),
+                                         expected_1_2));
+
+        // "Missing" entries should be empty.
+        CATCH_CHECK(proxy.get_timings("fake gpu 0", "fake model 2").empty());
+        CATCH_CHECK(proxy.get_timings("fake gpu 1", "fake model 1").empty());
+    });
+
+    // Test that the runtime cache is prioritized over the compiled one.
+    // We do this here rather than in another test so that there isn't an
+    // ordering issue when it comes to running the tests.
+    {
+        std::vector<SpeedEntry> entries{
+                {100, 200, 300},
+        };
+        BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
+            proxy.add_timings("fake gpu 0", "fake model 0", entries);
+            CATCH_CHECK(
+                    tests::entries_equal(proxy.get_timings("fake gpu 0", "fake model 0"), entries));
+        });
+    }
+}
+
+DEFINE_TEST("Runtime cache works") {
+    const std::string gpu_name = "test gpu";
+    const std::string model_name = "test model";
+
+    // There shouldn't exist any entries yet.
+    BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
+        CATCH_CHECK(proxy.get_timings(gpu_name, model_name).empty());
+    });
+
+    // Add entries to the cache and check that they match.
+    {
+        std::vector<SpeedEntry> entries{
+                // Intentionally not sorted.
+                {4, 5, 6},
+                {7, 8, 9},
+                {1, 2, 3},
+        };
+        BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
+            proxy.add_timings(gpu_name, model_name, entries);
+        });
+
+        // The cache should sort them when they're added, so do the same here.
+        tests::entries_sort(entries);
+        BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
+            CATCH_CHECK(tests::entries_equal(proxy.get_timings(gpu_name, model_name), entries));
+        });
+    }
+
+    // Replace the runtime values with a different set.
+    {
+        std::vector<SpeedEntry> entries = {
+                // Intentionally not sorted.
+                {400, 500, 600},
+                {100, 200, 300},
+        };
+        BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
+            proxy.add_timings(gpu_name, model_name, entries);
+        });
+
+        // Check that we get back the new entries.
+        tests::entries_sort(entries);
+        BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
+            CATCH_CHECK(tests::entries_equal(proxy.get_timings(gpu_name, model_name), entries));
+        });
+    }
+}
+
+}  // namespace
