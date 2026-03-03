@@ -537,8 +537,14 @@ int duplex(int argc, char* argv[]) {
                     DuplexBasecallerRunners basecaller_runners;
                     std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
                             api::create_basecall_runners(
-                                    {models.get_simplex_config(), device_id, 0.9f * fraction,
-                                     api::PipelineType::duplex, 0.f, false, false, false},
+                                    {
+                                            .model_config = models.get_simplex_config(),
+                                            .device = device_id,
+                                            .memory_limit_fraction = 0.9f * fraction,
+                                            .pipeline_type = api::PipelineType::duplex,
+                                            .batch_size_time_penalty = 0.f,
+                                            .variable_chunk_sizes = false,
+                                    },
                                     num_runners, 0);
 
                     // The fraction argument for GPU memory allocates the fraction of the
@@ -552,8 +558,14 @@ int duplex(int argc, char* argv[]) {
                     // model.
                     std::tie(basecaller_runners.stereo_runners, std::ignore) =
                             api::create_basecall_runners(
-                                    {models.get_stereo_config(), device_id, 0.5f * fraction,
-                                     api::PipelineType::duplex, 0.f, false, false, false},
+                                    {
+                                            .model_config = models.get_stereo_config(),
+                                            .device = device_id,
+                                            .memory_limit_fraction = 0.5f * fraction,
+                                            .pipeline_type = api::PipelineType::duplex,
+                                            .batch_size_time_penalty = 0.f,
+                                            .variable_chunk_sizes = false,
+                                    },
                                     num_runners, 0);
 
                     return basecaller_runners;
@@ -581,12 +593,24 @@ int duplex(int argc, char* argv[]) {
 #endif
             {
                 std::tie(runners, num_devices) = api::create_basecall_runners(
-                        {models.get_simplex_config(), device, 0.9f, api::PipelineType::duplex, 0.f,
-                         false, false, false},
+                        {
+                                .model_config = models.get_simplex_config(),
+                                .device = device,
+                                .memory_limit_fraction = 0.9f,
+                                .pipeline_type = api::PipelineType::duplex,
+                                .batch_size_time_penalty = 0.f,
+                                .variable_chunk_sizes = false,
+                        },
                         num_runners, 0);
                 std::tie(stereo_runners, std::ignore) = api::create_basecall_runners(
-                        {models.get_stereo_config(), device, 0.5f, api::PipelineType::duplex, 0.f,
-                         false, false, false},
+                        {
+                                .model_config = models.get_stereo_config(),
+                                .device = device,
+                                .memory_limit_fraction = 0.5f,
+                                .pipeline_type = api::PipelineType::duplex,
+                                .batch_size_time_penalty = 0.f,
+                                .variable_chunk_sizes = false,
+                        },
                         num_runners, 0);
             }
 

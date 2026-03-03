@@ -96,14 +96,13 @@ std::pair<std::vector<basecall::RunnerPtr>, size_t> create_basecall_runners(
 
         for (const auto& device_string : devices) {
             basecall::BasecallerCreationParams per_device_params = {
-                    params.model_config,
-                    device_string,
-                    params.memory_limit_fraction,
-                    params.pipeline_type,
-                    params.batch_size_time_penalty,
-                    params.run_batchsize_benchmarks,
-                    params.emit_batchsize_benchmarks,
-                    params.variable_chunk_sizes};
+                    .model_config = params.model_config,
+                    .device = device_string,
+                    .memory_limit_fraction = params.memory_limit_fraction,
+                    .pipeline_type = params.pipeline_type,
+                    .batch_size_time_penalty = params.batch_size_time_penalty,
+                    .variable_chunk_sizes = params.variable_chunk_sizes,
+            };
             futures.push_back(pool.push(create_cuda_caller, per_device_params));
         }
 

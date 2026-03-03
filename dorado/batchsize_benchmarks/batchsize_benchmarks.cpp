@@ -65,8 +65,6 @@ SpeedEntry calculate_one(const std::string &device,
                     .memory_limit_fraction = 1.f,
                     .pipeline_type = api::PipelineType::simplex,
                     .batch_size_time_penalty = 0.f,
-                    .run_batchsize_benchmarks = false,
-                    .emit_batchsize_benchmarks = false,
                     .variable_chunk_sizes = enable_vcs,
             },
             utils::default_parameters.num_runners, 0);

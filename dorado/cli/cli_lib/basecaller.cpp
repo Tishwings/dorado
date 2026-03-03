@@ -106,15 +106,14 @@ struct BasecallerOptions {
     std::string polya_config;
     std::string resume_from_file;
     std::optional<std::string> output_dir;
+    std::optional<std::string> run_batchsize_benchmarks;
 
     int max_reads;
     int min_qscore;
     int run_for;
 
-    bool emit_batchsize_benchmarks;
     bool enable_read_splitting;
     bool estimate_poly_a;
-    bool run_batchsize_benchmarks;
     bool variable_chunk_sizes;
 };
 
@@ -442,14 +441,12 @@ Runners create_runners(const BasecallerOptions& options,
             std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
                     api::create_basecall_runners(
                             {
-                                    model_config,
-                                    device_id,
-                                    fraction,
-                                    api::PipelineType::simplex,
-                                    0.f,
-                                    options.run_batchsize_benchmarks,
-                                    options.emit_batchsize_benchmarks,
-                                    use_variable_chunk_sizes,
+                                    .model_config = model_config,
+                                    .device = device_id,
+                                    .memory_limit_fraction = fraction,
+                                    .pipeline_type = api::PipelineType::simplex,
+                                    .batch_size_time_penalty = 0.f,
+                                    .variable_chunk_sizes = use_variable_chunk_sizes,
                             },
                             num_runners, 0);
             return basecaller_runners;
@@ -475,14 +472,12 @@ Runners create_runners(const BasecallerOptions& options,
     {
         std::tie(runners, num_devices) = api::create_basecall_runners(
                 {
-                        model_config,
-                        options.device,
-                        1.f,
-                        api::PipelineType::simplex,
-                        0.f,
-                        options.run_batchsize_benchmarks,
-                        options.emit_batchsize_benchmarks,
-                        false,
+                        .model_config = model_config,
+                        .device = options.device,
+                        .memory_limit_fraction = 1.f,
+                        .pipeline_type = api::PipelineType::simplex,
+                        .batch_size_time_penalty = 0.f,
+                        .variable_chunk_sizes = false,
                 },
                 num_runners, 0);
     }
@@ -986,10 +981,6 @@ int basecaller(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Force on running of batchsize benchmarks if emission is on
-    const bool run_batchsize_benchmarks = parser.get<bool>("--emit-batchsize-benchmarks") ||
-                                          parser.get<bool>("--run-batchsize-benchmarks");
-
     const auto device = cli::parse_device(parser);
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
     models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
@@ -1026,13 +1017,13 @@ int basecaller(int argc, char* argv[]) {
                 .polya_config = polya_config,
                 .resume_from_file = parser.get<std::string>("--resume-from"),
                 .output_dir = cli::get_output_dir(parser),
+                .run_batchsize_benchmarks =
+                        parser.present<std::string>("--run-batchsize-benchmarks"),
                 .max_reads = parser.get<int>("--max-reads"),
                 .min_qscore = parser.get<int>("--min-qscore"),
                 .run_for = run_for_arg,
-                .emit_batchsize_benchmarks = parser.get<bool>("--emit-batchsize-benchmarks"),
                 .enable_read_splitting = !parser.get<bool>("--disable-read-splitting"),
                 .estimate_poly_a = estimate_poly_a,
-                .run_batchsize_benchmarks = run_batchsize_benchmarks,
                 .variable_chunk_sizes = !parser.get<bool>("--disable-variable-chunk-sizes"),
         };
         run(options, args, models, default_parameters.num_runners, modbase_params,
