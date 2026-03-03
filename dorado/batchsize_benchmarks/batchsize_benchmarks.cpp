@@ -45,6 +45,14 @@ SpeedEntry calculate_one(const std::string &device,
                          const config::BasecallModelConfig &config,
                          const data_loader::InputFiles &input_files) {
     const auto batch_size = config.basecaller.batch_size();
+#if DORADO_CUDA_BUILD
+    // Assume that we'll want VCS enabled.
+    const c10::Device torch_device{device};
+    const int device_ids[]{torch_device.index()};
+    const bool enable_vcs = api::check_variable_chunk_sizes_supported(config, device_ids);
+#else
+    const bool enable_vcs = false;
+#endif
 
     // Create runners.
     auto [runners, num_devices] = api::create_basecall_runners(
@@ -54,6 +62,9 @@ SpeedEntry calculate_one(const std::string &device,
                     .memory_limit_fraction = 1.f,
                     .pipeline_type = api::PipelineType::simplex,
                     .batch_size_time_penalty = 0.f,
+                    .run_batchsize_benchmarks = false,
+                    .emit_batchsize_benchmarks = false,
+                    .variable_chunk_sizes = enable_vcs,
             },
             utils::default_parameters.num_runners, 0);
 
