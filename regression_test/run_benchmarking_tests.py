@@ -68,9 +68,6 @@ class kit14:
 
     test_conditions: typing.Dict[str, typing.List[str]] = field(init=False)
     test_conditions_modbase: typing.Dict[str, typing.List[str]] = field(init=False)
-    test_conditions_modbase_v100_prom: typing.Dict[str, typing.List[str]] = field(
-        init=False
-    )
 
     def __post_init__(self):
         # modelsets should be the model complex sections for the basecalling model, comma-separated mods and "duplex"
@@ -140,35 +137,6 @@ class kit14:
             "macos": modbase_model_sets,
         }
 
-        # restricted set of modbase tests specifically for the V100 prom,
-        # because we're running too many tests on a platform we're not that concerned about
-        modbase_model_sets_v100_prom = [
-            [self.hac_model, self.mod_5mCG_5hmCG],
-            [self.hac_model, self.mod_5mC_5hmC],
-            [
-                self.hac_model,
-                ",".join(
-                    [
-                        self.mod_5mC_5hmC,
-                        self.mod_6mA,
-                    ]
-                ),
-            ],
-            [self.sup_model, self.mod_5mCG_5hmCG],
-            [self.sup_model, self.mod_5mC_5hmC],
-            [
-                self.sup_model,
-                ",".join(
-                    [
-                        self.mod_5mC_5hmC,
-                        self.mod_6mA,
-                    ]
-                ),
-            ],
-        ]
-
-        self.test_conditions_modbase_v100_prom = {"p24": modbase_model_sets_v100_prom}
-
 
 class BasecallingSpeedTestCases(abc.ABC):
     """Base class containing the tests to be run. Inherit from this and override the various test conditions
@@ -206,18 +174,10 @@ class BasecallingSpeedTestCases(abc.ABC):
             return {"orin": self.kit.test_conditions["orin"]}
         elif get_platform() == "osx_arm":
             return {"macos": self.kit.test_conditions["macos"]}
-        elif self.device in [
-            "A6000",
-            "RTX6000PRO",  # RTX pro runner only has 1 GPU at the moment
-        ]:
-            return {"gridion": self.kit.test_conditions["gridion"]}
         elif self.device == "A100":
             return {"p24": self.kit.test_conditions["p24"]}
         else:
-            return {
-                "gridion": self.kit.test_conditions["gridion"],
-                # "p24": self.kit.test_conditions["p24"],
-            }
+            return {"gridion": self.kit.test_conditions["gridion"]}
 
     @property
     def test_conditions_modbase(self):
@@ -226,17 +186,14 @@ class BasecallingSpeedTestCases(abc.ABC):
         elif get_platform() == "osx_arm":
             return {"macos": self.kit.test_conditions_modbase["macos"]}
         elif self.device in [
+            "V100",
             "A6000",
             "RTX6000PRO",  # RTX pro runner only has 1 GPU at the moment
+            "5070TI",
         ]:
             return {"gridion": self.kit.test_conditions_modbase["gridion"]}
         elif self.device == "A100":
             return {"p24": self.kit.test_conditions_modbase["p24"]}
-        elif self.device == "V100":
-            return {
-                "gridion": self.kit.test_conditions_modbase["gridion"],
-                "p24": self.kit.test_conditions_modbase_v100_prom["p24"],
-            }
         else:
             return {
                 "gridion": self.kit.test_conditions_modbase["gridion"],
