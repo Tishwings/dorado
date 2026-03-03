@@ -27,6 +27,7 @@
 #include <c10/cuda/CUDAGuard.h>
 #elif DORADO_METAL_BUILD
 #include "basecall/MetalCaller.h"
+#include "torch_utils/metal_utils.h"
 #endif
 
 namespace dorado::batchsize_benchmarks {
@@ -70,12 +71,13 @@ SpeedEntry calculate_one(const std::string &device,
 
     // Reset peak allocator counters so that we can measure how much was used during processing.
 #if DORADO_CUDA_BUILD
-    const c10::Device torch_device{device};
-#elif DORADO_METAL_BUILD
-    const c10::Device torch_device{c10::DeviceType::MPS};  // TODO: should this be both MPS and CPU?
-#endif
     auto *const allocator = c10::getDeviceAllocator(torch_device.type());
     allocator->resetPeakStats(torch_device.index());
+#elif DORADO_METAL_BUILD
+    // We replace the allocator on the metal path and don't implement the DeviceAllocator
+    // interface, so we can't get peak stats.
+    // TODO: implement the interface and reuse the cuda path
+#endif
 
     // Build a benchmarking pipeline.
     PipelineDescriptor descriptor;
@@ -111,9 +113,14 @@ SpeedEntry calculate_one(const std::string &device,
     pipeline->terminate({.fast = utils::AsyncQueueTerminateFast::Yes});
     source.join();
 
+#if DORADO_CUDA_BUILD
     const auto aggregate_idx = static_cast<uint64_t>(c10::CachingAllocator::StatType::AGGREGATE);
     const auto memory_used =
             allocator->getDeviceStats(torch_device.index()).allocated_bytes.at(aggregate_idx).peak;
+#elif DORADO_METAL_BUILD
+    // This slightly underestimates since it's not the peak like the cuda path.
+    const auto memory_used = dorado::utils::get_mtl_device()->currentAllocatedSize();
+#endif
 
     return SpeedEntry{
             .batch_size = static_cast<uint32_t>(batch_size),
