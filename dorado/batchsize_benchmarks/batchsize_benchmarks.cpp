@@ -16,8 +16,10 @@
 #include <c10/core/CachingDeviceAllocator.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 
 #if DORADO_CUDA_BUILD
@@ -88,9 +90,11 @@ SpeedEntry calculate_one(const std::string &device,
     auto pipeline = Pipeline::create(std::move(descriptor), nullptr);
 
     // We need to feed in the data on a separate thread since it'll block.
+    std::atomic<bool> finished_data{false};
     auto source = utils::jthread([&] {
         data_loader::DataLoader loader(*pipeline, device, 1, 0, std::nullopt, {});
         loader.load_reads(input_files, ReadOrder::UNRESTRICTED);
+        finished_data.store(true, std::memory_order_relaxed);
     });
 
     // Wait for reads to start coming through.
@@ -106,8 +110,11 @@ SpeedEntry calculate_one(const std::string &device,
 
     // Let the benchmark run and grab the speed.
     std::this_thread::sleep_for(benchmark_duration);
+    if (finished_data.load(std::memory_order_relaxed)) {
+        throw std::runtime_error("Ran out of data while benchmarking. Need a bigger input file");
+    }
     const double speed = sink.samples_per_second();
-    spdlog::debug("[{}] {} @ {}", device, batch_size, speed);
+    spdlog::debug("[{}] {} @ {}", device, speed, batch_size);
 
     // Teardown the pipeline. This will teardown the source thread too.
     pipeline->terminate({.fast = utils::AsyncQueueTerminateFast::Yes});
