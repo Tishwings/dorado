@@ -240,6 +240,17 @@ regression_test:windows:
 
 .speed_regression_test:
   stage: regression_test
+  parallel:
+    matrix:
+      - REGRESSION_TEST_NAME:
+        - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
+        - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
+        - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
+        - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
+        - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
+        - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
+        - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
+        - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
   variables:
     GIT_SUBMODULE_STRATEGY: normal
     MTL_DEBUG_LAYER: 0
@@ -280,17 +291,6 @@ regression_test:windows:
 
 regression_tests:speed:linux:arm64:jammy:
   image: ${DORADO_DOCKER_ROOT}/dorado-l4t-r36.4.0:1.0
-  parallel:
-      matrix:
-          - REGRESSION_TEST_NAME:
-            - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
   variables:
     BUILD_TYPE: Release
     BUILD_CUDA: 1
@@ -313,17 +313,6 @@ regression_tests:speed:linux:arm64:jammy:
     - .speed_regression_test
 
 regression_tests:speed:linux:x86:V100:
-  parallel:
-      matrix:
-          - REGRESSION_TEST_NAME:
-            - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
   variables:
     GPU_DEVICE_NAME: "V100"
   needs:
@@ -333,17 +322,6 @@ regression_tests:speed:linux:x86:V100:
     - .linux_benchmark_runner_p48
 
 regression_tests:speed:linux:x86:A100:
-  parallel:
-      matrix:
-          - REGRESSION_TEST_NAME:
-            - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
   variables:
     GPU_DEVICE_NAME: "A100"
   needs:
@@ -353,17 +331,6 @@ regression_tests:speed:linux:x86:A100:
     - .linux_benchmark_runner_a100
 
 regression_tests:speed:linux:x86:RTX6000PRO:
-  parallel:
-      matrix:
-          - REGRESSION_TEST_NAME:
-            - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
   variables:
     GPU_DEVICE_NAME: "RTX6000PRO"
   needs:
@@ -373,17 +340,6 @@ regression_tests:speed:linux:x86:RTX6000PRO:
     - .linux_benchmark_runner_rtx6000
 
 regression_tests:speed:windows:A6000:
-  parallel:
-      matrix:
-          - REGRESSION_TEST_NAME:
-            - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
   variables:
     BUILD_TYPE: Release
     BUILD_CUDA: 1
@@ -396,17 +352,6 @@ regression_tests:speed:windows:A6000:
     - build_archive:windows:cuda12
 
 regression_tests:speed:windows:5070_ti:
-  parallel:
-      matrix:
-          - REGRESSION_TEST_NAME:
-            - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
   variables:
     BUILD_TYPE: Release
     BUILD_CUDA: 1
@@ -419,17 +364,6 @@ regression_tests:speed:windows:5070_ti:
     - build_archive:windows:cuda12
 
 regression_tests:speed:macos:arm:
-  parallel:
-      matrix:
-          - REGRESSION_TEST_NAME:
-            - TestBasecallingSpeeds_kit14_30kbp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_30kbp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_30kbp.test_precise_condition_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_standard_basecalling_speeds
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_hac
-            - TestBasecallingSpeeds_kit14_200bp.test_modbase_basecalling_speeds_sup
-            - TestBasecallingSpeeds_kit14_200bp.test_precise_condition_speeds
   variables:
     BUILD_TYPE: Release
     BUILD_CUDA: 1

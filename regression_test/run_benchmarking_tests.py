@@ -174,19 +174,10 @@ class BasecallingSpeedTestCases(abc.ABC):
             return {"orin": self.kit.test_conditions["orin"]}
         elif get_platform() == "osx_arm":
             return {"macos": self.kit.test_conditions["macos"]}
-        elif self.device in [
-            "V100",
-            "A6000",
-            "RTX6000PRO",  # RTX pro runner only has 1 GPU at the moment
-            "5070TI",
-        ]:
-            return {"gridion": self.kit.test_conditions["gridion"]}
         elif self.device == "A100":
             return {"p24": self.kit.test_conditions["p24"]}
         else:
-            return {
-                "gridion": self.kit.test_conditions["gridion"],
-            }
+            return {"gridion": self.kit.test_conditions["gridion"]}
 
     @property
     def test_conditions_modbase(self):
