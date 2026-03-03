@@ -58,7 +58,12 @@ void BenchmarkCache::CacheProxy::add_timings(std::string gpu_name,
 std::span<const SpeedEntry> BenchmarkCache::CacheProxy::get_timings(
         const std::string_view gpu_name,
         const std::string_view model_name) const {
+#if (defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE < 14) || (defined(_MSC_VER) && _MSC_VER < 1937)
+    // There's a bug in libstdc++'s std::pair comparator before GCC 14, and MSVC's STL before 19.37.
+    const auto key = std::make_pair(std::string(gpu_name), std::string(model_name));
+#else
     const auto key = std::make_pair(gpu_name, model_name);
+#endif
 
     // Check the runtime cache first.
     auto runtime = m_cache.m_runtime_cache.find(key);
