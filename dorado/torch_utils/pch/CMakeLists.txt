@@ -3,14 +3,21 @@ add_library(dorado_pch STATIC
     precompiled.h
 )
 
-target_precompile_headers(dorado_pch
-    PUBLIC
-        precompiled.h
+# We need an exe too since -fPIC is used for libraries and -fPIE is used for
+# exes and GCC will complain about the flags being different if we reuse the
+# library's PCH with an exe.
+add_executable(dorado_pch_exe
+    main.cpp
 )
 
-target_link_libraries(dorado_pch
-    PUBLIC
-        torch_lib
-)
-
-enable_warnings_as_errors(dorado_pch)
+foreach(target dorado_pch dorado_pch_exe)
+    target_precompile_headers(${target}
+        PUBLIC
+            precompiled.h
+    )
+    target_link_libraries(${target}
+        PUBLIC
+            torch_lib
+    )
+    enable_warnings_as_errors(${target})
+endforeach()
