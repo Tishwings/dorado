@@ -54,17 +54,19 @@ void load_parameters(ModelTorchBase& model, const std::filesystem::path& in_pt) 
         return bytes;
     };
 
+    const std::unordered_set<std::string> non_persistent_buffers =
+            model.get_non_persistent_buffers();
+
     if (spdlog::default_logger()->should_log(spdlog::level::debug)) {
         const torch::OrderedDict<std::string, at::Tensor> model_params = model.named_parameters();
         for (const auto& w : model_params) {
             spdlog::debug("[model_params] w.key() = {}", w.key());
         }
         for (const auto& buffer : model.named_buffers()) {
-            spdlog::debug(
-                    "[model_params] Buffer key: {}, shape: {}, persistent: {}", buffer.key(),
-                    (buffer.value().defined() ? utils::tensor_shape_as_string(buffer.value())
-                                              : "undefined"),
-                    ((model.get_non_persistent_buffers().count(buffer.key())) ? "no" : "yes"));
+            spdlog::debug("[model_params] Buffer key: {}, shape: {}, persistent: {}", buffer.key(),
+                          (buffer.value().defined() ? utils::tensor_shape_as_string(buffer.value())
+                                                    : "undefined"),
+                          ((non_persistent_buffers.count(buffer.key())) ? "no" : "yes"));
         }
     }
 
@@ -84,8 +86,6 @@ void load_parameters(ModelTorchBase& model, const std::filesystem::path& in_pt) 
 
         auto params = model.named_parameters(true /*recurse*/);
         auto buffers = model.named_buffers(true /*recurse*/);
-        const std::unordered_set<std::string>& non_persistent_buffers =
-                model.get_non_persistent_buffers();
 
         // Create a set of model parameters.
         std::unordered_set<std::string> set_model_params;

@@ -54,13 +54,14 @@ torch::Tensor ModelTorchBase::predict_on_batch(torch::Tensor x) {
     return x;
 }
 
-const std::unordered_set<std::string>& ModelTorchBase::get_non_persistent_buffers() const {
+std::unordered_set<std::string> ModelTorchBase::get_non_persistent_buffers() const {
+    std::lock_guard<std::mutex> lock(m_mutex_write);
     return m_non_persistent_buffers;
 }
 
-void ModelTorchBase::add_nonpersistent_buffer(const std::string& name) {
+void ModelTorchBase::add_nonpersistent_buffer(std::string name) {
     std::lock_guard<std::mutex> lock(m_mutex_write);
-    m_non_persistent_buffers.emplace(name);
+    m_non_persistent_buffers.emplace(std::move(name));
 }
 
 }  // namespace dorado::secondary
