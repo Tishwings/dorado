@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bam_file_view.h"
+#include "secondary/common/bam_file.h"
 #include "types.h"
 
 #include <cstdint>
@@ -36,16 +36,16 @@ std::string create_region_string(const std::string_view ref_name,
 std::unordered_map<std::string, int> kadayashi_local_haptagging_gen_ht(chunk_t &ck);
 
 /**
- * @brief Perform phasing for a query region with the deepvariant replica method, 
+ * @brief Perform phasing for a query region with the deepvariant replica method,
  *        return all info (read haptags, the chunk, and phasing breakpoints).
- * 
- * This function is exposed for CLI use. To obtain only the read haptags, 
+ *
+ * This function is exposed for CLI use. To obtain only the read haptags,
  * use `kadayashi_dvr_single_region_wrapper` instead.
- * 
- * @par Thread safety 
+ *
+ * @par Thread safety
  * Seeking the BAM file from other threads with htslib *itr_query methods
  * will produce unpredictable behavior.
- * 
+ *
  * @param fp_bam    BAM file. Must present.
  * @param fp_bai    BAM index file. Must present.
  * @param fp_header BAM header. Must present.
@@ -68,17 +68,17 @@ phase_return_t kadayashi_local_haptagging_dvr_single_region(samFile *fp_bam,
                                                             const pileup_pars_t &pp);
 
 /**
- * @brief Perform phasing for a query region with the simple phasing method (flip-flop), 
+ * @brief Perform phasing for a query region with the simple phasing method (flip-flop),
  *        return all info (read haptags, the chunk, and phasing breakpoints).
- * 
- * Like `kadayashi_local_haptagging_dvr_single_region`, this function 
- * is exposed for CLI use. To obtain only the read haptags, use 
+ *
+ * Like `kadayashi_local_haptagging_dvr_single_region`, this function
+ * is exposed for CLI use. To obtain only the read haptags, use
  * `kadayashi_simple_single_region_wrapper` instead.
- * 
- * @par Thread safety 
+ *
+ * @par Thread safety
  * Seeking the BAM file from other threads with htslib *itr_query methods
  * will produce unpredictable behavior.
- * 
+ *
  * @param fp_bam    BAM file. Must present.
  * @param fp_bai    BAM index file. Must present.
  * @param fp_header BAM header. Must present.
@@ -149,18 +149,18 @@ typedef std::unordered_map<uint32_t, vc_variants1_val_t> vc_variants1_t;
 typedef std::unordered_map<std::string, vc_variants1_t> vc_variants_t;
 
 /**
- * @brief Parse read pile up to produce variant candidates. 
- * 
+ * @brief Parse read pile up to produce variant candidates.
+ *
  * Exposed for CLI. To perform read phasing and varcall, use the wrappers.
  * This routine is used for both phasing and pileup-based variant calling.
- * For the former, set `qname2hp` to null and set `pp` to have 
- *  the pileup only report het variants. 
+ * For the former, set `qname2hp` to null and set `pp` to have
+ *  the pileup only report het variants.
  * For the latter, supply `qname2hp` and set appropriate values for `pp`.
- * 
+ *
  * @par Thread safety
- * BAM file should be thread local because seeking it from other 
+ * BAM file should be thread local because seeking it from other
  * threads may be unsafe.
- * 
+ *
  * @param hf         BAM file, index and header.
  * @param ht_refvars If not empty, the pileup will only report variants
  *                   that exist in this list. Only use this when caller
@@ -174,7 +174,7 @@ typedef std::unordered_map<std::string, vc_variants1_t> vc_variants_t;
  *                   0-index, exclusive.
  * @param pp         Parameters for the pileup and variant filtering.
  */
-chunk_t variant_pileup_ht(BamFileView &hf,
+chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                           const variants_t &ht_refvars,
                           const faidx_t *fai,
                           const str2int_t *qname2hp,
@@ -189,7 +189,7 @@ chunk_t variant_pileup_ht(BamFileView &hf,
 
  * @par Thread safety
  * BAM file.
- * 
+ *
  * @param fp_bam     BAM file. Must present.
  * @param fp_bai     BAM index. Must present.
  * @param fp_header  BAM header. Must present.
@@ -197,22 +197,22 @@ chunk_t variant_pileup_ht(BamFileView &hf,
  * @param ref_name   Reference sequence name.
  * @param ref_start  Start of query region, 0-index inclusive.
  * @param ref_end    End of query region, 0-index exclusive.
- * @param disable_interval_expansion If set, the phasing will only use  
+ * @param disable_interval_expansion If set, the phasing will only use
  *                   variants that are inside the query region. This might
  *                   not be desirable when the query happens to start in a
- *                   long homozygous region and could've been phased with 
- *                   variant(s) right outside of the query. 
- *                   If not set, phasing will consider variants to the left 
+ *                   long homozygous region and could've been phased with
+ *                   variant(s) right outside of the query.
+ *                   If not set, phasing will consider variants to the left
  *                   and the right of the query region, up to 50kb away.
  * @param min_base_quality Filter out variation on read if any base in it
  *                   has base quality lower than this value.
- *                   Has no effect for deletions. 
+ *                   Has no effect for deletions.
  * @param min_varcall_coverage Candidate variant's alt allele read depth
  *                   must at least be this value.
  * @param min_varcall_fraction Candidate variant's alt allele frequency
  *                   must at least be this value.
  * @param max_clipping Filter out reads with clippings at least this long.
- * @param max_gapcompressed_seqdiv If `de:f` tag exists in BAM records, 
+ * @param max_gapcompressed_seqdiv If `de:f` tag exists in BAM records,
  *                     filter out reads with values at least this large.
  */
 std::unordered_map<std::string, int> kadayashi_dvr_single_region_wrapper(
@@ -232,8 +232,8 @@ std::unordered_map<std::string, int> kadayashi_dvr_single_region_wrapper(
         const float min_strand_cov_frac,
         const float max_gapcompressed_seqdiv);
 
-/** Same as `kadayashi_dvr_single_region_wrapper` except for that 
- * phasing is performed with the simple phasing method (flip-flop) 
+/** Same as `kadayashi_dvr_single_region_wrapper` except for that
+ * phasing is performed with the simple phasing method (flip-flop)
  * instead of deepvariant replica.
  */
 std::unordered_map<std::string, int> kadayashi_simple_single_region_wrapper(
@@ -274,7 +274,7 @@ struct variant_fullinfo_t {
     char genotype1[3] = {'0', '/', '0'};
 };
 
-/** Variant information that can be directly used to compose 
+/** Variant information that can be directly used to compose
 * VCF line, except for `pos` which is in 0-index.
 */
 struct variant_dorado_style_t {
@@ -282,7 +282,7 @@ struct variant_dorado_style_t {
     bool is_phased;
     uint32_t pos;
 
-    /** Currently a placeholder value: confident variant 
+    /** Currently a placeholder value: confident variant
      * are assigned 60. Unsure variants are assigned 0.
      */
     int qual;
@@ -330,11 +330,11 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
                                                     const bool use_dvr_for_phasing);
 
 /**
- * @brief Phase reads in a query region and perform phased variant calling. 
+ * @brief Phase reads in a query region and perform phased variant calling.
 
  * @par Thread safety
  * BAM file.
- * 
+ *
  * @param fp_bam     BAM file. Must present.
  * @param fp_bai     BAM index. Must present.
  * @param fp_header  BAM header. Must present.
@@ -342,22 +342,22 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
  * @param ref_name   Reference sequence name.
  * @param ref_start  Start of query region, 0-index inclusive.
  * @param ref_end    End of query region, 0-index exclusive.
- * @param disable_interval_expansion If set, the phasing will only use  
+ * @param disable_interval_expansion If set, the phasing will only use
  *                   variants that are inside the query region. This might
  *                   not be desirable when the query happens to start in a
- *                   long homozygous region and could've been phased with 
- *                   variant(s) right outside of the query. 
- *                   If not set, phasing will consider variants to the left 
+ *                   long homozygous region and could've been phased with
+ *                   variant(s) right outside of the query.
+ *                   If not set, phasing will consider variants to the left
  *                   and the right of the query region, up to 50kb away.
  * @param min_base_quality Filter out variation on read if any base in it
  *                   has base quality lower than this value.
- *                   Has no effect for deletions. 
+ *                   Has no effect for deletions.
  * @param min_varcall_coverage Candidate variant's alt allele read depth
  *                   must at least be this value.
  * @param min_varcall_fraction Candidate variant's alt allele frequency
  *                   must at least be this value.
  * @param max_clipping Filter out reads with clippings at least this long.
- * @param max_gapcompressed_seqdiv If `de:f` tag exists in BAM records, 
+ * @param max_gapcompressed_seqdiv If `de:f` tag exists in BAM records,
  *                     filter out reads with values at least this large.
  * @param use_dvr_for_phasing If set, use deepvariant replica phasing method.
  *                            Otherwise, the simple phasing method (flip-flop)

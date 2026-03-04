@@ -265,7 +265,7 @@ EncoderReadAlignment::EncoderReadAlignment(const std::filesystem::path& in_ref_f
                                            const bool include_snp_qv_column,
                                            const KadayashiOptions& kadayashi_opt)
         : m_fastx_reader{in_ref_fn},
-          m_bam_file{secondary::BamFile(in_bam_aln_fn)},
+          m_bam_file{secondary::BamFile(in_bam_aln_fn, 1)},
           m_dtypes{dtypes},
           m_num_dtypes{static_cast<int32_t>(std::size(dtypes)) + 1},
           m_tag_name{tag_name},

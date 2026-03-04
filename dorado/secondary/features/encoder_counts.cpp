@@ -299,7 +299,7 @@ EncoderCounts::EncoderCounts(const std::filesystem::path& in_bam_aln_fn,
                              const int32_t min_mapq,
                              const bool symmetric_indels,
                              const bool clip_to_zero)
-        : m_bam_file{secondary::BamFile(in_bam_aln_fn)},
+        : m_bam_file{secondary::BamFile(in_bam_aln_fn, 1)},
           m_normalise_type{normalise_type},
           m_dtypes{dtypes},
           m_num_dtypes{static_cast<int32_t>(std::size(m_dtypes)) + 1},

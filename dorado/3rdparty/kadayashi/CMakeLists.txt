@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
 option(BUILD_KADAYASHI_ENABLE_COVERAGE "Build tests with gcov coverage" OFF)
-option(BUILD_KADAYASHI_TESTS "Build the kadayashi unit test executable" OFF)
+option(BUILD_KADAYASHI_TESTS "Build the kadayashi unit test executable" ON)
 option(BUILD_KADAYASHI_EXE "Build the kadayashi executable" OFF)
 option(BUILD_KADAYASHI_AS_SUBPROJECT "If ON, custom compiler options will not be set" OFF)
 
@@ -67,7 +67,6 @@ add_library(haplotag_lib STATIC
     src/haplotag_lib/sequence_utility.cpp
     src/haplotag_lib/variant_graph.cpp
     src/haplotag_lib/bam_record_parsing.cpp
-    include/bam_file_view.h
     include/local_haplotagging.h
     include/faidx_utils.h
     include/hts_types.h
@@ -82,26 +81,32 @@ add_library(kadayashi::haplotag_lib ALIAS haplotag_lib)
 target_include_directories(haplotag_lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/hts_utils>
         $<INSTALL_INTERFACE:include>
     PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../hts_utils/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../secondary/common/include/secondary/common/
         ${CMAKE_CURRENT_SOURCE_DIR}/src/haplotag_lib
 )
 
 target_link_libraries(haplotag_lib
+    PUBLIC
+        dorado_hts_utils
+        dorado_secondary
     PRIVATE
         ${HTSLIB_LIBRARIES}
         ${ZLIB_LIBRARIES}
         spdlog::spdlog
+        dorado_secondary
 )
 enable_gcov(haplotag_lib)
 enable_wall(haplotag_lib)
 
 # Optional install
-install(TARGETS spdlog 
+install(TARGETS spdlog
   EXPORT kadayashi_targets
 )
-install(TARGETS haplotag_lib EXPORT kadayashi_targets
+install(TARGETS haplotag_lib
+    #EXPORT kadayashi_targets
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
@@ -123,20 +128,22 @@ install(EXPORT kadayashi_targets
 if (BUILD_KADAYASHI_EXE OR BUILD_KADAYASHI_TESTS)
     add_library(kadayashi_main_lib STATIC
             src/bam_tagging.cpp
-            src/kthread.cpp
             src/cli.cpp
             src/kadayashi_utils.cpp
             src/pipeline.cpp
             src/resources.cpp
-            src/hts_utils/BamFile.cpp
-            src/hts_utils/FastxRandomReader.cpp
     )
     target_include_directories(kadayashi_main_lib
         PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/haplotag_lib
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/hts_utils
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/haplotag_lib
+            ${CMAKE_CURRENT_SOURCE_DIR}/../cxxpool/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../hts_utils/include/
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../secondary/common/include/secondary/common/
     )
     target_link_libraries(kadayashi_main_lib
+        PUBLIC
+            dorado_hts_utils
+            dorado_secondary
         PRIVATE
             haplotag_lib
             Threads::Threads
@@ -155,6 +162,8 @@ endif()
 
 # Add the main executable
 if (BUILD_KADAYASHI_EXE)
+    message(STATUS "Building the Kadayashi binary.")
+
     find_package(Threads REQUIRED)
 
     add_executable(kadayashi
@@ -163,8 +172,14 @@ if (BUILD_KADAYASHI_EXE)
 
     set_target_properties(kadayashi PROPERTIES LINKER_LANGUAGE CXX)
 
+    target_include_directories(kadayashi
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/haplotag_lib
+    )
+
     target_link_libraries(kadayashi
         PRIVATE
+            cxxpool
             haplotag_lib
             kadayashi_main_lib
             ${HTSLIB_LIBRARIES}
