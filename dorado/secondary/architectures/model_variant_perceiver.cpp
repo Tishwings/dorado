@@ -455,17 +455,24 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
         // Manually store the names of the non-persistent buffers because Libtorch doesn't have this feature (unlike Pytorch).
         // This will be cross-referenced during model loading.
         for (const std::string_view name : {"cos_freqs", "sin_freqs"}) {
-            this->add_nonpersistent_buffer("blocks." + std::to_string(i) +
-                                           ".reads_to_haplotypes.positional_embeddings." +
-                                           std::string{name});
-            this->add_nonpersistent_buffer(
-                    "blocks." + std::to_string(i) +
-                    ".haplotype_self_attention.self_attention.positional_embeddings." +
-                    std::string{name});
+            {
+                std::string buffer_name = fmt::format(
+                        "blocks.{}.reads_to_haplotypes.positional_embeddings.{}", i, name);
+                add_nonpersistent_buffer(std::move(buffer_name));
+            }
+
+            {
+                std::string buffer_name = fmt::format(
+                        "blocks.{}.haplotype_self_attention.self_attention.positional_embeddings.{"
+                        "}",
+                        i, name);
+                add_nonpersistent_buffer(std::move(buffer_name));
+            }
+
             if (curr_update) {
-                this->add_nonpersistent_buffer("blocks." + std::to_string(i) +
-                                               ".haplotypes_to_reads.positional_embeddings." +
-                                               std::string{name});
+                std::string buffer_name = fmt::format(
+                        "blocks.{}.haplotypes_to_reads.positional_embeddings.{}", i, name);
+                add_nonpersistent_buffer(std::move(buffer_name));
             }
         }
     }
