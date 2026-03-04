@@ -111,8 +111,8 @@ std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at:
 
     const at::Tensor sin_vals = torch::sin(emb).unsqueeze(0).unsqueeze(2).unsqueeze(3);
 
-    q = q * cos_vals + rotate_half(q) * sin_vals;
-    k = k * cos_vals + rotate_half(k) * sin_vals;
+    q = rotate_half(q).mul_(sin_vals).add_(cos_vals * q);
+    k = rotate_half(k).mul_(sin_vals).add_(cos_vals * k);
 
     LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Output: q.dtype() = {}, k.dtype() = {}",
                     torch::toString(q.scalar_type()), torch::toString(k.scalar_type()));
@@ -271,7 +271,7 @@ at::Tensor MultiSequenceCrossAttentionBlockImpl::forward(at::Tensor x,
     const at::Tensor attn_out = attn_fn(q_rot, k_rot, v);
 
     x = m_norm1(x + attn_out);
-    x = m_norm2(m_out_proj(x) + x);
+    x = m_norm2(m_out_proj(x).add_(x));
 
     LOG_TRACE_DTYPE("[MultiSequenceCrossAttentionBlockImpl] Output: x.dtype() = {}",
                     torch::toString(x.scalar_type()));
@@ -291,7 +291,7 @@ SelfAttentionBlockImpl::SelfAttentionBlockImpl(const int64_t dim,
 
 at::Tensor SelfAttentionBlockImpl::forward(const at::Tensor& x) {
     utils::ScopedProfileRange spr1("SelfAttentionBlockImpl::forward", 3);
-    at::Tensor ret = m_norm(x + m_self_attention(x, x));
+    at::Tensor ret = m_norm(m_self_attention(x, x).add_(x));
     LOG_TRACE_DTYPE("[SelfAttentionBlockImpl] x.dtype() = {}, ret.dtype() = {}",
                     torch::toString(x.scalar_type()), torch::toString(ret.scalar_type()));
     return ret;
