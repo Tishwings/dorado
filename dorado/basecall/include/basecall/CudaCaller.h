@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -65,6 +66,13 @@ private:
 
     static std::pair<int64_t, int64_t> calculate_memory_requirements(
             const config::BasecallModelConfig &model_config);
+    struct BatchDimsAndMaxSizes;
+    static BatchDimsAndMaxSizes calculate_batch_sizes(
+            c10::Device device,
+            float memory_limit_fraction,
+            const config::BasecallModelConfig &model_config,
+            std::optional<PipelineType> pipeline_type,
+            int requested_batch_size);
     void determine_batch_dims(const BasecallerCreationParams &params);
 
     void start_threads();
