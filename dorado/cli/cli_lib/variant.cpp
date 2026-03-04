@@ -965,6 +965,7 @@ std::vector<secondary::Variant> merge_variants(
 }
 
 void run_variant_calling(const Options& opt,
+                         const secondary::BamInfo& bam_info,
                          const secondary::ModelConfig& model_config,
                          polisher::PolisherResources& resources,
                          variant::VariantProgressTracker& tracker,
@@ -1069,8 +1070,8 @@ void run_variant_calling(const Options& opt,
     }
 
     // Prepare regions for processing.
-    const auto [input_regions, region_batches] =
-            secondary::prepare_region_batches(draft_lens, opt.regions, opt.ref_batch_size);
+    const auto [input_regions, region_batches] = secondary::prepare_region_batches(
+            draft_lookup, bam_info.ref_seqs, opt.regions, opt.ref_batch_size);
 
     // Update the progress tracker.
     {
@@ -1458,7 +1459,7 @@ int variant_caller(int argc, char* argv[]) {
         }
 #endif
 
-        run_variant_calling(opt, model_config, resources, tracker, stats);
+        run_variant_calling(opt, bam_info, model_config, resources, tracker, stats);
 
         tracker.finalize();
         stats_sampler->terminate();
