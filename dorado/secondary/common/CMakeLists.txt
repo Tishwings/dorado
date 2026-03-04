@@ -2,6 +2,7 @@ set(PUBLIC_BASE ${CMAKE_CURRENT_SOURCE_DIR}/include/secondary/common)
 
 target_sources(dorado_secondary
     PUBLIC
+        ${PUBLIC_BASE}/alignment.h
         ${PUBLIC_BASE}/bam_file.h
         ${PUBLIC_BASE}/bam_info.h
         ${PUBLIC_BASE}/batching.h
@@ -11,6 +12,7 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/variant.h
         ${PUBLIC_BASE}/vcf_writer.h
     PRIVATE
+        alignment.cpp
         bam_file.cpp
         bam_info.cpp
         batching.cpp
