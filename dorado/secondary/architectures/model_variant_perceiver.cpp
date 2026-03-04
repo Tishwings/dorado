@@ -58,11 +58,11 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
     }
 
     const at::Tensor inv_freq =
-            torch::pow(m_theta, torch::arange(0, m_dim, 2, options) / static_cast<float>(m_dim))
+            torch::pow(m_theta, at::arange(0, m_dim, 2, options) / static_cast<float>(m_dim))
                     .reciprocal()
                     .detach();
 
-    const at::Tensor pos = torch::arange(max_seq_len, options);
+    const at::Tensor pos = at::arange(max_seq_len, options);
     const at::Tensor freqs = at::outer(
             pos, inv_freq);  // Equivalent to: torch::einsum("i,j->ij", {pos, m_inv_freq});
     const at::Tensor emb = torch::cat({freqs, freqs}, /*dim=*/-1);
@@ -176,8 +176,8 @@ at::Tensor MultiSequenceCrossAttentionBlockImpl::local_attention_mask(
     const auto opts = torch::TensorOptions().dtype(torch::kInt64).device(device);
 
     // q_idx: [Q_LEN], k_idx: [KV_LEN]
-    const at::Tensor q_idx = torch::arange(Q_LEN, opts);
-    const at::Tensor k_idx = torch::arange(KV_LEN, opts);
+    const at::Tensor q_idx = at::arange(Q_LEN, opts);
+    const at::Tensor k_idx = at::arange(KV_LEN, opts);
 
     // q_pos = q_idx % T, k_pos = k_idx % T
     const at::Tensor q_pos = torch::remainder(q_idx, T);  // [Q_LEN]
