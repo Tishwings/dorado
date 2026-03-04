@@ -3,17 +3,24 @@
 #include "hts_utils/hts_types.h"
 
 #include <filesystem>
+#include <string>
 #include <vector>
 
 struct htsFile;
 struct hts_idx_t;
 struct sam_hdr_t;
 struct bam1_t;
+struct hts_itr_t;
 
 struct HtsIdxDestructor {
     void operator()(hts_idx_t*);
 };
 using HtsIdxPtr = std::unique_ptr<hts_idx_t, HtsIdxDestructor>;
+
+struct HtsItrDestructor {
+    void operator()(hts_itr_t* itr) const noexcept;
+};
+using HtsItrPtr = std::unique_ptr<hts_itr_t, HtsItrDestructor>;
 
 namespace dorado::secondary {
 
@@ -21,6 +28,17 @@ struct BamFileView {
     htsFile* fp = nullptr;
     hts_idx_t* idx = nullptr;
     sam_hdr_t* hdr = nullptr;
+};
+
+class BamIterator {
+public:
+    BamIterator(hts_itr_t* itr, htsFile* fp);
+
+    BamPtr get_next();
+
+private:
+    HtsItrPtr m_itr;
+    htsFile* m_fp;
 };
 
 class BamFile {
@@ -38,6 +56,8 @@ public:
 
     BamPtr get_next();
     BamFileView get_view();
+
+    BamIterator fetch(const std::string& chrom, int64_t start, int64_t end);
 
 private:
     HtsFilePtr m_fp;
