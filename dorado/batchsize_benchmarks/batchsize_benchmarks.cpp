@@ -163,14 +163,25 @@ int get_batch_size_granularity(const config::BasecallModelConfig &config) {
 #endif
 }
 
+int get_max_safe_batch_size(const std::string &device, const config::BasecallModelConfig &config) {
+#if DORADO_CUDA_BUILD
+    return basecall::CudaCaller::get_max_safe_batch_size(device, 1, config);
+#elif DORADO_METAL_BUILD
+    (void)device;
+    return config.is_lstm_model() ? basecall::MetalLSTMCaller::get_max_safe_batch_size(1, config)
+                                  : basecall::MetalTxCaller::get_max_safe_batch_size(1, config);
+#else
+#error "Invalid build"
+#endif
+}
+
 uint64_t get_gpu_mem_limit(const std::string &device, float memory_limit_fraction) {
 #if DORADO_CUDA_BUILD
     return basecall::CudaCaller::get_gpu_mem_limit(device, memory_limit_fraction);
 #elif DORADO_METAL_BUILD
-    std::ignore = device;
-    std::ignore = memory_limit_fraction;
-    // TODO
-    return 0;
+    (void)device;
+    // TODO: this assumes that we're the only thing running on the machine.
+    return utils::get_apple_physical_memory_bytes() * memory_limit_fraction;
 #else
 #error "Invalid build"
 #endif
@@ -255,12 +266,15 @@ void generate(const std::string &device,
 
     const std::string gpu_name = get_gpu_name(device);
     const auto batch_size_granularity = get_batch_size_granularity(config);
+    const auto max_safe_batch_size = get_max_safe_batch_size(device, config);
 
     // Do the benchmarking.
     spdlog::info("Benchmarking batch sizes in steps of {} for {} ({})", batch_size_granularity,
                  device, gpu_name);
     std::vector<SpeedEntry> speeds;
-    for (int batch_size = batch_size_granularity; true; batch_size += batch_size_granularity) {
+    speeds.reserve(max_safe_batch_size / batch_size_granularity);
+    for (int batch_size = batch_size_granularity; batch_size <= max_safe_batch_size;
+         batch_size += batch_size_granularity) {
         config.basecaller.set_batch_size(batch_size);
         const auto entry = calculate_one(device, config, input_files);
         speeds.emplace_back(entry);
