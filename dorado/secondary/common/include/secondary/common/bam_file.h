@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hts_utils/hts_types.h"
+#include "secondary/common/alignment.h"
 
 #include <filesystem>
 #include <string>
@@ -65,5 +66,7 @@ private:
     SamHdrPtr m_hdr;
     int m_n_threads;
 };
+
+Alignment convert_bam1_to_aln(const bam1_t* b, const sam_hdr_t* hdr);
 
 }  // namespace dorado::secondary

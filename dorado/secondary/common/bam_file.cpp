@@ -1,5 +1,7 @@
 #include "secondary/common/bam_file.h"
 
+#include "hts_utils/bam_utils.h"
+
 #include <htslib/hts.h>
 #include <htslib/sam.h>
 #include <spdlog/spdlog.h>
@@ -87,6 +89,77 @@ BamIterator BamFile::fetch(const std::string& chrom, const int64_t start, const 
     }
 
     return BamIterator(raw_itr, m_fp.get());
+}
+
+Alignment convert_bam1_to_aln(const bam1_t* b, const sam_hdr_t* hdr) {
+    // Compute query start/end by walking the CIGAR.
+    int64_t qstart = 0;
+    int64_t qspan = 0;
+    int64_t rspan = 0;
+    std::vector<CigarOp> cigar_vec;
+
+    // Convert the CIGAR and count the alignment length.
+    {
+        const uint32_t* cigar = bam_get_cigar(b);
+        const int32_t n = b->core.n_cigar;
+
+        cigar_vec.resize(n);
+
+        // Find the query start position.
+        for (int32_t i = 0; i < n; ++i) {
+            const int32_t op = bam_cigar_op(cigar[i]);
+            if (op != BAM_CSOFT_CLIP) {
+                break;
+            }
+            const uint32_t len = static_cast<uint32_t>(bam_cigar_oplen(cigar[i]));
+            qstart += len;
+        }
+
+        for (int32_t i = 0; i < n; ++i) {
+            const int32_t op = bam_cigar_op(cigar[i]);
+            const uint32_t len = static_cast<uint32_t>(bam_cigar_oplen(cigar[i]));
+
+            cigar_vec[i] = {CIGAR_MM2_TO_DORADO[op], len};
+
+            if ((op == BAM_CSOFT_CLIP) || (op == BAM_CHARD_CLIP)) {
+                continue;
+            }
+
+            // Consumes query.
+            constexpr int32_t CIGAR_OP_CONSUMES_QUERY = 1;
+            if (bam_cigar_type(op) & CIGAR_OP_CONSUMES_QUERY) {
+                qspan += len;
+            }
+
+            constexpr int32_t CIGAR_OP_CONSUMES_REF = 2;
+            if (bam_cigar_type(op) & CIGAR_OP_CONSUMES_REF) {
+                rspan += len;
+            }
+        }
+    }
+
+    Alignment ret{
+            .qname = bam_get_qname(b),
+            .qlen = b->core.l_qseq,
+            .qstart = qstart,
+            .qend = qstart + qspan,
+            .strand = bam_is_rev(b) ? StrandOrientation::REVERSE : StrandOrientation::FORWARD,
+            .rname = (b->core.tid >= 0) ? sam_hdr_tid2name(hdr, b->core.tid) : "*",
+            .rlen = (b->core.tid >= 0) ? sam_hdr_tid2len(hdr, b->core.tid) : 0,
+            .rstart = b->core.pos,
+            .rend = b->core.pos + rspan,
+            .mapq = b->core.qual,
+            .flag = b->core.flag,
+            .cigar = std::move(cigar_vec),
+            .seq = utils::extract_sequence(b),
+            .qual = utils::extract_quality(b),
+            .dwell_stride = 0,
+            .dwells = {},
+    };
+
+    std::tie(ret.dwell_stride, ret.dwells) = utils::extract_move_table(b);
+
+    return ret;
 }
 
 }  // namespace dorado::secondary
