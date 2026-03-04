@@ -71,6 +71,7 @@ add_executable(dorado_tests
     SampleSheetTests.cpp
     SamUtilsTest.cpp
     ScaledDotProductAttention.cpp
+    SecondaryBamFileTest.cpp
     SecondaryDecodeVariantsTest.cpp
     SecondaryEncoderReadAlignmentTest.cpp
     SecondaryEncoderUtilsTest.cpp
