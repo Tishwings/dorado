@@ -5,6 +5,7 @@
 #include "medaka_bamiter.h"
 #include "secondary/common/bam_file.h"
 #include "secondary/features/kadayashi_utils.h"
+#include "torch_utils/gpu_profiling.h"
 #include "utils/ssize.h"
 
 #include <htslib/faidx.h>
@@ -275,6 +276,11 @@ ReadAlignmentData calculate_read_alignment(
         const int32_t max_reads,
         const bool right_align_insertions,
         const double min_snp_accuracy) {
+    const std::string spr_label =
+            fmt::format("calculate_read_alignment-{}-{}-{}", chr_name, start, end);
+
+    utils::ScopedProfileRange spr1(spr_label.c_str(), 5);
+
     if ((num_dtypes == 1) && !std::empty(dtypes)) {
         throw std::runtime_error(
                 "Received invalid num_dtypes and dtypes args. num_dtypes == 1 but size(dtypes) = " +

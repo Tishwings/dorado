@@ -38,8 +38,7 @@ std::pair<std::vector<std::vector<Region>>, std::vector<Interval>> prepare_regio
 
     if (std::empty(user_regions)) {
         // Add full draft sequences referenced in the input BAM.
-        for (int64_t i = 0; i < dorado::ssize(bam_ref_seqs); ++i) {
-            const auto& [ref_name, ref_len_from_bam] = bam_ref_seqs[i];
+        for (const auto& [ref_name, ref_len_from_bam] : bam_ref_seqs) {
             const auto it = ref_lookup.find(ref_name);
             if (it == std::cend(ref_lookup)) {
                 throw std::runtime_error{
