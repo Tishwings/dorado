@@ -202,6 +202,13 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
 
     if (opt.device == cli::AUTO_DETECT_DEVICE) {
         opt.device = utils::get_auto_detected_device();
+
+        // Workaround - auto detection will fall back to CPU on Metal because
+        // of Torch/Metal deadlocks/bugs.
+        // This still allows the user-selected Metal backend.
+        if ((opt.device == "metal") || (opt.device == "mps")) {
+            opt.device = "cpu";
+        }
     }
     if (opt.device == "metal") {
         // Torch doesn't have a "metal" device, but "mps" instead.
@@ -402,6 +409,9 @@ int correct(int argc, char* argv[]) {
 
     // Check if input options are good.
     validate_options(opt);
+
+    spdlog::info("Selected device: {}", opt.device);
+
 #if DORADO_CUDA_BUILD
     cli::log_requested_cuda_devices(opt.device);
 #endif
