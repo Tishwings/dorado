@@ -408,15 +408,18 @@ std::vector<uint8_t> extract_quality(const bam1_t* input_record) {
 }
 
 std::tuple<int, std::vector<uint8_t>> extract_move_table(const bam1_t* input_record) {
-    auto move_vals_aux = bam_aux_get(input_record, "mv");
+    if (input_record == nullptr) {
+        return {};
+    }
+    const auto move_vals_aux = bam_aux_get(input_record, "mv");
     std::vector<uint8_t> move_vals;
     int stride = 0;
     if (move_vals_aux) {
-        int len = bam_auxB_len(move_vals_aux);
+        const int32_t len = bam_auxB_len(move_vals_aux);
         // First element for move table array is the stride.
         stride = int(bam_auxB2i(move_vals_aux, 0));
         move_vals.resize(len - 1);
-        for (int i = 1; i < len; i++) {
+        for (int32_t i = 1; i < len; ++i) {
             move_vals[i - 1] = uint8_t(bam_auxB2i(move_vals_aux, i));
         }
     }
