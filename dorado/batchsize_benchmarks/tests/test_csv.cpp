@@ -3,6 +3,7 @@
 #include "entries_equal.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <spdlog/spdlog.h>
 
 #include <sstream>
 #include <unordered_map>

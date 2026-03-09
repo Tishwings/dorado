@@ -12,6 +12,7 @@ dorado_add_library(dorado_benchmarks
         BenchmarkSink.cpp
         BenchmarkSink.h
         compiled_timings.h
+        csv_helpers.cpp
         csv_helpers.h
         SpeedEntry.h
     SOURCES_TEST
