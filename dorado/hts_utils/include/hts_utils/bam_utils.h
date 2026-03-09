@@ -164,7 +164,7 @@ std::map<std::string, std::string> extract_pg_keys_from_hdr(const std::string& f
  * @param input_record Record to fetch sequence from.
  * @return The sequence bases as a string.
  */
-std::string extract_sequence(bam1_t* input_record);
+std::string extract_sequence(const bam1_t* input_record);
 
 /*
  * Extract the sequence quality information.
@@ -172,7 +172,7 @@ std::string extract_sequence(bam1_t* input_record);
  * @param input_record Record to fetch quality from.
  * @return Vector of sequence quality.
  */
-std::vector<uint8_t> extract_quality(bam1_t* input_record);
+std::vector<uint8_t> extract_quality(const bam1_t* input_record);
 
 /*
  * Extract the move table from a record, if it exists.
@@ -181,7 +181,7 @@ std::vector<uint8_t> extract_quality(bam1_t* input_record);
  * @return Tuple where first element is the strice and second element is the vector with moves.
  * An empty vector and stride = 0 are returned if move table doesn't exist.
  */
-std::tuple<int, std::vector<uint8_t>> extract_move_table(bam1_t* input_record);
+std::tuple<int, std::vector<uint8_t>> extract_move_table(const bam1_t* input_record);
 
 /*
  * Extract mod base tag information from a record.
