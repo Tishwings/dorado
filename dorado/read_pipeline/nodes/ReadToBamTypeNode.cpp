@@ -37,7 +37,8 @@ void ReadToBamTypeNode::input_thread_fn() {
         const HtsData::ReadAttributes read_attrs{
                 std::move(read_common_data.sequencing_kit),
                 std::move(read_common_data.experiment_id),
-                std::move(read_common_data.sample_id),
+                read_common_data.sample_id.empty() ? std::string{"no_sample"}
+                                                   : std::move(read_common_data.sample_id),
                 std::move(read_common_data.position_id),
                 std::move(read_common_data.flowcell_id),
                 std::move(read_common_data.run_id),
