@@ -7,19 +7,38 @@
 #include <spdlog/spdlog.h>
 
 #include <fstream>
+#include <optional>
 #include <string>
 
 namespace dorado::batchsize_benchmarks {
 
 namespace {
 
+std::optional<std::string_view> get_gpu_name_alias(std::string_view gpu_name) {
+    constexpr std::pair<std::string_view, std::string_view> gpu_name_alias[]{
+            {"NVIDIA A100-PCIE-40GB", "NVIDIA A100 80GB PCIe"},
+            {"NVIDIA A800 80GB PCIe", "NVIDIA A100 80GB PCIe"},
+            {"NVIDIA H100 PCIe", "NVIDIA H100 NVL"},
+            {"NVIDIA RTX PRO 4500 Blackwell", "NVIDIA RTX PRO 5000 Blackwell"},
+            {"NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+             "NVIDIA RTX PRO 6000 Blackwell Workstation Edition"},
+    };
+    for (const auto &alias : gpu_name_alias) {
+        if (alias.first == gpu_name) {
+            return alias.second;
+        }
+    }
+    return std::nullopt;
+}
+
 std::span<const SpeedEntry> get_from_compiled_cache(std::string_view gpu_name,
                                                     std::string_view model_name) {
     auto all_gpus = compiled_cache::get();
 
     // Find the GPU.
-    auto is_gpu = [gpu_name](const compiled_cache::GPUModelTimings &gpu) {
-        return gpu.gpu_name == gpu_name;
+    const auto gpu_alias = get_gpu_name_alias(gpu_name);
+    auto is_gpu = [gpu_name, gpu_alias](const compiled_cache::GPUModelTimings &gpu) {
+        return gpu.gpu_name == gpu_name || gpu.gpu_name == gpu_alias;
     };
     auto gpu_it = std::find_if(all_gpus.begin(), all_gpus.end(), is_gpu);
     if (gpu_it == all_gpus.end()) {
@@ -68,15 +87,23 @@ std::span<const SpeedEntry> BenchmarkCache::CacheProxy::get_timings(
         const std::string_view model_name) const {
 #if (defined(_GLIBCXX_RELEASE) && _GLIBCXX_RELEASE < 14) || (defined(_MSC_VER) && _MSC_VER < 1937)
     // There's a bug in libstdc++'s std::pair comparator before GCC 14, and MSVC's STL before 19.37.
-    const auto key = std::make_pair(std::string(gpu_name), std::string(model_name));
+    auto key = std::make_pair(std::string(gpu_name), std::string(model_name));
 #else
-    const auto key = std::make_pair(gpu_name, model_name);
+    auto key = std::make_pair(gpu_name, model_name);
 #endif
 
     // Check the runtime cache first.
-    auto runtime = m_cache.m_runtime_cache.find(key);
-    if (runtime != m_cache.m_runtime_cache.end()) {
-        return runtime->second;
+    const auto &runtime_cache = m_cache.m_runtime_cache;
+    auto runtime_it = runtime_cache.find(key);
+    if (runtime_it == runtime_cache.end()) {
+        // If we can't find it, check it again with the alias.
+        if (const auto alias_name = get_gpu_name_alias(gpu_name); alias_name.has_value()) {
+            key.first = alias_name.value();
+            runtime_it = runtime_cache.find(key);
+        }
+    }
+    if (runtime_it != runtime_cache.end()) {
+        return runtime_it->second;
     }
 
     // Fall back to the compiled cache.
