@@ -1,5 +1,6 @@
 #include "BenchmarkCache.h"
 #include "SpeedEntry.h"
+#include "TestUtils.h"
 #include "entries_equal.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -105,6 +106,41 @@ DEFINE_TEST("Runtime cache works") {
             CATCH_CHECK(tests::entries_equal(proxy.get_timings(gpu_name, model_name), entries));
         });
     }
+}
+
+DEFINE_TEST("Saving and loading runtime cache works") {
+    const TempDir runtime_cache_dir = make_temp_dir("runtime_cache_dir");
+    const auto runtime_cache = runtime_cache_dir.m_path / "cache.csv";
+
+    const std::string gpu_name = "saving test gpu";
+    const std::string model_name = "saving test model";
+    const std::vector<SpeedEntry> entries_saved{
+            {1, 2, 3},
+            {4, 5, 6},
+    };
+    const std::vector<SpeedEntry> entries_replaced{
+            {7, 8, 9},
+    };
+
+    BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
+        // Add the entries we'll load back.
+        proxy.add_timings(gpu_name, model_name, entries_saved);
+        CATCH_CHECK(tests::entries_equal(proxy.get_timings(gpu_name, model_name), entries_saved));
+
+        // Save them to a file
+        CATCH_CHECK(proxy.export_to_file(runtime_cache));
+
+        // Replace the entries.
+        proxy.add_timings(gpu_name, model_name, entries_replaced);
+        CATCH_CHECK(
+                tests::entries_equal(proxy.get_timings(gpu_name, model_name), entries_replaced));
+
+        // Load them back from the file.
+        CATCH_CHECK(proxy.load_from_file(runtime_cache));
+
+        // Check that they match the original.
+        CATCH_CHECK(tests::entries_equal(proxy.get_timings(gpu_name, model_name), entries_saved));
+    });
 }
 
 }  // namespace
