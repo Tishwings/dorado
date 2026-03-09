@@ -109,7 +109,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
     }
 
     spdlog::debug("Initialized devices:");
-    for (int32_t device_id = 0; device_id < std::ssize(resources.devices); ++device_id) {
+    for (std::size_t device_id = 0; device_id < std::size(resources.devices); ++device_id) {
         const DeviceInfo& dev_info = resources.devices[device_id];
         spdlog::debug("    - [device_id = {}] name = {}, available_memory = {:.2f} GB", device_id,
                       dev_info.name, dev_info.available_memory_GB);
@@ -121,7 +121,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
         std::vector<std::shared_ptr<secondary::ModelTorchBase>> ret;
         std::vector<c10::optional<c10::Stream>> ret_streams;
 
-        for (int32_t device_id = 0; device_id < std::ssize(resources.devices); ++device_id) {
+        for (std::size_t device_id = 0; device_id < std::size(resources.devices); ++device_id) {
             const auto& device_info = resources.devices[device_id];
 
             {
@@ -399,7 +399,7 @@ std::vector<secondary::Sample> split_sample_on_discontinuities(secondary::Sample
         const int64_t num_positions = std::ssize(sample.positions_major);
 
         int64_t start = 0;
-        for (int64_t n = 0; n < std::ssize(gaps); ++n) {
+        for (size_t n = 0; n < std::size(gaps); ++n) {
             const int64_t end = gaps[n];
             std::vector<int64_t> new_major_pos(std::begin(sample.positions_major) + start,
                                                std::begin(sample.positions_major) + end);
@@ -1503,7 +1503,7 @@ void sample_producer(
 
         // Get the remaining items and update the buffer.
         InferenceData remainder;
-        for (int64_t i = new_batch_size; i < std::ssize(buffer.samples); ++i) {
+        for (std::size_t i = new_batch_size; i < std::size(buffer.samples); ++i) {
             remainder.samples.emplace_back(std::move(buffer.samples[i]));
             remainder.trims.emplace_back(std::move(buffer.trims[i]));
         }
@@ -1991,7 +1991,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
 
         // Trim the overlapping sequences.
         timer::TimerHighRes timer_trim;
-        for (int64_t j = 0; j < std::ssize(local_results); ++j) {
+        for (std::size_t j = 0; j < std::size(local_results); ++j) {
             // Empty local results should not be possible, but better be safe.
             if (std::empty(local_results[j])) {
                 continue;
@@ -2158,7 +2158,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
                         continue;
                     }
                     // Create the variant calling data. Clone the tensor to convert the view to actual data.
-                    for (int64_t i = 0; i < std::ssize(item.samples); ++i) {
+                    for (std::size_t i = 0; i < std::size(item.samples); ++i) {
                         thread_vc_data.emplace_back(secondary::VariantCallingSample{
                                 item.samples[i].seq_id, std::move(item.samples[i].positions_major),
                                 std::move(item.samples[i].positions_minor),

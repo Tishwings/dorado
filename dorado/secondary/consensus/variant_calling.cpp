@@ -198,7 +198,7 @@ float compute_consensus_quality(
                 "Number of haplotypes in the tensor differs from the number of haplotype consensus "
                 "sequences provided to compute_consensus_quality. Tensor shape: " +
                 utils::tensor_shape_as_string(probs_3D) + ", number of consensus sequences: " +
-                std::to_string(std::ssize(cons_seqs_with_gaps)));
+                std::to_string(std::size(cons_seqs_with_gaps)));
     }
 
     float total = 0.0f;
@@ -520,7 +520,7 @@ bool prepend_ref_base(Variant& var,
     }
 
     // Remove the deletions and prepend the prefix sequence.
-    for (int64_t i = 0; i < std::ssize(prefixes); ++i) {
+    for (std::size_t i = 0; i < std::size(prefixes); ++i) {
         std::string& p = prefixes[i];
         p.erase(std::remove(std::begin(p), std::end(p), '*'), std::end(p));
     }
@@ -529,7 +529,7 @@ bool prepend_ref_base(Variant& var,
     var.pos = positions_major[new_rstart];
     var.rstart = new_rstart;
     var.ref = prefixes[0] + var.ref;
-    for (int64_t i = 0; i < std::ssize(var.alts); ++i) {
+    for (std::size_t i = 0; i < std::size(var.alts); ++i) {
         var.alts[i] = prefixes[i + 1] + var.alts[i];
     }
 
@@ -656,7 +656,7 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     alt_dict[var.ref] = 0;
 
     std::vector<int32_t> alleles(std::size(var.alts));
-    for (int64_t i = 0; i < std::ssize(var.alts); ++i) {
+    for (std::size_t i = 0; i < std::size(var.alts); ++i) {
         const auto it = alt_dict.find(var.alts[i]);
         if (it == std::cend(alt_dict)) {
             continue;
@@ -666,7 +666,7 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     std::sort(std::begin(alleles), std::end(alleles));
 
     std::ostringstream oss_gt;
-    for (int64_t i = 0; i < std::ssize(alleles); ++i) {
+    for (std::size_t i = 0; i < std::size(alleles); ++i) {
         if (i > 0) {
             oss_gt << '/';
         }

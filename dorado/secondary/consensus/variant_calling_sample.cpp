@@ -141,7 +141,7 @@ std::vector<VariantCallingSample> merge_vc_samples(
     // Validate sample for sanity. This can throw.
     vc_samples[0].validate();
 
-    for (int64_t i = 1; i < std::ssize(vc_samples); ++i) {
+    for (std::size_t i = 1; i < std::size(vc_samples); ++i) {
         const VariantCallingSample& last = ret.back();
         const VariantCallingSample& curr = vc_samples[i];
 
@@ -182,7 +182,7 @@ std::vector<VariantCallingSample> join_samples(const std::vector<VariantCallingS
 
     std::vector<VariantCallingSample> queue;
 
-    for (int64_t i = 0; i < std::ssize(vc_samples); ++i) {
+    for (std::size_t i = 0; i < std::size(vc_samples); ++i) {
         const VariantCallingSample& vc_sample = vc_samples[i];
 
         vc_sample.validate();
@@ -290,7 +290,7 @@ std::vector<VariantCallingSample> trim_vc_samples(
     assert(std::size(trims) == std::size(local_samples));
     assert(std::size(trims) == std::size(group));
 
-    for (int64_t i = 0; i < std::ssize(trims); ++i) {
+    for (std::size_t i = 0; i < std::size(trims); ++i) {
         const int32_t id = group[i].second;
         const auto& s = vc_input_data[id];
         const TrimInfo& t = trims[i];

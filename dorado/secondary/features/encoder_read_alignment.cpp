@@ -135,7 +135,7 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
 
         std::vector<std::string> prev_rids_out = read_ids_out[0];
 
-        for (int64_t n = 1; n < std::ssize(chunks); ++n) {
+        for (std::size_t n = 1; n < std::size(chunks); ++n) {
             LOG_TRACE("[reorder_reads] Reordering chunk n = {}", n);
 
             auto [reordered_chunk, next_rids_out] =

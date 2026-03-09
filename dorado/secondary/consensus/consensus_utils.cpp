@@ -26,7 +26,7 @@ std::string extract_draft_with_gaps(const std::string_view draft,
 
     std::string ret(std::size(positions_major), '*');
 
-    for (int64_t i = 0; i < std::ssize(positions_major); ++i) {
+    for (std::size_t i = 0; i < std::size(positions_major); ++i) {
         if ((positions_major[i] < 0) || (positions_major[i] >= draft_len)) {
             throw std::runtime_error(
                     "The positions_major contains coordinates out of range for the input draft! "

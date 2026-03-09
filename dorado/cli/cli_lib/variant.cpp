@@ -988,7 +988,7 @@ void run_variant_calling(const Options& opt,
 
     // Create windows only for the selected regions.
     std::unordered_map<std::string, std::pair<int64_t, int64_t>> draft_lookup;
-    for (int64_t seq_id = 0; seq_id < std::ssize(draft_lens); ++seq_id) {
+    for (std::size_t seq_id = 0; seq_id < std::size(draft_lens); ++seq_id) {
         draft_lookup[draft_lens[seq_id].first] = {seq_id, draft_lens[seq_id].second};
     }
 
