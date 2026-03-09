@@ -43,6 +43,13 @@ std::span<const SpeedEntry> get_from_compiled_cache(std::string_view gpu_name,
 void BenchmarkCache::CacheProxy::add_timings(std::string gpu_name,
                                              std::string model_name,
                                              std::vector<SpeedEntry> entries) {
+    if (gpu_name.contains(',') || model_name.contains(',')) {
+        // A comma will break the rudimentary CSV reader, but we still allow them to be cached.
+        spdlog::warn(
+                "GPU or model name has unexpected character. Exported benchmarks won't be "
+                "loadable");
+    }
+
     // Entries need to be sorted for lookup to work.
     // Note that we intentionally keep all of the timings in the runtime cache so that
     // they all get written out.
