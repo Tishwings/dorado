@@ -1,12 +1,14 @@
 #include "TestUtils.h"
 
+#include "spdlog/spdlog.h"
+
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 
-#ifdef __APPLE__
-#include <CoreFoundation/CoreFoundation.h>
+#ifndef _WIN32
+#include <unistd.h>
 #endif
 
 namespace dorado::tests {
@@ -45,6 +47,24 @@ TempDir make_temp_dir(const std::string& prefix) {
     auto path = std::filesystem::canonical(name);
 #endif
     return TempDir(std::move(path));
+}
+
+TempDir::~TempDir() {
+    if (!m_path.empty()) {
+        bool deleted = false;
+        size_t tries = 0;
+        while (!deleted && tries < 5) {
+            try {
+                tries++;
+                deleted = std::filesystem::remove_all(m_path);
+            } catch (const std::exception& e) {
+                spdlog::warn("{}", e.what());
+            }
+        }
+        if (!deleted) {
+            spdlog::warn("Could not delete {} after 5 retries!", m_path.string());
+        }
+    }
 }
 
 std::string ReadFileIntoString(const std::filesystem::path& path) {
