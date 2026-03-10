@@ -118,12 +118,12 @@ if (GENERATE_TEST_COVERAGE)
                 test_dorado_benchmarks
             BASE_DIRECTORY "${PROJECT_SOURCE_DIR}"
             EXCLUDE
-                "${DORADO_3RD_PARTY_SOURCE}/*"
-                "${DORADO_3RD_PARTY_DOWNLOAD}/*"
-                "${PROJECT_SOURCE_DIR}/dorado/cli/*"
-                "${PROJECT_SOURCE_DIR}/dorado/*/tests/*"
-                "${PROJECT_SOURCE_DIR}/tests/*"
-                "${CMAKE_BINARY_DIR}/3rdparty/*"
+                "${DORADO_3RD_PARTY_SOURCE}/.*"
+                "${DORADO_3RD_PARTY_DOWNLOAD}/.*"
+                "${PROJECT_SOURCE_DIR}/dorado/cli/.*"
+                "${PROJECT_SOURCE_DIR}/dorado/.*/tests/.*"
+                "${PROJECT_SOURCE_DIR}/tests/.*"
+                "${CMAKE_BINARY_DIR}/3rdparty/.*"
         )
     endif()
 endif()
