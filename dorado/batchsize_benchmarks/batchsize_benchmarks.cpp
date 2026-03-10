@@ -262,12 +262,9 @@ void generate(const std::string &device,
                 "hardware.");
     }
 
-    // Make a copy so that we can change the batch size.
-    auto config = orig_config;
-
     const std::string gpu_name = get_gpu_name(device);
-    const auto batch_size_granularity = get_batch_size_granularity(config);
-    const auto max_safe_batch_size = get_max_safe_batch_size(device, config);
+    const auto batch_size_granularity = get_batch_size_granularity(orig_config);
+    const auto max_safe_batch_size = get_max_safe_batch_size(device, orig_config);
 
     // Do the benchmarking.
     spdlog::info("Benchmarking batch sizes in steps of {} for {} ({})", batch_size_granularity,
@@ -276,7 +273,10 @@ void generate(const std::string &device,
     speeds.reserve(max_safe_batch_size / batch_size_granularity);
     for (int batch_size = batch_size_granularity; batch_size <= max_safe_batch_size;
          batch_size += batch_size_granularity) {
+        // Make a copy so that we can change the batch size.
+        auto config = orig_config;
         config.basecaller.set_batch_size(batch_size);
+        config.normalise_basecaller_params();
         const auto entry = calculate_one(device, config, input_files);
         speeds.emplace_back(entry);
 
@@ -287,7 +287,7 @@ void generate(const std::string &device,
 
     // Add them to the cache.
     BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
-        proxy.add_timings(gpu_name, config.model_name(), std::move(speeds));
+        proxy.add_timings(gpu_name, orig_config.model_name(), std::move(speeds));
     });
 }
 
