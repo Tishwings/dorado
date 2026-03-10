@@ -82,9 +82,9 @@ SpeedEntry calculate_one(const std::string &device,
     // Build a benchmarking pipeline.
     PipelineDescriptor descriptor;
     const NodeHandle sink_handle = descriptor.add_node<BenchmarkSink>({});
-    descriptor.add_node<BasecallerNode>({sink_handle}, std::move(runners),
-                                        config.basecaller.overlap(), config.model_name(), 1000,
-                                        "BasecallerNode", config.mean_qscore_start_pos);
+    const NodeHandle basecaller_handle = descriptor.add_node<BasecallerNode>(
+            {sink_handle}, std::move(runners), config.basecaller.overlap(), config.model_name(),
+            1000, "BasecallerNode", config.mean_qscore_start_pos);
     auto pipeline = Pipeline::create(std::move(descriptor), nullptr);
 
     // We need to feed in the data on a separate thread since it'll block.
@@ -111,7 +111,10 @@ SpeedEntry calculate_one(const std::string &device,
     if (finished_data.load(std::memory_order_relaxed)) {
         throw std::runtime_error("Ran out of data while benchmarking. Need a bigger input file");
     }
-    const double speed = sink.samples_per_second();
+    const auto &basecaller = pipeline->get_node_ref<BasecallerNode>(basecaller_handle);
+    const double samples = basecaller.sample_stats().at("samples_incl_padding");
+    const double elapsed = Seconds(sink.elapsed()).count();
+    const double speed = samples / elapsed;
     spdlog::debug("[{}] {} @ {}", device, speed, batch_size);
 
     // Teardown the pipeline. This will teardown the source thread too.
@@ -129,7 +132,7 @@ SpeedEntry calculate_one(const std::string &device,
 
     return SpeedEntry{
             .batch_size = static_cast<uint32_t>(batch_size),
-            .basecall_speed = sink.samples_per_second(),
+            .basecall_speed = speed,
             .memory_used = static_cast<uint64_t>(memory_used),
     };
 }

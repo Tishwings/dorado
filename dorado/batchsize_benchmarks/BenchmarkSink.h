@@ -2,7 +2,6 @@
 
 #include "read_pipeline/base/MessageSink.h"
 
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -25,8 +24,8 @@ public:
     // Returns how long we had to wait for the first batch to appear.
     Clock::duration wait_for_reads();
 
-    // Calculate the average samples/second.
-    double samples_per_second();
+    // Determine how long the pipeline has been running since last restart.
+    Clock::duration elapsed();
 
 private:
     void input_thread_fn();
@@ -34,9 +33,9 @@ private:
 private:
     std::mutex m_first_read_mutex;
     std::condition_variable m_first_read_cv;
-    std::optional<Clock::time_point> m_time_of_first_read;
+    std::optional<Clock::duration> m_first_read_batch_time;
 
-    std::atomic<std::size_t> m_samples_processed{0};
+    Clock::time_point m_pipeline_start_time;
 };
 
 }  // namespace dorado::batchsize_benchmarks
