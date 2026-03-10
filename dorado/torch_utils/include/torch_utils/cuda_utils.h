@@ -30,16 +30,15 @@ bool try_parse_cuda_device_string(const std::string &device_string,
                                   std::string &error_message);
 
 struct CUDADeviceInfo {
+    cudaDeviceProp device_properties;
     size_t free_mem, total_mem;
     int device_id;
-    int compute_cap_major, compute_cap_minor;
-    cudaDeviceProp device_properties;
     bool in_use;
 };
 
 // Given a string representing cuda devices (e.g "cuda:0,1,3") returns a vector of CUDADeviceInfo for all
 // visible devices on the host machine, with information on whether they are in use or not
-// Set include_unused to true to skip unused devices
+// Set include_unused to true to include unused devices
 std::vector<CUDADeviceInfo> get_cuda_device_info(const std::string &device_string,
                                                  bool include_unused);
 
