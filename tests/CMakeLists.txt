@@ -63,6 +63,7 @@ add_executable(dorado_tests
     ReadFilterNodeTest.cpp
     ReadForwarderNodeTest.cpp
     ReadTest.cpp
+    ReadToBamTypeNodeTest.cpp
     RealignMovesTest.cpp
     ResourceLimiterTest.cpp
     ResumeLoaderTest.cpp
