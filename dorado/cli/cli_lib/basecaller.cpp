@@ -688,7 +688,6 @@ void update_batch_params(Models& models,
                     progress_bar.set_progress(100 * progress);
                 };
 
-                progress_bar.set_progress(0);
                 batchsize_benchmarks::generate(device, config, pod5_folder_info.files(),
                                                progress_callback);
                 progress_bar.erase_progress_bar_line();

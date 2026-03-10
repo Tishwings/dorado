@@ -264,6 +264,11 @@ void generate(const std::string &device,
                 "Generating benchmarks inside of a container may not be representitive of the real "
                 "hardware.");
     }
+    auto update_progress = [&progress_callback](float progress) {
+        if (progress_callback) {
+            progress_callback(progress);
+        }
+    };
 
     const std::string gpu_name = get_gpu_name(device);
     const auto batch_size_granularity = get_batch_size_granularity(orig_config);
@@ -280,17 +285,16 @@ void generate(const std::string &device,
     // ask for bigger allocations.
     for (int batch_size = max_safe_batch_size; batch_size >= batch_size_granularity;
          batch_size -= batch_size_granularity) {
+        update_progress(1.f - batch_size / static_cast<float>(max_safe_batch_size));
+
         // Make a copy so that we can change the batch size.
         auto config = orig_config;
         config.basecaller.set_batch_size(batch_size);
         config.normalise_basecaller_params();
         const auto entry = calculate_one(device, config, input_files);
         speeds.emplace_back(entry);
-
-        if (progress_callback) {
-            progress_callback(1.f - batch_size / static_cast<float>(max_safe_batch_size));
-        }
     }
+    update_progress(1);
 
     // Add them to the cache.
     BenchmarkCache::with_lock([&](BenchmarkCache::CacheProxy proxy) {
