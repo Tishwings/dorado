@@ -662,7 +662,7 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
     }
 }
 
-void update_batch_params(Models& models,
+bool update_batch_params(Models& models,
                          const argparse::ArgumentParser& parser,
                          const InputPod5FolderInfo& pod5_folder_info,
                          const std::string& device_string) {
@@ -679,8 +679,9 @@ void update_batch_params(Models& models,
         // Get the optimal batchsize for each device.
         const auto& config = models.get_simplex_config();
         const auto run_benchmarks = parser.present<std::string>("--run-batchsize-benchmarks");
-        auto get_device_batchsize = [&config, &run_benchmarks, &pod5_folder_info](
-                                            const std::string& device) -> std::optional<int> {
+        auto update_device_batch_params = [&config, &run_benchmarks, &pod5_folder_info](
+                                                  BatchParams& device_params,
+                                                  const std::string& device) {
             // Generate benchmarks for this device if requested.
             if (run_benchmarks.has_value()) {
                 SimpleProgressBar progress_bar;
@@ -696,30 +697,52 @@ void update_batch_params(Models& models,
             }
 
             // Lookup the batch size for this device.
-            return batchsize_benchmarks::get(device, 1.0, config, 0.0);
+            const auto batch_size = batchsize_benchmarks::get(device, 1.0, config, 0.0);
+            if (batch_size.has_value()) {
+                device_params.set_batch_size(batch_size.value());
+            } else {
+                spdlog::info(
+                        "Failed to find optimal batch size for {}. Consider generating a benchmark "
+                        "with --run-batchsize-benchmarks, or loading an existing benchmark with "
+                        "--use-batchsize-benchmarks",
+                        device);
+            }
         };
 
 #if DORADO_CUDA_BUILD
-        // We can only set one batch size on the models, so arbitrarily pick the first device.
+        // Split the device string into each device.
+        // TODO: replace with utils::parse_cuda_device_string() when per-device batch sizes are supported
+        const auto device_infos = utils::get_cuda_device_info(device_string, false);
+        if (device_infos.empty()) {
+            spdlog::error("Failed to get CUDA device info for devices: {}", device_string);
+            return false;
+        }
+
+        // We can only set one batch size on the models, so don't do anything with the benchmarks
+        // if all the GPUs aren't of the same type.
         // TODO: per-device batch sizes
-        const auto devices = utils::parse_cuda_device_string(device_string);
-        assert(!devices.empty());
-        const auto& device = devices.front();
-        if (devices.size() != 1) {
-            spdlog::info(
-                    "Multiple devices available. Using optimal batch size from {} for all devices",
-                    device);
+        const std::string_view first_device_name = device_infos.front().device_properties.name;
+        const bool all_same_type =
+                std::all_of(device_infos.begin(), device_infos.end(),
+                            [first_device_name](const utils::CUDADeviceInfo& info) {
+                                return first_device_name == info.device_properties.name;
+                            });
+
+        if (all_same_type) {
+            const auto first_device = fmt::format("cuda:{}", device_infos.front().device_id);
+            update_device_batch_params(batch_params, first_device);
+        } else {
+            spdlog::warn(
+                    "Trying to use multiple CUDA device types. Batch size chosen might not be "
+                    "optimal");
         }
-        const auto batch_size = get_device_batchsize(device);
 #else
-        const auto batch_size = get_device_batchsize(device_string);
+        update_device_batch_params(batch_params, device_string);
 #endif
-        if (batch_size.has_value()) {
-            batch_params.set_batch_size(*batch_size);
-        }
     }
 
     models.set_basecaller_batch_params(batch_params, device_string);
+    return true;
 }
 
 void update_headers(std::span<std::string_view> args,
@@ -1043,7 +1066,9 @@ int basecaller(int argc, char* argv[]) {
 
     const auto device = cli::parse_device(parser);
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
-    update_batch_params(models, parser, pod5_folder_info, device);
+    if (!update_batch_params(models, parser, pod5_folder_info, device)) {
+        return EXIT_FAILURE;
+    }
 
     size_t device_count = 1;
 #if DORADO_CUDA_BUILD
