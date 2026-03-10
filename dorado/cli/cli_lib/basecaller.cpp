@@ -3,6 +3,7 @@
 #include "api/pipeline_creation.h"
 #include "api/runner_creation.h"
 #include "basecall_output_args.h"
+#include "batchsize_benchmarks/batchsize_benchmarks.h"
 #include "cli/cli.h"
 #include "cli/utils/cli_utils.h"
 #include "config/BasecallModelConfig.h"
@@ -106,7 +107,6 @@ struct BasecallerOptions {
     std::string polya_config;
     std::string resume_from_file;
     std::optional<std::string> output_dir;
-    std::optional<std::string> run_batchsize_benchmarks;
 
     int max_reads;
     int min_qscore;
@@ -662,6 +662,67 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
     }
 }
 
+void update_batch_params(Models& models,
+                         const argparse::ArgumentParser& parser,
+                         const InputPod5FolderInfo& pod5_folder_info,
+                         const std::string& device_string) {
+    BatchParams batch_params = cli::get_batch_params(parser);
+
+    // If the batchsize isn't set then lookup benchmarks for each device.
+    if (device_string != "cpu" && batch_params.batch_size() == default_parameters.batchsize) {
+        // Load benchmarks if provided.
+        const auto load_benchmarks = parser.present<std::string>("--use-batchsize-benchmarks");
+        if (load_benchmarks.has_value()) {
+            batchsize_benchmarks::load_cache(load_benchmarks.value());
+        }
+
+        // Get the optimal batchsize for each device.
+        const auto& config = models.get_simplex_config();
+        const auto run_benchmarks = parser.present<std::string>("--run-batchsize-benchmarks");
+        auto get_device_batchsize = [&config, &run_benchmarks, &pod5_folder_info](
+                                            const std::string& device) -> std::optional<int> {
+            // Generate benchmarks for this device if requested.
+            if (run_benchmarks.has_value()) {
+                SimpleProgressBar progress_bar;
+                auto progress_callback = [&](float progress) {
+                    progress_bar.set_progress(100 * progress);
+                };
+
+                progress_bar.set_progress(0);
+                batchsize_benchmarks::generate(device, config, pod5_folder_info.files(),
+                                               progress_callback);
+                progress_bar.erase_progress_bar_line();
+
+                batchsize_benchmarks::export_cache(run_benchmarks.value());
+            }
+
+            // Lookup the batch size for this device.
+            return batchsize_benchmarks::get(device, 1.0, config, 0.0);
+        };
+
+#if DORADO_CUDA_BUILD
+        // We can only set one batch size on the models, so arbitrarily pick the first device.
+        // TODO: per-device batch sizes
+        const auto devices = utils::parse_cuda_device_string(device_string);
+        assert(!devices.empty());
+        const auto& device = devices.front();
+        if (devices.size() != 1) {
+            spdlog::info(
+                    "Multiple devices available. Using optimal batch size from {} for all devices",
+                    device);
+        }
+        const auto batch_size = get_device_batchsize(device);
+#else
+        const auto batch_size = get_device_batchsize(device_string);
+#endif
+        if (batch_size.has_value()) {
+            batch_params.set_batch_size(*batch_size);
+        }
+    }
+
+    models.set_basecaller_batch_params(batch_params, device_string);
+}
+
 void update_headers(std::span<std::string_view> args,
                     const Models& models,
                     const BasecallerOptions& options,
@@ -983,7 +1044,7 @@ int basecaller(int argc, char* argv[]) {
 
     const auto device = cli::parse_device(parser);
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
-    models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
+    update_batch_params(models, parser, pod5_folder_info, device);
 
     size_t device_count = 1;
 #if DORADO_CUDA_BUILD
@@ -1017,8 +1078,6 @@ int basecaller(int argc, char* argv[]) {
                 .polya_config = polya_config,
                 .resume_from_file = parser.get<std::string>("--resume-from"),
                 .output_dir = cli::get_output_dir(parser),
-                .run_batchsize_benchmarks =
-                        parser.present<std::string>("--run-batchsize-benchmarks"),
                 .max_reads = parser.get<int>("--max-reads"),
                 .min_qscore = parser.get<int>("--min-qscore"),
                 .run_for = run_for_arg,

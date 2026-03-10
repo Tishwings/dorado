@@ -104,6 +104,9 @@ inline void add_internal_arguments(argparse::ArgumentParser& parser) {
             .hidden()
             .help("Run auto batchsize selection benchmarking instead of using cached benchmark "
                   "figures, and emit it to the path provided as an argument.");
+    parser.add_argument("--use-batchsize-benchmarks")
+            .hidden()
+            .help("Load and use the benchmarking figures provided.");
     parser.add_argument("--run-for")
             .hidden()
             .help("For performance benchmarking. Run for the specified number of seconds, then "

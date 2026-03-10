@@ -45,6 +45,7 @@ dorado_add_library(
         spdlog::spdlog
         argparse::argparse
     DEPENDS_PRIVATE
+        dorado_benchmarks
         dorado_compat
         dorado_file_info
         dorado_io_lib
