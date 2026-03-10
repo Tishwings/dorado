@@ -254,7 +254,8 @@ std::optional<int> get(const std::string &device,
 
 void generate(const std::string &device,
               const config::BasecallModelConfig &orig_config,
-              const data_loader::InputFiles &input_files) {
+              const data_loader::InputFiles &input_files,
+              const std::function<void(float)> &progress_callback) {
     if (utils::running_in_docker()) {
         spdlog::warn(
                 "Generating benchmarks inside of a container may not be representitive of the real "
@@ -278,6 +279,10 @@ void generate(const std::string &device,
         config.basecaller.set_batch_size(batch_size);
         const auto entry = calculate_one(device, config, input_files);
         speeds.emplace_back(entry);
+
+        if (progress_callback) {
+            progress_callback(batch_size / static_cast<float>(max_safe_batch_size));
+        }
     }
 
     // Add them to the cache.

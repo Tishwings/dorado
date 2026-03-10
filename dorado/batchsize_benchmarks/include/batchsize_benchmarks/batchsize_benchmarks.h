@@ -25,7 +25,8 @@ std::optional<int> get(const std::string &device,
 // This will overwrite existing benchmarks if they exist.
 void generate(const std::string &device,
               const config::BasecallModelConfig &config,
-              const data_loader::InputFiles &input_files);
+              const data_loader::InputFiles &input_files,
+              const std::function<void(float)> &progress_callback);
 
 // Load additional benchmarks into the cache.
 bool load_cache(const std::filesystem::path &file);
