@@ -103,8 +103,11 @@ inline void add_internal_arguments(argparse::ArgumentParser& parser) {
     parser.add_argument("--run-batchsize-benchmarks")
             .hidden()
             .help("Run auto batchsize selection benchmarking instead of using cached benchmark "
-                  "figures, and create/update the file specified by --batchsize-benchmarks-file.")
-            .flag();
+                  "figures, and create/update the file specified by --batchsize-benchmarks-file. "
+                  "Choices are 'break' to quit after benchmarking, or 'continue' to start "
+                  "basecalling the data.")
+            .choices("", "continue", "break")
+            .default_value("");
     parser.add_argument("--batchsize-benchmarks-file")
             .hidden()
             .help("Load and use the benchmarking figures provided.");

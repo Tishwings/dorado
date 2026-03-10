@@ -662,20 +662,23 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
     }
 }
 
-bool update_batch_params(Models& models,
-                         const argparse::ArgumentParser& parser,
-                         const InputPod5FolderInfo& pod5_folder_info,
-                         const std::string& device_string) {
+std::optional<int> update_batch_params(Models& models,
+                                       const argparse::ArgumentParser& parser,
+                                       const InputPod5FolderInfo& pod5_folder_info,
+                                       const std::string& device_string) {
     BatchParams batch_params = cli::get_batch_params(parser);
 
     // If the batchsize isn't set then lookup benchmarks for each device.
     if (device_string != "cpu" && batch_params.batch_size() == default_parameters.batchsize) {
         const auto benchmarks_file = parser.present<std::string>("--batchsize-benchmarks-file");
-        const auto run_benchmarks = parser.get<bool>("--run-batchsize-benchmarks");
+        const auto& run_benchmark_option = parser.get<std::string>("--run-batchsize-benchmarks");
+        const bool run_benchmarks = run_benchmark_option != "";
+        const bool quit_after_benchmarks = run_benchmark_option == "break";
+
         if (run_benchmarks && !benchmarks_file.has_value()) {
             spdlog::error(
                     "--run-batchsize-benchmarks requires --batchsize-benchmarks-file to be set");
-            return false;
+            return EXIT_FAILURE;
         }
 
         // Load benchmarks if provided.
@@ -686,7 +689,7 @@ bool update_batch_params(Models& models,
                     // If we're running benchmarks for the first time then the file doesn't need to exist.
                 } else {
                     spdlog::error("Failed to load benchmark cache: {}", path);
-                    return false;
+                    return EXIT_FAILURE;
                 }
             }
         }
@@ -732,7 +735,7 @@ bool update_batch_params(Models& models,
         const auto device_infos = utils::get_cuda_device_info(device_string, false);
         if (device_infos.empty()) {
             spdlog::error("Failed to get CUDA device info for devices: {}", device_string);
-            return false;
+            return EXIT_FAILURE;
         }
 
         // We can only set one batch size on the models, so don't do anything with the benchmarks
@@ -758,10 +761,17 @@ bool update_batch_params(Models& models,
         update_device_batch_params(batch_params, device_string,
                                    run_benchmarks ? benchmarks_file : std::nullopt);
 #endif
+
+        if (run_benchmarks) {
+            spdlog::info("Benchmarking finished");
+        }
+        if (quit_after_benchmarks) {
+            return EXIT_SUCCESS;
+        }
     }
 
     models.set_basecaller_batch_params(batch_params, device_string);
-    return true;
+    return std::nullopt;
 }
 
 void update_headers(std::span<std::string_view> args,
@@ -1085,8 +1095,8 @@ int basecaller(int argc, char* argv[]) {
 
     const auto device = cli::parse_device(parser);
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
-    if (!update_batch_params(models, parser, pod5_folder_info, device)) {
-        return EXIT_FAILURE;
+    if (auto ret = update_batch_params(models, parser, pod5_folder_info, device); ret.has_value()) {
+        return ret.value();
     }
 
     size_t device_count = 1;

@@ -38,6 +38,6 @@ for model_name in \
         -x $device_string \
         --skip-model-compatibility-check \
         --batchsize-benchmarks-file "${model_name}.csv" \
-        --run-batchsize-benchmarks \
+        --run-batchsize-benchmarks break \
         > /dev/null
 done
