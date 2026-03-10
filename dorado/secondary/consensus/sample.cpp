@@ -1,7 +1,6 @@
 #include "secondary/consensus/sample.h"
 
 #include "torch_utils/tensor_utils.h"
-#include "utils/ssize.h"
 
 #include <ATen/TensorIndexing.h>
 
@@ -11,7 +10,7 @@
 namespace dorado::secondary {
 
 void Sample::validate() const {
-    const int64_t num_columns = dorado::ssize(positions_major);
+    const int64_t num_columns = std::ssize(positions_major);
 
     if (!features.defined()) {
         throw std::runtime_error("Sample::features tensor is not defined!");
@@ -22,7 +21,7 @@ void Sample::validate() const {
     }
 
     // Validate that the input data is sane.
-    if ((dorado::ssize(positions_minor) != num_columns) || (depth.size(0) != num_columns) ||
+    if ((std::ssize(positions_minor) != num_columns) || (depth.size(0) != num_columns) ||
         (features.size(0) != num_columns)) {
         throw std::runtime_error(
                 "Sample data dimensions are inconsistent. positions_major.size = " +
@@ -60,7 +59,7 @@ Sample slice_sample(const Sample& sample,
     sample.validate();
 
     // Validate idx.
-    const int64_t num_columns = dorado::ssize(sample.positions_major);
+    const int64_t num_columns = std::ssize(sample.positions_major);
     if ((idx_start < 0) || (idx_start >= num_columns) || (idx_start >= idx_end) ||
         (idx_end > num_columns)) {
         throw std::out_of_range(

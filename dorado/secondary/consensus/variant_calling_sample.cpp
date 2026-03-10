@@ -4,7 +4,6 @@
 #include "secondary/consensus/sample.h"
 #include "secondary/consensus/sample_trimming.h"
 #include "secondary/features/decoder_base.h"
-#include "utils/ssize.h"
 
 #include <spdlog/spdlog.h>
 
@@ -35,7 +34,7 @@ void VariantCallingSample::validate() const {
         throw std::runtime_error("VariantCallingSample::logits tensor is not defined!");
     }
 
-    const int64_t num_columns = dorado::ssize(positions_major);
+    const int64_t num_columns = std::ssize(positions_major);
 
     if (logits.size(0) != num_columns) {
         std::ostringstream oss;
@@ -64,7 +63,7 @@ std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample
 
     // Print first the beginning and end of the positions vectors.
     constexpr int64_t START = 0;
-    const int64_t len = dorado::ssize(vc_sample.positions_major);
+    const int64_t len = std::ssize(vc_sample.positions_major);
     for (int64_t k = START; k < std::min<int64_t>(START + 3, len); ++k) {
         os << "(" << vc_sample.positions_major[k] << ", " << vc_sample.positions_minor[k] << ") ";
         os.flush();
@@ -94,7 +93,7 @@ VariantCallingSample slice_vc_sample(const VariantCallingSample& vc_sample,
     // Check that all members of the sample are of the same length.
     vc_sample.validate();
 
-    const int64_t num_columns = dorado::ssize(vc_sample.positions_major);
+    const int64_t num_columns = std::ssize(vc_sample.positions_major);
 
     // Validate idx.
     if ((idx_start < 0) || (idx_start >= num_columns) || (idx_start >= idx_end) ||
@@ -142,7 +141,7 @@ std::vector<VariantCallingSample> merge_vc_samples(
     // Validate sample for sanity. This can throw.
     vc_samples[0].validate();
 
-    for (int64_t i = 1; i < dorado::ssize(vc_samples); ++i) {
+    for (std::size_t i = 1; i < std::size(vc_samples); ++i) {
         const VariantCallingSample& last = ret.back();
         const VariantCallingSample& curr = vc_samples[i];
 
@@ -183,7 +182,7 @@ std::vector<VariantCallingSample> join_samples(const std::vector<VariantCallingS
 
     std::vector<VariantCallingSample> queue;
 
-    for (int64_t i = 0; i < dorado::ssize(vc_samples); ++i) {
+    for (std::size_t i = 0; i < std::size(vc_samples); ++i) {
         const VariantCallingSample& vc_sample = vc_samples[i];
 
         vc_sample.validate();
@@ -213,7 +212,7 @@ std::vector<VariantCallingSample> join_samples(const std::vector<VariantCallingS
         const std::vector<bool> is_variant = find_polyploid_variants(
                 vc_sample.positions_minor, draft_with_gaps, calls_with_gaps, std::nullopt);
 
-        const int64_t num_positions = dorado::ssize(vc_sample.positions_major);
+        const int64_t num_positions = std::ssize(vc_sample.positions_major);
 
         // Find a location where to split the sample.
         int64_t last_non_var_start = 0;
@@ -291,7 +290,7 @@ std::vector<VariantCallingSample> trim_vc_samples(
     assert(std::size(trims) == std::size(local_samples));
     assert(std::size(trims) == std::size(group));
 
-    for (int64_t i = 0; i < dorado::ssize(trims); ++i) {
+    for (std::size_t i = 0; i < std::size(trims); ++i) {
         const int32_t id = group[i].second;
         const auto& s = vc_input_data[id];
         const TrimInfo& t = trims[i];
@@ -309,7 +308,7 @@ std::vector<VariantCallingSample> trim_vc_samples(
 
         // Skip samples which were filtered during by trimming (coords are
         // out of bounds or not valid).
-        if (!is_trim_info_valid(t, dorado::ssize(s.positions_major))) {
+        if (!is_trim_info_valid(t, std::ssize(s.positions_major))) {
             continue;
         }
 

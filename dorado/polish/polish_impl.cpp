@@ -10,7 +10,6 @@
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
 #include "utils/memory_utils.h"
-#include "utils/ssize.h"
 #include "utils/string_utils.h"
 #include "utils/timer_high_res.h"
 
@@ -110,7 +109,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
     }
 
     spdlog::debug("Initialized devices:");
-    for (int32_t device_id = 0; device_id < dorado::ssize(resources.devices); ++device_id) {
+    for (std::size_t device_id = 0; device_id < std::size(resources.devices); ++device_id) {
         const DeviceInfo& dev_info = resources.devices[device_id];
         spdlog::debug("    - [device_id = {}] name = {}, available_memory = {:.2f} GB", device_id,
                       dev_info.name, dev_info.available_memory_GB);
@@ -122,7 +121,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
         std::vector<std::shared_ptr<secondary::ModelTorchBase>> ret;
         std::vector<c10::optional<c10::Stream>> ret_streams;
 
-        for (int32_t device_id = 0; device_id < dorado::ssize(resources.devices); ++device_id) {
+        for (std::size_t device_id = 0; device_id < std::size(resources.devices); ++device_id) {
             const auto& device_info = resources.devices[device_id];
 
             {
@@ -223,7 +222,7 @@ std::vector<std::vector<secondary::ConsensusResult>> stitch_sequence(
         const bool fill_gaps,
         const std::optional<char>& fill_char) {
     const std::string draft = fastx_reader.fetch_seq(header);
-    const int64_t draft_len = dorado::ssize(draft);
+    const int64_t draft_len = std::ssize(draft);
 
     if (fill_gaps && std::empty(samples_for_seq)) {
         spdlog::debug(
@@ -244,7 +243,7 @@ std::vector<std::vector<secondary::ConsensusResult>> stitch_sequence(
     // same size or empty, nothing else.
     int64_t max_haps = 0;
     for (const auto& part : sample_results) {
-        max_haps = std::max(max_haps, dorado::ssize(part));
+        max_haps = std::max(max_haps, static_cast<int64_t>(std::ssize(part)));
     }
 
     std::vector<std::vector<secondary::ConsensusResult>> ret;
@@ -269,7 +268,7 @@ std::vector<std::vector<secondary::ConsensusResult>> stitch_sequence(
         const int32_t sample_index = samples_for_seq[i].second;
         const std::vector<secondary::ConsensusResult>& sample_haps = sample_results[sample_index];
 
-        if (!std::empty(sample_haps) && (dorado::ssize(sample_haps) != max_haps)) {
+        if (!std::empty(sample_haps) && (std::ssize(sample_haps) != max_haps)) {
             spdlog::warn(
                     "Unexpected number of haplotype sequences found for a sample. Expected that "
                     "all samples have the same number of generated haplotype consensus sequences, "
@@ -329,7 +328,7 @@ std::vector<std::vector<secondary::ConsensusResult>> stitch_sequence(
     }
 
     // Add the back draft part (or fill char).
-    if ((last_end < dorado::ssize(draft)) && fill_gaps) {
+    if ((last_end < std::ssize(draft)) && fill_gaps) {
         const int64_t fill_len = draft_len - last_end;
         const std::string fill_seq =
                 (fill_char) ? std::string(fill_len, *fill_char) : draft.substr(last_end);
@@ -391,16 +390,16 @@ std::vector<secondary::Sample> split_sample_on_discontinuities(secondary::Sample
 
     // Reusable.
     const std::vector<std::string> placeholder_ids =
-            placeholder_read_ids(dorado::ssize(sample.read_ids_left));
+            placeholder_read_ids(std::ssize(sample.read_ids_left));
 
     if (std::empty(gaps)) {
         return {sample};
 
     } else {
-        const int64_t num_positions = dorado::ssize(sample.positions_major);
+        const int64_t num_positions = std::ssize(sample.positions_major);
 
         int64_t start = 0;
-        for (int64_t n = 0; n < dorado::ssize(gaps); ++n) {
+        for (size_t n = 0; n < std::size(gaps); ++n) {
             const int64_t end = gaps[n];
             std::vector<int64_t> new_major_pos(std::begin(sample.positions_major) + start,
                                                std::begin(sample.positions_major) + end);
@@ -1491,7 +1490,7 @@ void sample_producer(
 
         // Round to the nearest smaller multiple of 8. If number of samples < 8 just use what
         // there is, there is no real benefit of rounding to anything below it really.
-        const int64_t num_samples = dorado::ssize(buffer.samples);
+        const int64_t num_samples = std::ssize(buffer.samples);
         const int64_t new_batch_size = (num_samples < 8) ? num_samples : (8 * (num_samples / 8));
 
         // Get the first batch_size elements and push them to the queue.
@@ -1504,7 +1503,7 @@ void sample_producer(
 
         // Get the remaining items and update the buffer.
         InferenceData remainder;
-        for (int64_t i = new_batch_size; i < dorado::ssize(buffer.samples); ++i) {
+        for (std::size_t i = new_batch_size; i < std::size(buffer.samples); ++i) {
             remainder.samples.emplace_back(std::move(buffer.samples[i]));
             remainder.trims.emplace_back(std::move(buffer.trims[i]));
         }
@@ -1591,7 +1590,7 @@ void sample_producer(
             // Add samples to the batches.
             for (size_t i = 0; i < std::size(samples); ++i) {
                 // If any of the samples is of wrong size, create a remainder batch of 1.
-                if (dorado::ssize(samples[i].positions_major) != window_len) {
+                if (std::ssize(samples[i].positions_major) != window_len) {
                     InferenceData remainder_buffer;
                     remainder_buffer.samples.emplace_back(std::move(samples[i]));
                     remainder_buffer.trims.emplace_back(std::move(trims[i]));
@@ -1643,7 +1642,7 @@ void sample_producer(
                     }
 
                 } else {
-                    if (dorado::ssize(buffer.samples) >= batch_size) {
+                    if (std::ssize(buffer.samples) >= batch_size) {
                         // Fixed batch size.
                         spdlog::trace("[producer] Estimating batch memory for fixed batch size:");
                         spdlog::trace("    - max_available_mem = {} GB", max_available_mem);
@@ -1738,7 +1737,7 @@ void infer_samples_in_parallel(
 #ifdef DEBUG_DUMP_INFERENCE_TENSORS_TO_DISK
         // Debug write tensors for each sample, individually.
         {
-            for (int64_t ii = 0; ii < dorado::ssize(batch.samples); ++ii) {
+            for (int64_t ii = 0; ii < std::ssize(batch.samples); ++ii) {
                 const int64_t seq_id = batch.samples[ii].seq_id;
                 const std::string& seq_name = draft_lens[seq_id].first;
                 const int64_t s = batch.samples[ii].start();
@@ -1992,7 +1991,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
 
         // Trim the overlapping sequences.
         timer::TimerHighRes timer_trim;
-        for (int64_t j = 0; j < dorado::ssize(local_results); ++j) {
+        for (std::size_t j = 0; j < std::size(local_results); ++j) {
             // Empty local results should not be possible, but better be safe.
             if (std::empty(local_results[j])) {
                 continue;
@@ -2000,7 +1999,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
 
             const secondary::Sample& sample = item.samples[j];
             const secondary::TrimInfo& trim = item.trims[j];
-            const int64_t num_positions = dorado::ssize(sample.positions_major);
+            const int64_t num_positions = std::ssize(sample.positions_major);
 
             if ((trim.start < 0) || (trim.start >= num_positions) || (trim.end <= 0) ||
                 (trim.end > num_positions)) {
@@ -2122,12 +2121,12 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
                 const int64_t tensor_batch_size =
                         (item.logits.sizes().size() == 0) ? 0 : item.logits.size(0);
 
-                assert(tensor_batch_size == dorado::ssize(item.trims));
+                assert(tensor_batch_size == std::ssize(item.trims));
 
                 spdlog::trace(
                         "[decoder {}] Popped data: item.logits.shape = {}, item.trims.size = {}, "
                         "tensor_batch_size = {}, queue size: {}",
-                        tid, utils::tensor_shape_as_string(item.logits), dorado::ssize(item.trims),
+                        tid, utils::tensor_shape_as_string(item.logits), std::ssize(item.trims),
                         tensor_batch_size, std::size(decode_queue));
 
                 // This should handle the timeout case too.
@@ -2159,7 +2158,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
                         continue;
                     }
                     // Create the variant calling data. Clone the tensor to convert the view to actual data.
-                    for (int64_t i = 0; i < dorado::ssize(item.samples); ++i) {
+                    for (std::size_t i = 0; i < std::size(item.samples); ++i) {
                         thread_vc_data.emplace_back(secondary::VariantCallingSample{
                                 item.samples[i].seq_id, std::move(item.samples[i].positions_major),
                                 std::move(item.samples[i].positions_minor),
@@ -2269,7 +2268,7 @@ std::vector<std::vector<std::vector<secondary::ConsensusResult>>> construct_cons
 
     // Group samples by sequence ID.
     std::vector<std::vector<std::pair<int64_t, int32_t>>> groups(region_batch.length());
-    for (int32_t i = 0; i < dorado::ssize(all_results_cons); ++i) {
+    for (int32_t i = 0; i < std::ssize(all_results_cons); ++i) {
         const std::vector<secondary::ConsensusResult>& hap_results = all_results_cons[i];
 
         if (std::empty(hap_results)) {
@@ -2284,8 +2283,8 @@ std::vector<std::vector<std::vector<secondary::ConsensusResult>>> construct_cons
             continue;
         }
 
-        if ((draft_id >= dorado::ssize(draft_lens)) || (local_id < 0) ||
-            (local_id >= dorado::ssize(groups))) {
+        if ((draft_id >= std::ssize(draft_lens)) || (local_id < 0) ||
+            (local_id >= std::ssize(groups))) {
             spdlog::error(
                     "Draft ID out of bounds! r.draft_id = {}, draft_lens.size = {}, "
                     "groups.size = {}",
@@ -2299,7 +2298,7 @@ std::vector<std::vector<std::vector<secondary::ConsensusResult>>> construct_cons
     std::vector<std::vector<std::vector<secondary::ConsensusResult>>> ret;
 
     // Consensus sequence - stitch the windows and write output.
-    for (int64_t group_id = 0; group_id < dorado::ssize(groups); ++group_id) {
+    for (int64_t group_id = 0; group_id < std::ssize(groups); ++group_id) {
         const int64_t seq_id = group_id + region_batch.start;
 
         std::vector<std::pair<int64_t, int32_t>>& group = groups[group_id];
@@ -2332,7 +2331,7 @@ std::vector<secondary::Variant> call_variants(
         const bool continue_on_exception) {
     // Group samples by sequence ID.
     std::vector<std::vector<std::pair<int64_t, int32_t>>> groups(region_batch.length());
-    for (int32_t i = 0; i < dorado::ssize(vc_input_data); ++i) {
+    for (int32_t i = 0; i < std::ssize(vc_input_data); ++i) {
         const auto& vc_sample = vc_input_data[i];
 
         const int32_t local_id = vc_sample.seq_id - region_batch.start;
@@ -2342,8 +2341,8 @@ std::vector<secondary::Variant> call_variants(
             continue;
         }
 
-        if ((vc_sample.seq_id >= dorado::ssize(draft_lens)) || (local_id < 0) ||
-            (local_id >= dorado::ssize(groups))) {
+        if ((vc_sample.seq_id >= std::ssize(draft_lens)) || (local_id < 0) ||
+            (local_id >= std::ssize(groups))) {
             spdlog::error(
                     "Draft ID out of bounds! r.draft_id = {}, draft_lens.size = {}, "
                     "groups.size = {}",
@@ -2357,7 +2356,7 @@ std::vector<secondary::Variant> call_variants(
     const auto worker = [&](const int32_t tid, const int32_t start, const int32_t end,
                             std::vector<std::vector<secondary::Variant>>& results,
                             secondary::Stats& ps, WorkerReturnStatus& ret_val) {
-        if ((start < 0) || (start >= end) || (end > dorado::ssize(results))) {
+        if ((start < 0) || (start >= end) || (end > std::ssize(results))) {
             throw std::runtime_error("Worker group_id is out of bounds! start = " +
                                      std::to_string(start) + ", end = " + std::to_string(end) +
                                      ", results.size = " + std::to_string(std::size(results)));
@@ -2442,7 +2441,7 @@ std::vector<secondary::Variant> call_variants(
 
 #ifdef DEBUG_VC_DATA
     {
-        for (int64_t ii = 0; ii < dorado::ssize(vc_input_data); ++ii) {
+        for (int64_t ii = 0; ii < std::ssize(vc_input_data); ++ii) {
             const secondary::VariantCallingSample& vc_sample = vc_input_data[ii];
             const std::string& header = draft_lens[vc_sample.seq_id].first;
             const std::string draft = draft_readers[0]->fetch_seq(header);

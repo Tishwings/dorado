@@ -1,7 +1,6 @@
 #include "encoder_counts.h"
 
 #include "medaka_counts.h"
-#include "utils/ssize.h"
 
 #include <spdlog/spdlog.h>
 #include <torch/types.h>
@@ -55,7 +54,7 @@ FeatureIndicesType pileup_counts_norm_indices(const std::vector<std::string>& dt
     constexpr size_t featlen = std::size(PILEUP_BASES);
 
     // Iterate over each datatype.
-    for (int64_t dti = 0; dti < dorado::ssize(dtypes); ++dti) {
+    for (int64_t dti = 0; dti < std::ssize(dtypes); ++dti) {
         const std::string& dt = dtypes[dti];
 
         // Iterate over qscore stratification layers.
@@ -85,7 +84,7 @@ secondary::Sample counts_to_features(CountsResult& pileup,
     // on a very high level with lots of redundancy in computation.
 
     // Get indices of minor positions.
-    const int64_t num_rows = dorado::ssize(pileup.positions_major);
+    const int64_t num_rows = std::ssize(pileup.positions_major);
     std::vector<int64_t> minor_inds;
     std::vector<int64_t> major_pos_at_minor_inds;
     std::vector<int64_t> major_ind_at_minor_inds;
@@ -243,7 +242,7 @@ std::vector<secondary::Sample> merge_adjacent_samples_impl(std::vector<secondary
 
     std::vector<secondary::Sample> results;
 
-    for (int64_t i = 0; i < dorado::ssize(samples); ++i) {
+    for (int64_t i = 0; i < std::ssize(samples); ++i) {
         // Non-const so that it can be moved by the lambdas.
         auto& sample = samples[i];
 

@@ -4,7 +4,6 @@
 #include "secondary/consensus/consensus_utils.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/rle.h"
-#include "utils/ssize.h"
 
 #include <ATen/ATen.h>
 #include <cxxpool.h>
@@ -67,7 +66,7 @@ float phred(float err, const float cap) {
 std::array<int32_t, 256> create_symbol_lookup(const std::string_view symbols) {
     std::array<int32_t, 256> ret;
     std::fill(std::begin(ret), std::end(ret), -1);
-    for (int32_t i = 0; i < dorado::ssize(symbols); ++i) {
+    for (int32_t i = 0; i < std::ssize(symbols); ++i) {
         ret[static_cast<int32_t>(symbols[i])] = i;
     }
     return ret;
@@ -194,12 +193,12 @@ float compute_consensus_quality(
 
     const int64_t num_haplotypes = probs_3D.size(1);
 
-    if (dorado::ssize(cons_seqs_with_gaps) != num_haplotypes) {
+    if (std::ssize(cons_seqs_with_gaps) != num_haplotypes) {
         throw std::runtime_error(
                 "Number of haplotypes in the tensor differs from the number of haplotype consensus "
                 "sequences provided to compute_consensus_quality. Tensor shape: " +
                 utils::tensor_shape_as_string(probs_3D) + ", number of consensus sequences: " +
-                std::to_string(dorado::ssize(cons_seqs_with_gaps)));
+                std::to_string(std::size(cons_seqs_with_gaps)));
     }
 
     float total = 0.0f;
@@ -249,7 +248,7 @@ Variant construct_variant(const std::string_view draft,
     std::string var_ref = remove_gaps(var_ref_with_gaps);
 
     std::vector<std::string> var_preds;
-    for (int64_t hap_id = 0; hap_id < dorado::ssize(cons_seqs_with_gaps); ++hap_id) {
+    for (int64_t hap_id = 0; hap_id < std::ssize(cons_seqs_with_gaps); ++hap_id) {
         const std::string_view var_pred_with_gaps(
                 std::data(cons_seqs_with_gaps[hap_id].seq) + rstart,
                 static_cast<size_t>(rend - rstart));
@@ -338,7 +337,7 @@ std::vector<Variant> merge_sorted_variants(const std::vector<Variant>& variants,
     std::vector<Variant> filtered;
     int64_t furthest_rend = variants[0].rend;
     int64_t prev_i = 0;
-    for (int64_t i = 1; i < dorado::ssize(variants); ++i) {
+    for (int64_t i = 1; i < std::ssize(variants); ++i) {
 #ifdef DEBUG_NORMALIZE_VARIANT
         std::cerr << "[merge_sorted_variants] ----------------------------------\n";
 #endif
@@ -410,7 +409,7 @@ std::tuple<bool, int64_t, int64_t> find_previous_ref_pos(
         const std::vector<int64_t>& positions_minor,
         const int64_t rstart) {
     // Bounds check.
-    if ((rstart <= 0) || (rstart >= dorado::ssize(positions_major))) {
+    if ((rstart <= 0) || (rstart >= std::ssize(positions_major))) {
         return {false, rstart, -1};
     }
 
@@ -448,7 +447,7 @@ std::tuple<bool, int64_t, int64_t> find_ref_pos(const std::vector<int64_t>& posi
                                                 const std::vector<int64_t>& positions_minor,
                                                 const int64_t rstart,
                                                 const int64_t requested_ref_pos) {
-    const int64_t len = dorado::ssize(positions_major);
+    const int64_t len = std::ssize(positions_major);
 
     // Bounds check.
     if ((requested_ref_pos < 0) || (rstart < 0) || (rstart >= len)) {
@@ -521,7 +520,7 @@ bool prepend_ref_base(Variant& var,
     }
 
     // Remove the deletions and prepend the prefix sequence.
-    for (int64_t i = 0; i < dorado::ssize(prefixes); ++i) {
+    for (std::size_t i = 0; i < std::size(prefixes); ++i) {
         std::string& p = prefixes[i];
         p.erase(std::remove(std::begin(p), std::end(p), '*'), std::end(p));
     }
@@ -530,7 +529,7 @@ bool prepend_ref_base(Variant& var,
     var.pos = positions_major[new_rstart];
     var.rstart = new_rstart;
     var.ref = prefixes[0] + var.ref;
-    for (int64_t i = 0; i < dorado::ssize(var.alts); ++i) {
+    for (std::size_t i = 0; i < std::size(var.alts); ++i) {
         var.alts[i] = prefixes[i + 1] + var.alts[i];
     }
 
@@ -549,7 +548,7 @@ bool append_ref_base(Variant& var,
     // Instead, find the desired reference coordinate for the new base,
     // then find the region pos (rpos) and add it.
     // Only the var.rstart should be considered valid.
-    const int64_t next_ref_pos = var.pos + dorado::ssize(var.ref);
+    const int64_t next_ref_pos = var.pos + std::ssize(var.ref);
 
 #ifdef DEBUG_NORMALIZE_VARIANT
     std::cerr << "[append_ref_base] On entry: var = " << var << '\n';
@@ -603,7 +602,7 @@ bool append_ref_base(Variant& var,
     // Finally, extend.
     const int64_t total_span = (new_rend_inclusive + 1) - var.rstart;
     var.ref = remove_gaps(ref_with_gaps.substr(var.rstart, total_span));
-    for (int64_t i = 0; i < dorado::ssize(var.alts); ++i) {
+    for (int64_t i = 0; i < std::ssize(var.alts); ++i) {
         var.alts[i] = remove_gaps(cons_seqs_with_gaps[i].substr(var.rstart, total_span));
     }
     var.rend = new_rend_inclusive + 1;
@@ -620,7 +619,7 @@ bool append_ref_base(Variant& var,
 Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float min_qual) {
     Variant ret = var;
 
-    if (dorado::ssize(var.alts) > ploidy) {
+    if (std::ssize(var.alts) > ploidy) {
         spdlog::warn(
                 "Number of alts ({}) is larger than ploidy ({})! Marking this variant for removal.",
                 std::size(var.alts), ploidy);
@@ -651,13 +650,13 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
 
     // Look-up table: alt -> numeric ID. +1 is because ref is the zeroth allele.
     std::unordered_map<std::string, int64_t> alt_dict;
-    for (int64_t i = 0; i < dorado::ssize(ret.alts); ++i) {
+    for (int64_t i = 0; i < std::ssize(ret.alts); ++i) {
         alt_dict[ret.alts[i]] = i + 1;
     }
     alt_dict[var.ref] = 0;
 
     std::vector<int32_t> alleles(std::size(var.alts));
-    for (int64_t i = 0; i < dorado::ssize(var.alts); ++i) {
+    for (std::size_t i = 0; i < std::size(var.alts); ++i) {
         const auto it = alt_dict.find(var.alts[i]);
         if (it == std::cend(alt_dict)) {
             continue;
@@ -667,7 +666,7 @@ Variant normalize_genotype(const Variant& var, const int32_t ploidy, const float
     std::sort(std::begin(alleles), std::end(alleles));
 
     std::ostringstream oss_gt;
-    for (int64_t i = 0; i < dorado::ssize(alleles); ++i) {
+    for (std::size_t i = 0; i < std::size(alleles); ++i) {
         if (i > 0) {
             oss_gt << '/';
         }
@@ -710,17 +709,17 @@ Variant normalize_variant(const std::string_view ref_with_gaps,
             return;
         }
 
-        const int64_t min_len = dorado::ssize(
+        const int64_t min_len = std::ssize(
                 *std::min_element(std::cbegin(seqs), std::cend(seqs),
                                   [](const std::string_view a, const std::string_view b) {
-                                      return dorado::ssize(a) < dorado::ssize(b);
+                                      return std::ssize(a) < std::ssize(b);
                                   }));
 
         // Never trim the last base.
         int64_t start_pos = 0;
         for (int64_t i = 0; i < (min_len - 1); ++i) {
             bool bases_same = true;
-            for (int64_t j = 1; j < dorado::ssize(seqs); ++j) {
+            for (int64_t j = 1; j < std::ssize(seqs); ++j) {
                 if (seqs[j][i] != seqs[0][i]) {
                     bases_same = false;
                     break;
@@ -785,7 +784,7 @@ Variant normalize_variant(const std::string_view ref_with_gaps,
             if (all_non_empty) {
                 // Check if the last base is identical in all seqs.
                 bool all_same = true;
-                for (int64_t i = 1; i < dorado::ssize(seqs); ++i) {
+                for (int64_t i = 1; i < std::ssize(seqs); ++i) {
                     if (seqs[i].back() != seqs[0].back()) {
                         all_same = false;
                         break;
@@ -939,7 +938,7 @@ std::vector<Variant> general_decode_variants(
         const bool normalize,
         const bool merge_overlapping,
         const bool merge_adjacent) {
-    const int64_t num_columns = dorado::ssize(positions_major);
+    const int64_t num_columns = std::ssize(positions_major);
 
     // Validate inputs.
     if (seq_id < 0) {
@@ -1063,7 +1062,7 @@ std::vector<Variant> general_decode_variants(
                       << ", rend = " << rend << ", is_var = " << is_var << '\n';
             std::cerr << "[general_decode_variants slice] var = " << var << '\n';
             const int64_t s = std::max<int64_t>(0, var.rstart - 5);
-            const int64_t e = std::min(dorado::ssize(positions_major), var.rend + 5);
+            const int64_t e = std::min(std::ssize(positions_major), var.rend + 5);
             print_slice(std::cerr, ref_seq_with_gaps, cons_view, positions_major, positions_minor,
                         is_variant, s, e, var.rstart, var.rend);
             std::cerr << '\n';
@@ -1110,7 +1109,7 @@ std::vector<Variant> general_decode_variants(
 #endif
 
     if (return_all) {
-        for (int64_t i = 0; i < dorado::ssize(positions_major); ++i) {
+        for (int64_t i = 0; i < std::ssize(positions_major); ++i) {
             // Skip non-reference positions.
             if (positions_minor[i] != 0) {
                 continue;

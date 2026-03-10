@@ -23,7 +23,6 @@
 #include "utils/io_utils.h"
 #include "utils/jthread.h"
 #include "utils/log_utils.h"
-#include "utils/ssize.h"
 #include "utils/string_utils.h"
 #include "utils/thread_utils.h"
 
@@ -881,7 +880,7 @@ void run_polishing(const Options& opt,
 
     // Create windows only for the selected regions.
     std::unordered_map<std::string, std::pair<int64_t, int64_t>> draft_lookup;
-    for (int64_t seq_id = 0; seq_id < dorado::ssize(draft_lens); ++seq_id) {
+    for (std::size_t seq_id = 0; seq_id < std::size(draft_lens); ++seq_id) {
         draft_lookup[draft_lens[seq_id].first] = {seq_id, draft_lens[seq_id].second};
     }
 
@@ -1007,7 +1006,7 @@ void run_polishing(const Options& opt,
         spdlog::debug("[run_polishing] =============================");
         spdlog::debug("[run_polishing] Processing batch interval of drafts: [{}, {})",
                       batch_interval.start, batch_interval.end);
-        for (int64_t i = 0; i < dorado::ssize(region_batch); ++i) {
+        for (std::size_t i = 0; i < std::size(region_batch); ++i) {
             spdlog::debug("[run_polishing] region_batch i = {}: {}", i,
                           secondary::region_to_string(region_batch[i]));
         }

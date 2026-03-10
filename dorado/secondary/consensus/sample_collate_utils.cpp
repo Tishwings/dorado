@@ -1,8 +1,6 @@
 
 #include "secondary/consensus/sample_collate_utils.h"
 
-#include "utils/ssize.h"
-
 #include <spdlog/spdlog.h>
 
 #include <stdexcept>
@@ -18,7 +16,7 @@ std::vector<int64_t> compute_collated_padded_shape(const std::vector<Sample>& bu
     std::vector<int64_t> ret(1 + std::size(buffered_samples.front().features.sizes()), 0);
 
     // For each features tensor, find the maximum sizes for all dimensions.
-    for (int64_t i = 0; i < dorado::ssize(buffered_samples); ++i) {
+    for (std::size_t i = 0; i < std::size(buffered_samples); ++i) {
         const secondary::Sample& sample = buffered_samples[i];
 
         if (!sample.features.defined()) {
@@ -37,7 +35,7 @@ std::vector<int64_t> compute_collated_padded_shape(const std::vector<Sample>& bu
         ++ret[0];
 
         // Find max on every dimension (mock padding).
-        for (int64_t j = 0; j < dorado::ssize(sample.features.sizes()); ++j) {
+        for (std::size_t j = 0; j < std::size(sample.features.sizes()); ++j) {
             ret[j + 1] = std::max(ret[j + 1], sample.features.size(j));
         }
     }
@@ -69,7 +67,7 @@ std::vector<int64_t> compute_collated_padded_shape(const std::vector<Sample>& bu
     ++ret[0];
 
     // Find max on every dimension (mock padding).
-    for (int64_t j = 0; j < dorado::ssize(new_sample.features.sizes()); ++j) {
+    for (std::size_t j = 0; j < std::size(new_sample.features.sizes()); ++j) {
         ret[j + 1] = std::max(ret[j + 1], new_sample.features.size(j));
     }
 
