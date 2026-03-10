@@ -670,20 +670,35 @@ bool update_batch_params(Models& models,
 
     // If the batchsize isn't set then lookup benchmarks for each device.
     if (device_string != "cpu" && batch_params.batch_size() == default_parameters.batchsize) {
+        const auto benchmarks_file = parser.present<std::string>("--batchsize-benchmarks-file");
+        const auto run_benchmarks = parser.get<bool>("--run-batchsize-benchmarks");
+        if (run_benchmarks && !benchmarks_file.has_value()) {
+            spdlog::error(
+                    "--run-batchsize-benchmarks requires --batchsize-benchmarks-file to be set");
+            return false;
+        }
+
         // Load benchmarks if provided.
-        const auto load_benchmarks = parser.present<std::string>("--use-batchsize-benchmarks");
-        if (load_benchmarks.has_value()) {
-            batchsize_benchmarks::load_cache(load_benchmarks.value());
+        if (benchmarks_file.has_value()) {
+            const auto& path = benchmarks_file.value();
+            if (!batchsize_benchmarks::load_cache(path)) {
+                if (run_benchmarks && !std::filesystem::exists(path)) {
+                    // If we're running benchmarks for the first time then the file doesn't need to exist.
+                } else {
+                    spdlog::error("Failed to load benchmark cache: {}", path);
+                    return false;
+                }
+            }
         }
 
         // Get the optimal batchsize for each device.
         const auto& config = models.get_simplex_config();
-        const auto run_benchmarks = parser.present<std::string>("--run-batchsize-benchmarks");
-        auto update_device_batch_params = [&config, &run_benchmarks, &pod5_folder_info](
+        auto update_device_batch_params = [&config, &pod5_folder_info](
                                                   BatchParams& device_params,
-                                                  const std::string& device) {
+                                                  const std::string& device,
+                                                  const std::optional<std::string>& generate_to) {
             // Generate benchmarks for this device if requested.
-            if (run_benchmarks.has_value()) {
+            if (generate_to.has_value()) {
                 SimpleProgressBar progress_bar;
                 auto progress_callback = [&](float progress) {
                     progress_bar.set_progress(100 * progress);
@@ -693,7 +708,9 @@ bool update_batch_params(Models& models,
                                                progress_callback);
                 progress_bar.erase_progress_bar_line();
 
-                batchsize_benchmarks::export_cache(run_benchmarks.value());
+                if (!batchsize_benchmarks::export_cache(generate_to.value())) {
+                    spdlog::warn("Failed to write out benchmark cache: {}", generate_to.value());
+                }
             }
 
             // Lookup the batch size for this device.
@@ -704,7 +721,7 @@ bool update_batch_params(Models& models,
                 spdlog::info(
                         "Failed to find optimal batch size for {}. Consider generating a benchmark "
                         "with --run-batchsize-benchmarks, or loading an existing benchmark with "
-                        "--use-batchsize-benchmarks",
+                        "--batchsize-benchmarks-file",
                         device);
             }
         };
@@ -730,14 +747,16 @@ bool update_batch_params(Models& models,
 
         if (all_same_type) {
             const auto first_device = fmt::format("cuda:{}", device_infos.front().device_id);
-            update_device_batch_params(batch_params, first_device);
+            update_device_batch_params(batch_params, first_device,
+                                       run_benchmarks ? benchmarks_file : std::nullopt);
         } else {
             spdlog::warn(
                     "Trying to use multiple CUDA device types. Batch size chosen might not be "
                     "optimal");
         }
 #else
-        update_device_batch_params(batch_params, device_string);
+        update_device_batch_params(batch_params, device_string,
+                                   run_benchmarks ? benchmarks_file : std::nullopt);
 #endif
     }
 

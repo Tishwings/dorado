@@ -86,7 +86,6 @@ std::span<const SpeedEntry> BenchmarkCache::CacheProxy::get_timings(
 bool BenchmarkCache::CacheProxy::load_from_file(const std::filesystem::path &path) {
     std::ifstream file(path);
     if (!file) {
-        spdlog::warn("Failed to open {}", path.string());
         return false;
     }
 
@@ -111,7 +110,6 @@ bool BenchmarkCache::CacheProxy::load_from_file(const std::filesystem::path &pat
 bool BenchmarkCache::CacheProxy::export_to_file(const std::filesystem::path &path) const {
     std::ofstream file(path);
     if (!file) {
-        spdlog::warn("Failed to open {}", path.string());
         return false;
     }
 

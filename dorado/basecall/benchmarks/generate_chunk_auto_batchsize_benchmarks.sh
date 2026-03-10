@@ -37,6 +37,7 @@ for model_name in \
         $model_name $pod5_dir \
         -x $device_string \
         --skip-model-compatibility-check \
-        --emit-batchsize-benchmarks "${model_name}.json" \
+        --batchsize-benchmarks-file "${model_name}.csv" \
+        --run-batchsize-benchmarks \
         > /dev/null
 done
