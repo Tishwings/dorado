@@ -264,15 +264,19 @@ void generate(const std::string &device,
 
     const std::string gpu_name = get_gpu_name(device);
     const auto batch_size_granularity = get_batch_size_granularity(orig_config);
-    const auto max_safe_batch_size = get_max_safe_batch_size(device, orig_config);
+    const auto max_safe_batch_size =
+            (get_max_safe_batch_size(device, orig_config) / batch_size_granularity) *
+            batch_size_granularity;
 
     // Do the benchmarking.
     spdlog::info("Benchmarking batch sizes in steps of {} for {} ({})", batch_size_granularity,
                  device, gpu_name);
     std::vector<SpeedEntry> speeds;
     speeds.reserve(max_safe_batch_size / batch_size_granularity);
-    for (int batch_size = batch_size_granularity; batch_size <= max_safe_batch_size;
-         batch_size += batch_size_granularity) {
+    // We count down instead of up so that torch's caching allocator doesn't fragment memory as we
+    // ask for bigger allocations.
+    for (int batch_size = max_safe_batch_size; batch_size >= batch_size_granularity;
+         batch_size -= batch_size_granularity) {
         // Make a copy so that we can change the batch size.
         auto config = orig_config;
         config.basecaller.set_batch_size(batch_size);
@@ -281,7 +285,7 @@ void generate(const std::string &device,
         speeds.emplace_back(entry);
 
         if (progress_callback) {
-            progress_callback(batch_size / static_cast<float>(max_safe_batch_size));
+            progress_callback(1.f - batch_size / static_cast<float>(max_safe_batch_size));
         }
     }
 
