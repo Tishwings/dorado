@@ -7,6 +7,8 @@ dorado_add_library(dorado_benchmarks
         batchsize_benchmarks.h
     SOURCES_PRIVATE
         batchsize_benchmarks.cpp
+        batchsize_helpers.cpp
+        batchsize_helpers.h
         BenchmarkCache.cpp
         BenchmarkCache.h
         BenchmarkSink.cpp
