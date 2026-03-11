@@ -111,6 +111,8 @@ struct BasecallerOptions {
     int max_reads;
     int min_qscore;
     int run_for;
+    std::optional<int> modified_bases_batchsize;
+    std::optional<int> modified_bases_threshold;
 
     bool enable_read_splitting;
     bool estimate_poly_a;
@@ -277,19 +279,24 @@ void set_dorado_basecaller_args(argparse::ArgumentParser& parser, int& verbosity
 }
 
 ModBaseBatchParams validate_modbase_params(const std::vector<std::filesystem::path>& paths,
-                                           const argparse::ArgumentParser& parser,
-                                           size_t device_count) {
+                                           const BasecallerOptions& options) {
+#if DORADO_CUDA_BUILD
+    const size_t device_count = utils::parse_cuda_device_string(options.device).size();
+#else
+    const size_t device_count = 1;
+#endif
+
     // Convert path to params.
     auto params = get_modbase_params(paths, device_count);
 
     // Allow user to override batchsize.
-    if (auto modbase_batchsize = parser.present<int>("--modified-bases-batchsize");
+    if (const auto& modbase_batchsize = options.modified_bases_batchsize;
         modbase_batchsize.has_value()) {
         params.batchsize = *modbase_batchsize;
     }
 
     // Allow user to override threshold.
-    if (auto methylation_threshold = parser.present<float>("--modified-bases-threshold");
+    if (const auto& methylation_threshold = options.modified_bases_threshold;
         methylation_threshold.has_value()) {
         if (methylation_threshold < 0.f || methylation_threshold > 1.f) {
             throw std::runtime_error("--modified-bases-threshold must be between 0 and 1.");
@@ -890,13 +897,14 @@ void run(const BasecallerOptions& options,
          std::span<std::string_view> args,
          const Models& models,
          size_t num_runners,
-         const ModBaseBatchParams& modbase_params,
          std::optional<std::unordered_set<std::string>> read_list,
          const alignment::Minimap2Options& aligner_options,
          const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
          const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info) {
     const BasecallModelConfig& model_config = models.get_simplex_config();
     spdlog::trace(model_config.to_string());
+
+    const auto modbase_params = validate_modbase_params(models.get_modbase_model_paths(), options);
     spdlog::trace(modbase_params.to_string());
 
     size_t num_reads =
@@ -1099,14 +1107,6 @@ int basecaller(int argc, char* argv[]) {
         return ret.value();
     }
 
-    size_t device_count = 1;
-#if DORADO_CUDA_BUILD
-    device_count = utils::get_cuda_device_info(device, false).size();
-#endif
-
-    const auto modbase_params =
-            validate_modbase_params(models.get_modbase_model_paths(), parser, device_count);
-
     auto run_for_arg = parser.get<int>("--run-for");
     if (run_for_arg < 0) {
         spdlog::error("Invalid value for --run-for: {}", run_for_arg);
@@ -1134,13 +1134,15 @@ int basecaller(int argc, char* argv[]) {
                 .max_reads = parser.get<int>("--max-reads"),
                 .min_qscore = parser.get<int>("--min-qscore"),
                 .run_for = run_for_arg,
+                .modified_bases_batchsize = parser.present<int>("--modified-bases-batchsize"),
+                .modified_bases_threshold = parser.present<int>("--modified-bases-threshold"),
                 .enable_read_splitting = !parser.get<bool>("--disable-read-splitting"),
                 .estimate_poly_a = estimate_poly_a,
                 .variable_chunk_sizes = !parser.get<bool>("--disable-variable-chunk-sizes"),
         };
-        run(options, args, models, default_parameters.num_runners, modbase_params,
+        run(options, args, models, default_parameters.num_runners,
             utils::load_read_list(parser.get<std::string>("--read-ids")), *minimap_options,
-            std::move(infos->barcoding_info), std::move(infos->adapter_info));
+            infos->barcoding_info, infos->adapter_info);
     } catch (const std::exception& e) {
         spdlog::error("{}", e.what());
         return EXIT_FAILURE;
