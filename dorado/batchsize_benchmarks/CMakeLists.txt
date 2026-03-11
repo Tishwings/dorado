@@ -19,6 +19,7 @@ dorado_add_library(dorado_benchmarks
         SpeedEntry.h
     SOURCES_TEST
         entries_equal.h
+        test_batchsize_helpers.cpp
         test_cache.cpp
         test_csv.cpp
     DEPENDS_PUBLIC

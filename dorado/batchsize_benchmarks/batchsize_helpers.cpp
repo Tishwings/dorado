@@ -5,54 +5,57 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <ranges>
 #include <stdexcept>
 
 namespace dorado::batchsize_benchmarks {
 
 int pick_best_batch_size(std::span<const SpeedEntry> speeds,
                          uint64_t memory_limit,
-                         float batch_size_time_penalty) {
-    auto is_slower = [](const SpeedEntry &lhs, const SpeedEntry &rhs) {
-        return lhs.basecall_speed < rhs.basecall_speed;
+                         float time_penalty) {
+    if (speeds.empty()) {
+        throw std::logic_error("Empty span passed to batch size selection");
+    }
+
+    // Filter entries to those that fit in memory.
+    const auto is_below_memory_limit = [memory_limit](const SpeedEntry & entry) {
+        return entry.memory_used <= memory_limit;
     };
-
-    // Look for the fastest batch size.
-    const auto fastest_iter = std::max_element(speeds.begin(), speeds.end(), is_slower);
-    if (fastest_iter == speeds.end()) {
-        throw std::logic_error("Failed to find fastest batch size in non-empty span");
-    }
-    spdlog::debug("Fastest batch size is {}", fastest_iter->batch_size);
-
-    // Cap to the largest batch size under our memory limit.
-    const auto first_batchsize_over_max_iter = std::find_if(
-            speeds.begin(), std::next(fastest_iter),
-            [memory_limit](const SpeedEntry &entry) { return entry.memory_used > memory_limit; });
-    if (first_batchsize_over_max_iter == speeds.begin()) {
-        throw std::runtime_error(fmt::format(
-                "No entries remaining after applying memory_limit_fraction ({})", memory_limit));
+    auto entries_below_memory_limit =
+            std::ranges::to<std::vector>(speeds | std::views::filter(is_below_memory_limit));
+    if (entries_below_memory_limit.empty()) {
+        throw std::runtime_error(
+                fmt::format("No entries remaining after applying memory_limit ({})", memory_limit));
     }
 
-    // Limit based on the time penalty.
-    const double threshold_speed = fastest_iter->basecall_speed / (1.0 + batch_size_time_penalty);
-    auto fastest_under_threshold_iter =
-            std::find_if(speeds.begin(), first_batchsize_over_max_iter,
-                         [threshold_speed](const SpeedEntry &entry) {
-                             return entry.basecall_speed >= threshold_speed;
-                         });
-    if (fastest_under_threshold_iter == speeds.end()) {
-        spdlog::debug("No entries are faster than threshold of {}. Using absolute fastest instead",
-                      threshold_speed);
-        fastest_under_threshold_iter =
-                std::max_element(speeds.begin(), first_batchsize_over_max_iter, is_slower);
-    }
-    if (fastest_under_threshold_iter == speeds.end()) {
-        throw std::logic_error("Error in batch size selection algorithm");
-    }
-    spdlog::debug("Fastest capped+limited batch size is {} @ {}",
-                  fastest_under_threshold_iter->batch_size,
-                  fastest_under_threshold_iter->basecall_speed);
+    // Sort the entries so that we can search through them for the first "best" entry.
+    const auto compare_better = [](const SpeedEntry & lhs, const SpeedEntry & rhs) {
+        // The order of these represents priority, ie basecall_speed is the most important.
+        return std::tie(lhs.basecall_speed, lhs.memory_used, lhs.batch_size) <
+               std::tie(rhs.basecall_speed, rhs.memory_used, rhs.batch_size);
+    };
+    std::ranges::sort(entries_below_memory_limit, compare_better);
 
-    return fastest_under_threshold_iter->batch_size;
+    // The fastest speed will be at the back.
+    const auto fastest_entry = entries_below_memory_limit.back();
+
+    // Apply the time penalty.
+    // TODO: the existing time_penalty code seems odd since 3 is half of 1 is half of 0.
+    // TODO: would |speed * (1 - speed_penalty)| be better?
+    const double threshold_speed = fastest_entry.basecall_speed / (1.0 + time_penalty);
+    const auto over_threshold = [threshold_speed](const SpeedEntry & entry) {
+        return entry.basecall_speed >= threshold_speed;
+    };
+    const auto first_over_threshold =
+            std::ranges::find_if(entries_below_memory_limit, over_threshold);
+    if (first_over_threshold == entries_below_memory_limit.end()) {
+        // This should be impossible since the fastest speed should be over the threshold.
+        throw std::logic_error("Error in batch size selection");
+    }
+
+    spdlog::debug("Fastest capped+limited batch size is {} @ {}", first_over_threshold->batch_size,
+                  first_over_threshold->basecall_speed);
+    return first_over_threshold->batch_size;
 }
 
 }  // namespace dorado::batchsize_benchmarks
