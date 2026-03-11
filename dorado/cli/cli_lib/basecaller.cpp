@@ -49,6 +49,7 @@
 #include <argparse/argparse.hpp>
 #include <cxxpool.h>
 #include <htslib/sam.h>
+#include <indicators/dynamic_progress.hpp>
 #include <spdlog/spdlog.h>
 #include <torch/utils.h>
 
@@ -394,6 +395,28 @@ std::optional<Infos> validate_infos(const argparse::ArgumentParser& parser) {
     };
 }
 
+void set_config_batch_params(BasecallModelConfig& config,
+                             float memory_limit_fraction,
+                             const std::string& device) {
+    // If the batchsize is already set then don't update anything.
+    if (device == "cpu" || config.basecaller.batch_size() != default_parameters.batchsize) {
+        return;
+    }
+
+    // Lookup the batch size for this device.
+    const auto batch_size = batchsize_benchmarks::get(device, memory_limit_fraction, config, 0.0);
+    if (batch_size.has_value()) {
+        config.basecaller.set_batch_size(batch_size.value());
+        config.normalise_basecaller_params();
+    } else {
+        spdlog::info(
+                "Failed to find optimal batch size for {}. Consider generating a benchmark with "
+                "--run-batchsize-benchmarks, or loading an existing benchmark with "
+                "--batchsize-benchmarks-file",
+                device);
+    }
+}
+
 struct Runners {
     size_t num_devices;
     std::vector<basecall::RunnerPtr> runners;
@@ -420,11 +443,15 @@ Runners create_runners(const BasecallerOptions& options,
     };
     auto create_device_runners = [&](const std::string& device_id, float memory_limit_fraction,
                                      bool use_variable_chunk_sizes) {
+        // Lookup the batch size for this device if it wasn't set by the user.
+        auto device_config = model_config;
+        set_config_batch_params(device_config, memory_limit_fraction, device_id);
+
         BasecallerRunners basecaller_runners;
         std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
                 api::create_basecall_runners(
                         {
-                                .model_config = model_config,
+                                .model_config = device_config,
                                 .device = device_id,
                                 .memory_limit_fraction = memory_limit_fraction,
                                 .pipeline_type = api::PipelineType::simplex,
@@ -665,115 +692,82 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
     }
 }
 
-std::optional<int> update_batch_params(Models& models,
-                                       const argparse::ArgumentParser& parser,
-                                       const InputPod5FolderInfo& pod5_folder_info,
-                                       const std::string& device_string) {
-    BatchParams batch_params = cli::get_batch_params(parser);
+std::optional<int> load_and_generate_benchmarks(const Models& models,
+                                                const argparse::ArgumentParser& parser,
+                                                const InputPod5FolderInfo& pod5_folder_info,
+                                                const std::string& device_string) {
+    // See if the user wants to generate benchmarks for each device.
+    const auto benchmarks_file = parser.present<std::string>("--batchsize-benchmarks-file");
+    const auto& run_benchmark_option = parser.get<std::string>("--run-batchsize-benchmarks");
+    const bool run_benchmarks = run_benchmark_option != "";
+    const bool quit_after_benchmarks = run_benchmark_option == "break";
 
-    // If the batchsize isn't set then lookup benchmarks for each device.
-    if (device_string != "cpu" && batch_params.batch_size() == default_parameters.batchsize) {
-        const auto benchmarks_file = parser.present<std::string>("--batchsize-benchmarks-file");
-        const auto& run_benchmark_option = parser.get<std::string>("--run-batchsize-benchmarks");
-        const bool run_benchmarks = run_benchmark_option != "";
-        const bool quit_after_benchmarks = run_benchmark_option == "break";
+    if (run_benchmarks && !benchmarks_file.has_value()) {
+        spdlog::error("--run-batchsize-benchmarks requires --batchsize-benchmarks-file to be set");
+        return EXIT_FAILURE;
+    } else if (run_benchmarks && device_string == "cpu") {
+        spdlog::error("CPU isn't a supported device for generating benchmarks");
+        return EXIT_FAILURE;
+    }
 
-        if (run_benchmarks && !benchmarks_file.has_value()) {
-            spdlog::error(
-                    "--run-batchsize-benchmarks requires --batchsize-benchmarks-file to be set");
-            return EXIT_FAILURE;
-        }
-
-        // Load benchmarks if provided.
-        if (benchmarks_file.has_value()) {
-            const auto& path = benchmarks_file.value();
-            if (!batchsize_benchmarks::load_cache(path)) {
-                if (run_benchmarks && !std::filesystem::exists(path)) {
-                    // If we're running benchmarks for the first time then the file doesn't need to exist.
-                } else {
-                    spdlog::error("Failed to load benchmark cache: {}", path);
-                    return EXIT_FAILURE;
-                }
-            }
-        }
-
-        // Get the optimal batchsize for each device.
-        const auto& config = models.get_simplex_config();
-        auto update_device_batch_params = [&config, &pod5_folder_info](
-                                                  BatchParams& device_params,
-                                                  const std::string& device,
-                                                  const std::optional<std::string>& generate_to) {
-            // Generate benchmarks for this device if requested.
-            if (generate_to.has_value()) {
-                SimpleProgressBar progress_bar;
-                auto progress_callback = [&](float progress) {
-                    progress_bar.set_progress(100 * progress);
-                };
-
-                batchsize_benchmarks::generate(device, config, pod5_folder_info.files(),
-                                               progress_callback);
-                progress_bar.erase_progress_bar_line();
-
-                if (!batchsize_benchmarks::export_cache(generate_to.value())) {
-                    spdlog::warn("Failed to write out benchmark cache: {}", generate_to.value());
-                }
-            }
-
-            // Lookup the batch size for this device.
-            const auto batch_size = batchsize_benchmarks::get(device, 1.0, config, 0.0);
-            if (batch_size.has_value()) {
-                device_params.set_batch_size(batch_size.value());
+    // Load benchmarks if provided.
+    if (benchmarks_file.has_value()) {
+        const auto& path = benchmarks_file.value();
+        if (!batchsize_benchmarks::load_cache(path)) {
+            if (run_benchmarks && !std::filesystem::exists(path)) {
+                // If we're running benchmarks for the first time then the file doesn't need to exist.
             } else {
-                spdlog::info(
-                        "Failed to find optimal batch size for {}. Consider generating a benchmark "
-                        "with --run-batchsize-benchmarks, or loading an existing benchmark with "
-                        "--batchsize-benchmarks-file",
-                        device);
+                spdlog::error("Failed to load benchmark cache: {}", path);
+                return EXIT_FAILURE;
             }
-        };
+        }
+    }
 
+    // Generate benchmarks for all devices if requested.
+    if (run_benchmarks) {
 #if DORADO_CUDA_BUILD
         // Split the device string into each device.
-        // TODO: replace with utils::parse_cuda_device_string() when per-device batch sizes are supported
-        const auto device_infos = utils::get_cuda_device_info(device_string, false);
-        if (device_infos.empty()) {
-            spdlog::error("Failed to get CUDA device info for devices: {}", device_string);
-            return EXIT_FAILURE;
-        }
-
-        // We can only set one batch size on the models, so don't do anything with the benchmarks
-        // if all the GPUs aren't of the same type.
-        // TODO: per-device batch sizes
-        const std::string_view first_device_name = device_infos.front().device_properties.name;
-        const bool all_same_type =
-                std::all_of(device_infos.begin(), device_infos.end(),
-                            [first_device_name](const utils::CUDADeviceInfo& info) {
-                                return first_device_name == info.device_properties.name;
-                            });
-
-        if (all_same_type) {
-            const auto first_device = fmt::format("cuda:{}", device_infos.front().device_id);
-            update_device_batch_params(batch_params, first_device,
-                                       run_benchmarks ? benchmarks_file : std::nullopt);
-        } else {
-            spdlog::warn(
-                    "Trying to use multiple CUDA device types. Batch size chosen might not be "
-                    "optimal");
-        }
+        const auto devices = utils::parse_cuda_device_string(device_string);
 #else
-        update_device_batch_params(batch_params, device_string,
-                                   run_benchmarks ? benchmarks_file : std::nullopt);
+        const std::array devices = {device_string};
 #endif
 
-        if (run_benchmarks) {
-            spdlog::info("Benchmarking finished");
+        std::unique_ptr<SimpleProgressBar[]> bars_storage;
+        indicators::DynamicProgress<SimpleProgressBar> progress_bar;
+
+        const auto& config = models.get_simplex_config();
+        auto generate_benchmarks_for_device = [&config, &pod5_folder_info, &progress_bar,
+                                               &devices](std::size_t idx) {
+            auto progress_callback = [&](float progress) {
+                progress_bar[idx].set_progress(100 * progress);
+            };
+            batchsize_benchmarks::generate(devices.at(idx), config, pod5_folder_info.files(),
+                                           progress_callback);
+        };
+
+        // Run through all the devices.
+        const std::size_t num_devices = devices.size();
+        bars_storage = std::make_unique<SimpleProgressBar[]>(num_devices);
+        {
+            spdlog::info("Running benchmark generation. This may take a while");
+            cxxpool::thread_pool pool(num_devices);
+            for (std::size_t idx = 0; idx < num_devices; idx++) {
+                progress_bar.push_back(bars_storage[idx]);
+                pool.push([&, idx] { generate_benchmarks_for_device(idx); });
+            }
+            // The pool will wait for all pushed tasks to complete on destruction, so just wait it out.
         }
+
+        spdlog::info("Benchmarking finished");
+        if (!batchsize_benchmarks::export_cache(benchmarks_file.value())) {
+            spdlog::warn("Failed to write out benchmark cache: {}", benchmarks_file.value());
+        }
+
         if (quit_after_benchmarks) {
             return EXIT_SUCCESS;
         }
     }
 
-    models.set_basecaller_batch_params(batch_params, device_string);
     return std::nullopt;
 }
 
@@ -1099,7 +1093,10 @@ int basecaller(int argc, char* argv[]) {
 
     const auto device = cli::parse_device(parser);
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
-    if (auto ret = update_batch_params(models, parser, pod5_folder_info, device); ret.has_value()) {
+    models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
+
+    if (auto ret = load_and_generate_benchmarks(models, parser, pod5_folder_info, device);
+        ret.has_value()) {
         return ret.value();
     }
 

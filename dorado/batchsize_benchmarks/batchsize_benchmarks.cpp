@@ -233,8 +233,8 @@ void generate(const std::string &device,
             batch_size_granularity;
 
     // Do the benchmarking.
-    spdlog::info("Benchmarking batch sizes in steps of {} for {} ({})", batch_size_granularity,
-                 device, gpu_name);
+    spdlog::debug("Benchmarking batch sizes in steps of {} for {} ({})", batch_size_granularity,
+                  device, gpu_name);
     std::vector<SpeedEntry> speeds;
     speeds.reserve(max_safe_batch_size / batch_size_granularity);
     // We count down instead of up so that torch's caching allocator doesn't fragment memory as we
