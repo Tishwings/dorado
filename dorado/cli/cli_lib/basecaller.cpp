@@ -414,8 +414,28 @@ Runners create_runners(const BasecallerOptions& options,
                                                        modbase_params.runners_per_caller,
                                                        modbase_params.batchsize);
 
-    std::vector<basecall::RunnerPtr> runners;
-    size_t num_devices = 0;
+    struct BasecallerRunners {
+        std::vector<dorado::basecall::RunnerPtr> runners;
+        size_t num_devices = 0;
+    };
+    auto create_device_runners = [&](const std::string& device_id, float memory_limit_fraction,
+                                     bool use_variable_chunk_sizes) {
+        BasecallerRunners basecaller_runners;
+        std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
+                api::create_basecall_runners(
+                        {
+                                .model_config = model_config,
+                                .device = device_id,
+                                .memory_limit_fraction = memory_limit_fraction,
+                                .pipeline_type = api::PipelineType::simplex,
+                                .batch_size_time_penalty = 0.f,
+                                .variable_chunk_sizes = use_variable_chunk_sizes,
+                        },
+                        num_runners, 0);
+        return basecaller_runners;
+    };
+
+    BasecallerRunners basecaller_runners;
 #if DORADO_CUDA_BUILD
     if (options.device != "cpu") {
         // Iterate over the separate devices to create the basecall runners.
@@ -437,61 +457,37 @@ Runners create_runners(const BasecallerOptions& options,
                 api::check_variable_chunk_sizes_supported(model_config, device_ids);
 
         cxxpool::thread_pool pool{gpu_fractions.size()};
-        struct BasecallerRunners {
-            std::vector<dorado::basecall::RunnerPtr> runners;
-            size_t num_devices{};
-        };
-
         std::vector<std::future<BasecallerRunners>> futures;
-        auto create_device_runners = [&](const std::string& device_id, float fraction) {
-            BasecallerRunners basecaller_runners;
-            std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
-                    api::create_basecall_runners(
-                            {
-                                    .model_config = model_config,
-                                    .device = device_id,
-                                    .memory_limit_fraction = fraction,
-                                    .pipeline_type = api::PipelineType::simplex,
-                                    .batch_size_time_penalty = 0.f,
-                                    .variable_chunk_sizes = use_variable_chunk_sizes,
-                            },
-                            num_runners, 0);
-            return basecaller_runners;
-        };
-
         futures.reserve(gpu_fractions.size());
         for (const auto& [device_id, fraction] : gpu_fractions) {
-            futures.push_back(pool.push(create_device_runners, std::cref(device_id), fraction));
+            futures.push_back(pool.push([&] {
+                return create_device_runners(device_id, fraction, use_variable_chunk_sizes);
+            }));
         }
 
         for (auto& future : futures) {
             auto data = future.get();
-            runners.insert(runners.end(), std::make_move_iterator(data.runners.begin()),
-                           std::make_move_iterator(data.runners.end()));
-            num_devices += data.num_devices;
+            basecaller_runners.runners.insert(basecaller_runners.runners.end(),
+                                              std::make_move_iterator(data.runners.begin()),
+                                              std::make_move_iterator(data.runners.end()));
+            basecaller_runners.num_devices += data.num_devices;
         }
 
-        if (num_devices == 0) {
+        if (basecaller_runners.num_devices == 0) {
             throw std::runtime_error("CUDA device requested but no devices found.");
         }
     } else
 #endif
     {
-        std::tie(runners, num_devices) = api::create_basecall_runners(
-                {
-                        .model_config = model_config,
-                        .device = options.device,
-                        .memory_limit_fraction = 1.f,
-                        .pipeline_type = api::PipelineType::simplex,
-                        .batch_size_time_penalty = 0.f,
-                        .variable_chunk_sizes = false,
-                },
-                num_runners, 0);
+        const float memory_limit_fraction = 1.f;
+        const bool use_variable_chunk_sizes = false;
+        basecaller_runners = create_device_runners(options.device, memory_limit_fraction,
+                                                   use_variable_chunk_sizes);
     }
 
     return {
-            .num_devices = num_devices,
-            .runners = std::move(runners),
+            .num_devices = basecaller_runners.num_devices,
+            .runners = std::move(basecaller_runners.runners),
             .modbase_runners = std::move(modbase_runners),
     };
 }
