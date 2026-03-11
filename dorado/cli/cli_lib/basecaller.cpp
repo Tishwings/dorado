@@ -698,8 +698,8 @@ std::optional<int> load_and_generate_benchmarks(const Models& models,
                                                 const std::string& device_string) {
     // See if the user wants to generate benchmarks for each device.
     const auto benchmarks_file = parser.present<std::string>("--batchsize-benchmarks-file");
-    const auto& run_benchmark_option = parser.get<std::string>("--run-batchsize-benchmarks");
-    const bool run_benchmarks = run_benchmark_option != "";
+    const auto run_benchmark_option = parser.present<std::string>("--run-batchsize-benchmarks");
+    const bool run_benchmarks = run_benchmark_option.has_value();
     const bool quit_after_benchmarks = run_benchmark_option == "break";
 
     if (run_benchmarks && !benchmarks_file.has_value()) {
