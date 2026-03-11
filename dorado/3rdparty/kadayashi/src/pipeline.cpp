@@ -290,7 +290,7 @@ void local_haptagging_write_tsv(std::ofstream &fp,
         if (qnames[i].empty()) {
             continue;
         }
-        const int haptag = haptags[i];  // use 0-index
+        const int haptag = haptags[i] + 1;  // use 1-index
         fp << fmt::format("R\tck.{:d}\t{:s}\t{:d}\t{:d}\t{:d}\n", chunkID, qnames[i].c_str(),
                           haptag, haptags[i] == HAPTAG_UNPHASED ? -1 : votes[i].s,
                           haptags[i] == HAPTAG_UNPHASED ? -1 : votes[i].e);
@@ -350,9 +350,10 @@ void local_haptagging_write_tsv2(std::ofstream &fp,
     fp << fmt::format("V\tck.{:d}\t1\t0\n", chunkID);
 
     // write read tags, with two placeholder vote counts
-    // (tsv and bin file uses 0-index)
+    // (tsv and bin file uses 0-index for coordinates and 1-based for haplotags)
     for (auto &[qn, hp] : ht) {
-        fp << fmt::format("R\tck.{:d}\t{:s}\t{:d}\t{:d}\t{:d}\n", chunkID, qn.c_str(), hp, -1, -1);
+        fp << fmt::format("R\tck.{:d}\t{:s}\t{:d}\t{:d}\t{:d}\n", chunkID, qn.c_str(), hp + 1, -1,
+                          -1);
     }
 }
 
