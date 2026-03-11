@@ -10,6 +10,19 @@
 
 namespace dorado::batchsize_benchmarks {
 
+namespace {
+
+// Fallback for platforms that don't support std::ranges::to() yet.
+#if !defined(_LIBCPP_VERSION)
+template <template <typename...> typename Container, std::ranges::range Range>
+auto to(Range && range) {
+    using T = std::ranges::range_value_t<Range>;
+    return Container<T>{range.begin(), range.end()};
+}
+#endif
+
+}  // namespace
+
 int pick_best_batch_size(std::span<const SpeedEntry> speeds,
                          uint64_t memory_limit,
                          float time_penalty) {
@@ -22,7 +35,7 @@ int pick_best_batch_size(std::span<const SpeedEntry> speeds,
         return entry.memory_used <= memory_limit;
     };
     auto entries_below_memory_limit =
-            std::ranges::to<std::vector>(speeds | std::views::filter(is_below_memory_limit));
+            to<std::vector>(speeds | std::views::filter(is_below_memory_limit));
     if (entries_below_memory_limit.empty()) {
         throw std::runtime_error(
                 fmt::format("No entries remaining after applying memory_limit ({})", memory_limit));
