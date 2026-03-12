@@ -39,6 +39,15 @@ include(compile_benchmarks.cmake)
 set(compiled_timings_cpp "${CMAKE_CURRENT_BINARY_DIR}/compiled_timings.cpp")
 dorado_compile_benchmarks(
     FILES
+        "timings/NVIDIA A100 80GB PCIe.csv"
+        "timings/NVIDIA GeForce RTX 5090.csv"
+        "timings/NVIDIA H100 NVL.csv"
+        "timings/NVIDIA L40S.csv"
+        "timings/NVIDIA RTX 5000 Ada Generation.csv"
+        "timings/NVIDIA RTX A6000.csv"
+        "timings/NVIDIA RTX PRO 6000 Blackwell Workstation Edition.csv"
+        "timings/Quadro GV100.csv"
+        "timings/Tesla V100-PCIE-16GB.csv"
         "timings/test.csv"
     OUTPUT
         ${compiled_timings_cpp}
