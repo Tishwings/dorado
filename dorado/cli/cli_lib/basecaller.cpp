@@ -759,7 +759,9 @@ std::optional<int> load_and_generate_benchmarks(const Models& models,
             std::vector<std::future<void>> results(num_devices);
             cxxpool::thread_pool pool(num_devices);
             for (std::size_t idx = 0; idx < num_devices; idx++) {
-                progress_bar.push_back(bars_storage[idx]);
+                auto& bar = bars_storage[idx];
+                bar.set_option(indicators::option::PrefixText{devices.at(idx)});
+                progress_bar.push_back(bar);
                 results[idx] = pool.push([&, idx] { generate_benchmarks_for_device(idx); });
             }
 
@@ -772,6 +774,10 @@ std::optional<int> load_and_generate_benchmarks(const Models& models,
                     return EXIT_FAILURE;
                 }
             }
+
+            // Force a redraw of the final progress bar state.
+            // Note: there's no way to directly call print_progress() but it's called if we index into it.
+            (void)progress_bar[0];
         }
 
         spdlog::info("Benchmarking finished");
