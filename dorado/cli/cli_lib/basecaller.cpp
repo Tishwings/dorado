@@ -49,7 +49,6 @@
 #include <argparse/argparse.hpp>
 #include <cxxpool.h>
 #include <htslib/sam.h>
-#include <indicators/dynamic_progress.hpp>
 #include <spdlog/spdlog.h>
 #include <torch/utils.h>
 
@@ -65,6 +64,12 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+// HACK: DynamicProgress uses magic to move around in the terminal but assumes
+// cout. Rather than patching it to support using cerr just rename the symbol.
+#define cout cerr
+#include <indicators/dynamic_progress.hpp>
+#undef cout
 
 #if DORADO_CUDA_BUILD
 #include "torch_utils/cuda_utils.h"
