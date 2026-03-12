@@ -2,16 +2,16 @@
 
 set -ex
 
-if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 <dorado executable> [device_string]"
+if [[ $# -lt 2 ]]; then
+    echo "Usage: $0 <dorado executable> <pod5_dir> [device_string]"
+    echo "  <pod5_dir> should contain large input files"
     exit 1
 fi
 
-device_string=${2:-"auto"}
+pod5_dir=${2}
+device_string=${3:-"auto"}
 echo "Using device string -x $device_string"
-data_dir=$(dirname $0)/../../../tests/data
 dorado_bin=$(cd "$(dirname $1)"; pwd -P)/$(basename $1)
-pod5_dir=${data_dir}/pod5/dna_r10.4.1_e8.2_400bps_5khz/
 
 echo Running benchmarks for models of interest
 for model_name in \
@@ -37,7 +37,7 @@ for model_name in \
         $model_name $pod5_dir \
         -x $device_string \
         --skip-model-compatibility-check \
-        --batchsize-benchmarks-file "${model_name}.csv" \
+        --batchsize-benchmarks-file "$(hostname).csv" \
         --run-batchsize-benchmarks break \
         > /dev/null
 done
