@@ -44,48 +44,48 @@ function(dorado_compile_benchmarks)
             set("speed_${batchsize}__${key}" "${speed}")
             set("memory_${batchsize}__${key}" "${memory}")
         endforeach()
+    endforeach()
 
-        # Trim the GPUs and models.
-        list(REMOVE_DUPLICATES all_gpu_names)
-        list(REMOVE_DUPLICATES all_model_names)
+    # Trim the GPUs and models.
+    list(REMOVE_DUPLICATES all_gpu_names)
+    list(REMOVE_DUPLICATES all_model_names)
 
-        # Write out the entries for each GPU+model.
-        foreach(gpu_name IN LISTS all_gpu_names)
-            dorado_sanitize_name(gpu_name_sanitized "${gpu_name}")
-            set(gpu_models)
+    # Write out the entries for each GPU+model.
+    foreach(gpu_name IN LISTS all_gpu_names)
+        dorado_sanitize_name(gpu_name_sanitized "${gpu_name}")
+        set(gpu_models)
 
-            foreach(model_name IN LISTS all_model_names)
-                dorado_sanitize_name(model_name_sanitized "${model_name}")
+        foreach(model_name IN LISTS all_model_names)
+            dorado_sanitize_name(model_name_sanitized "${model_name}")
 
-                # See if there are entries for this GPU+model.
-                set(key "${gpu_name_sanitized}__${model_name_sanitized}")
-                if (NOT DEFINED "sizes__${key}")
-                    continue()
-                endif()
-                list(APPEND gpu_models "${model_name}")
+            # See if there are entries for this GPU+model.
+            set(key "${gpu_name_sanitized}__${model_name_sanitized}")
+            if (NOT DEFINED "sizes__${key}")
+                continue()
+            endif()
+            list(APPEND gpu_models "${model_name}")
 
-                # Make sure they're sorted.
-                set(sizes "${sizes__${key}}")
-                list(SORT sizes COMPARE NATURAL)
+            # Make sure they're sorted.
+            set(sizes "${sizes__${key}}")
+            list(SORT sizes COMPARE NATURAL)
 
-                # Write the entries out.
-                file(APPEND ${arg_OUTPUT} "constexpr SpeedEntry gpu_${gpu_name_sanitized}_and_model_${model_name_sanitized}[] = {\n")
-                foreach(batchsize IN LISTS sizes)
-                    set(speed_var "speed_${batchsize}__${key}")
-                    set(memory_var "memory_${batchsize}__${key}")
-                    file(APPEND ${arg_OUTPUT} "  { ${batchsize}, ${${speed_var}}, ${${memory_var}} },\n")
-                endforeach()
-                file(APPEND ${arg_OUTPUT} "};\nstatic_assert(is_sorted(gpu_${gpu_name_sanitized}_and_model_${model_name_sanitized}));\n")
+            # Write the entries out.
+            file(APPEND ${arg_OUTPUT} "constexpr SpeedEntry gpu_${gpu_name_sanitized}_and_model_${model_name_sanitized}[] = {\n")
+            foreach(batchsize IN LISTS sizes)
+                set(speed_var "speed_${batchsize}__${key}")
+                set(memory_var "memory_${batchsize}__${key}")
+                file(APPEND ${arg_OUTPUT} "  { ${batchsize}, ${${speed_var}}, ${${memory_var}} },\n")
             endforeach()
-
-            # Write out the models for this GPU.
-            file(APPEND ${arg_OUTPUT} "constexpr ModelTimings ${gpu_name_sanitized}_models[] = {\n")
-            foreach(model_name IN LISTS gpu_models)
-                dorado_sanitize_name(model_name_sanitized "${model_name}")
-                file(APPEND ${arg_OUTPUT} "  { \"${model_name}\" , gpu_${gpu_name_sanitized}_and_model_${model_name_sanitized} },\n")
-            endforeach()
-            file(APPEND ${arg_OUTPUT} "};\n")
+            file(APPEND ${arg_OUTPUT} "};\nstatic_assert(is_sorted(gpu_${gpu_name_sanitized}_and_model_${model_name_sanitized}));\n")
         endforeach()
+
+        # Write out the models for this GPU.
+        file(APPEND ${arg_OUTPUT} "constexpr ModelTimings ${gpu_name_sanitized}_models[] = {\n")
+        foreach(model_name IN LISTS gpu_models)
+            dorado_sanitize_name(model_name_sanitized "${model_name}")
+            file(APPEND ${arg_OUTPUT} "  { \"${model_name}\" , gpu_${gpu_name_sanitized}_and_model_${model_name_sanitized} },\n")
+        endforeach()
+        file(APPEND ${arg_OUTPUT} "};\n")
     endforeach()
 
     # Write out all the gpus.
