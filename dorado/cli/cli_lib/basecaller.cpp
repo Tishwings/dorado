@@ -750,12 +750,23 @@ std::optional<int> load_and_generate_benchmarks(const Models& models,
         bars_storage = std::make_unique<SimpleProgressBar[]>(num_devices);
         {
             spdlog::info("Running benchmark generation. This may take a while");
+
+            std::vector<std::future<void>> results(num_devices);
             cxxpool::thread_pool pool(num_devices);
             for (std::size_t idx = 0; idx < num_devices; idx++) {
                 progress_bar.push_back(bars_storage[idx]);
-                pool.push([&, idx] { generate_benchmarks_for_device(idx); });
+                results[idx] = pool.push([&, idx] { generate_benchmarks_for_device(idx); });
             }
-            // The pool will wait for all pushed tasks to complete on destruction, so just wait it out.
+
+            // generate() can throw on error, which will be rethrown when we get the result.
+            for (auto&& future : results) {
+                try {
+                    future.get();
+                } catch (const std::exception& e) {
+                    spdlog::error(e.what());
+                    return EXIT_FAILURE;
+                }
+            }
         }
 
         spdlog::info("Benchmarking finished");
