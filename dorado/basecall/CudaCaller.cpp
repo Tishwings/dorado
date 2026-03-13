@@ -130,13 +130,14 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
     // need updating.
     assert(m_decoder_options.beam_width == default_beam_width);
 
+    // Anything past this point should use the requested device.
+    c10::cuda::CUDAGuard device_guard(m_options.device());
+    c10::cuda::CUDACachingAllocator::emptyCache();
+
     at::InferenceMode guard;
     m_module = load_crf_model(params.model_config, m_options);
 
     determine_batch_dims(params);
-
-    c10::cuda::CUDAGuard device_guard(m_options.device());
-    c10::cuda::CUDACachingAllocator::emptyCache();
 
     auto [crfmodel_bytes_per_ct, decode_bytes_per_ct] = calculate_memory_requirements(m_config);
 
