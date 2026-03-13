@@ -81,6 +81,10 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
     m_cos_freqs = torch::cos(emb);  // [T, D]
     m_sin_freqs = torch::sin(emb);
 
+    LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
+                    utils::tensor_shape_as_string(m_cos_freqs),
+                    utils::tensor_shape_as_string(m_sin_freqs));
+
     // NOTE: There is no `persistent` option in Libtorch unlike Pytorch:
     //      register_buffer("inv_freq", m_inv_freq, /*persistent=*/false);
     // Registering a buffer means it will be visible in the named_buffers and might cause
@@ -91,6 +95,17 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
     // ModelTorchBase, and the top-level model logs this buffer, so that it can be checked later.
     register_buffer("cos_freqs", m_cos_freqs);
     register_buffer("sin_freqs", m_sin_freqs);
+}
+
+void RotaryEmbeddingImpl::expand_freq_dims() {
+    m_cos_freqs = m_cos_freqs
+                          .unsqueeze(0)   // [1, T, D]
+                          .unsqueeze(2)   // [1, T, 1, D]
+                          .unsqueeze(2);  // [1, T, 1, 1, D]
+    m_sin_freqs = m_sin_freqs
+                          .unsqueeze(0)   // [1, T, D]
+                          .unsqueeze(2)   // [1, T, 1, D]
+                          .unsqueeze(2);  // [1, T, 1, 1, D]
 }
 
 std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at::Tensor k) {
@@ -115,18 +130,26 @@ std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at:
     LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Input: q.dtype() = {}, k.dtype() = {}",
                     torch::toString(q.scalar_type()), torch::toString(k.scalar_type()));
 
+    if (std::size(m_cos_freqs.sizes()) == 2) {
+        LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Expanding frequency dimensions");
+
+        LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
+                        utils::tensor_shape_as_string(m_cos_freqs),
+                        utils::tensor_shape_as_string(m_sin_freqs));
+
+        this->expand_freq_dims();
+
+        LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
+                        utils::tensor_shape_as_string(m_cos_freqs),
+                        utils::tensor_shape_as_string(m_sin_freqs));
+    }
+
     // Dimensions: N, T, C, H, D = batch_size, num_positions, num_sequences, num_heads, head_dim
     const int64_t T = q.size(1);
 
     // View only the number of values needed.
-    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 0, /*start*/ 0, /*end*/ T)
-                                        .unsqueeze(0)   // [1, T, D]
-                                        .unsqueeze(2)   // [1, T, 1, D]
-                                        .unsqueeze(2);  // [1, T, 1, 1, D]
-    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 0, /* start*/ 0, /*end*/ T)
-                                        .unsqueeze(0)   // [1, T, D]
-                                        .unsqueeze(2)   // [1, T, 1, D]
-                                        .unsqueeze(2);  // [1, T, 1, 1, D]
+    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 1, /*start*/ 0, /*end*/ T);
+    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 1, /* start*/ 0, /*end*/ T);
 
     q = rotate_half(q).mul_(sin_vals).add_(cos_vals * q);
     k = rotate_half(k).mul_(sin_vals).add_(cos_vals * k);
@@ -148,6 +171,17 @@ AbsoluteRotaryEmbeddingImpl::AbsoluteRotaryEmbeddingImpl(int64_t dim,
                                                          const at::TensorOptions& options)
         : RotaryEmbeddingImpl::RotaryEmbeddingImpl(dim, theta, max_read_depth, options) {};
 
+void AbsoluteRotaryEmbeddingImpl::expand_freq_dims() {
+    m_cos_freqs = m_cos_freqs
+                          .unsqueeze(0)   // [1, C, D]
+                          .unsqueeze(0)   // [1, 1, C, D]
+                          .unsqueeze(3);  // [1, 1, C, 1, D]
+    m_sin_freqs = m_sin_freqs
+                          .unsqueeze(0)   // [1, C, D]
+                          .unsqueeze(0)   // [1, 1, C, D]
+                          .unsqueeze(3);  // [1, 1, C, 1, D]
+}
+
 at::Tensor AbsoluteRotaryEmbeddingImpl::forward(at::Tensor x) {
     utils::ScopedProfileRange spr1("AbsoluteRotaryEmbeddingImpl::forward", 4);
 
@@ -156,31 +190,42 @@ at::Tensor AbsoluteRotaryEmbeddingImpl::forward(at::Tensor x) {
                                  utils::tensor_shape_as_string(x)};
     }
     if (!x.defined()) {
-        throw std::runtime_error{"Cannot run RotaryEmbedding::forward on an undefined x tensor."};
+        throw std::runtime_error{
+                "Cannot run AbsoluteRotaryEmbedding::forward on an undefined x tensor."};
     }
 
-    LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Input: x.dtype() = {}",
+    LOG_TRACE_DTYPE("[AbsoluteRotaryEmbeddingImpl] Input: x.dtype() = {}",
                     torch::toString(x.scalar_type()));
+
+    if (std::size(m_cos_freqs.sizes()) == 2) {
+        LOG_TRACE_DTYPE("[AbsoluteRotaryEmbeddingImpl] Expanding frequency dimensions");
+
+        LOG_TRACE_DTYPE(
+                "[AbsoluteRotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
+                utils::tensor_shape_as_string(m_cos_freqs),
+                utils::tensor_shape_as_string(m_sin_freqs));
+
+        this->expand_freq_dims();
+
+        LOG_TRACE_DTYPE(
+                "[AbsoluteRotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
+                utils::tensor_shape_as_string(m_cos_freqs),
+                utils::tensor_shape_as_string(m_sin_freqs));
+    }
 
     // Dimensions: N, T, C, H, D = batch_size, num_positions, num_sequences, num_heads, head_dim
     const int64_t C = x.size(2);
 
     // View only the number of values needed.
-    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 0, /*start*/ 0, /*end*/ C)
-                                        .unsqueeze(0)   // [1, C, D]
-                                        .unsqueeze(0)   // [1, 1, C, D]
-                                        .unsqueeze(3);  // [1, 1, C, 1, D]
-    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 0, /* start*/ 0, /*end*/ C)
-                                        .unsqueeze(0)   // [1, C, D]
-                                        .unsqueeze(0)   // [1, 1, C, D]
-                                        .unsqueeze(3);  // [1, 1, C, 1, D]
+    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 2, /*start*/ 0, /*end*/ C);
+    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 2, /* start*/ 0, /*end*/ C);
 
     // x = x * cos_vals + rotate_half(x) * sin_vals;
     // k = k * cos_vals + rotate_half(k) * sin_vals;
 
     x = rotate_half(x).mul_(sin_vals).add_(cos_vals * x);
 
-    LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Output: x.dtype() = {}",
+    LOG_TRACE_DTYPE("[AbsoluteRotaryEmbeddingImpl] Output: x.dtype() = {}",
                     torch::toString(x.scalar_type()));
 
     return x;
@@ -286,6 +331,9 @@ MultiHeadCrossAttentionImpl::MultiHeadCrossAttentionImpl(
         m_k_embedding_type = EmbeddingType::IDENTITY;
         m_k_embedding_ident = register_module("k_embedding", torch::nn::Identity());
     }
+
+    LOG_TRACE_DTYPE("[attn] embedding_type = {}, m_q_embedding_type = {}, m_k_embedding_type = {}",
+                    int(embedding_type), int(m_q_embedding_type), int(m_k_embedding_type));
 }
 
 at::Tensor MultiHeadCrossAttentionImpl::local_attention_mask(const int64_t T,

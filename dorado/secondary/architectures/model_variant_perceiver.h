@@ -51,6 +51,9 @@ protected:
     at::Tensor m_sin_freqs{nullptr};
 
     at::Tensor rotate_half(const at::Tensor& x) const;
+
+private:
+    void expand_freq_dims();
 };
 TORCH_MODULE(RotaryEmbedding);
 
@@ -62,6 +65,9 @@ public:
                                 const at::TensorOptions& options);
 
     at::Tensor forward(at::Tensor x);
+
+private:
+    void expand_freq_dims();
 };
 TORCH_MODULE(AbsoluteRotaryEmbedding);
 
