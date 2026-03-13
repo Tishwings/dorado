@@ -123,7 +123,7 @@ if (GENERATE_TEST_COVERAGE)
                 "${PROJECT_SOURCE_DIR}/dorado/cli/.*"
                 "${PROJECT_SOURCE_DIR}/dorado/.*/tests/.*"
                 "${PROJECT_SOURCE_DIR}/tests/.*"
-                "${CMAKE_BINARY_DIR}/3rdparty/.*"
+                "${CMAKE_BINARY_DIR}/.*"
         )
     endif()
 endif()
