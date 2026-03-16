@@ -56,11 +56,12 @@ int pick_best_batch_size(std::span<const SpeedEntry> speeds,
     // TODO: the existing time_penalty code seems odd since 3 is half of 1 is half of 0.
     // TODO: would |speed * (1 - speed_penalty)| be better?
     const double threshold_speed = fastest_entry.basecall_speed / (1.0 + time_penalty);
-    const auto over_threshold = [threshold_speed](const SpeedEntry & entry) {
-        return entry.basecall_speed >= threshold_speed;
+    const auto under_threshold = [](const SpeedEntry & entry, double speed) {
+        return entry.basecall_speed < speed;
     };
     const auto first_over_threshold =
-            std::ranges::find_if(entries_below_memory_limit, over_threshold);
+            std::lower_bound(entries_below_memory_limit.begin(), entries_below_memory_limit.end(),
+                             threshold_speed, under_threshold);
     if (first_over_threshold == entries_below_memory_limit.end()) {
         // This should be impossible since the fastest speed should be over the threshold.
         throw std::logic_error("Error in batch size selection");
