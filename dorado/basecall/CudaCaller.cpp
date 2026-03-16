@@ -144,8 +144,8 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
     // Warmup
     c10::cuda::CUDAStreamGuard stream_guard(m_stream);
     for (const auto &batch_dim : m_batch_dims) {
-        spdlog::info("{} using chunk size {}, batch size {}", m_device, batch_dim.T_in,
-                     batch_dim.N);
+        spdlog::debug("{} using chunk size {}, batch size {}", m_device, batch_dim.T_in,
+                      batch_dim.N);
         spdlog::debug("{} Model memory {:.2f}GB", m_device,
                       (crfmodel_bytes_per_ct * batch_dim.T_out * batch_dim.N) / GB);
         spdlog::debug("{} Decode memory {:.2f}GB", m_device,
