@@ -226,11 +226,16 @@ void generate(const std::string &device,
         }
     };
 
+    // This clamping is copied from CudaCaller since it can wildly overpredict the maximum batch size.
+    // TODO: fixup CudaCaller memory usage estimation
+    const int max_batch_size_limit = orig_config.is_tx_model() ? 1024 : 10240;
+
     const std::string gpu_name = get_gpu_name(device);
     const auto batch_size_granularity = get_batch_size_granularity(orig_config);
-    const auto max_safe_batch_size =
-            (get_max_safe_batch_size(device, orig_config) / batch_size_granularity) *
-            batch_size_granularity;
+    const auto div_round_down = [](int size, int div) { return (size / div) * div; };
+    const auto max_safe_batch_size = div_round_down(
+            std::min(max_batch_size_limit, get_max_safe_batch_size(device, orig_config)),
+            batch_size_granularity);
 
     // Do the benchmarking.
     spdlog::debug("Benchmarking batch sizes in steps of {} for {} ({})", batch_size_granularity,
