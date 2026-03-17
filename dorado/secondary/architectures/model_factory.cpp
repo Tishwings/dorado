@@ -283,16 +283,17 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
     } else if (model_type == ModelType::VARIANT_PERCEIVER) {
         spdlog::debug("Constructing a VARIANT_PERCEIVER model.");
 
+        const int32_t read_max_depth = std::stoi(get_value(config.model_kwargs, "read_max_depth"));
         const int32_t ploidy = std::stoi(get_value(config.model_kwargs, "ploidy"));
         const int32_t num_classes = std::stoi(get_value(config.model_kwargs, "num_classes"));
-        const int32_t read_embedding_size =
-                std::stoi(get_value(config.model_kwargs, "read_embedding_size"));
         const int32_t cnn_size = std::stoi(get_value(config.model_kwargs, "cnn_size"));
         const std::vector<int32_t> kernel_sizes =
                 utils::parse_int32_vector(get_value(config.model_kwargs, "kernel_sizes"), ',');
         const int32_t dimension = std::stoi(get_value(config.model_kwargs, "dimension"));
         const int32_t num_blocks = std::stoi(get_value(config.model_kwargs, "num_blocks"));
         const int32_t num_heads = std::stoi(get_value(config.model_kwargs, "num_heads"));
+        const int32_t self_attn_layers_per_block =
+                std::stoi(get_value(config.model_kwargs, "self_attn_layers_per_block"));
 
         const bool use_mapqc = (get_value(config.model_kwargs, "use_mapqc") == "true");
         const bool use_dwells = (get_value(config.model_kwargs, "use_dwells") == "true");
@@ -312,11 +313,19 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
         const bool update_read_embeddings =
                 (get_value(config.model_kwargs, "update_read_embeddings") == "true");
 
+        const bool use_per_read_embedding(
+                get_value(config.model_kwargs, "use_per_read_embedding") == "true");
+
+        EmbeddingType embedding_type = EmbeddingType::IDENTITY;
+        if (config.model_kwargs.find("embedding_type") != std::cend(config.model_kwargs)) {
+            embedding_type = parse_embedding_type(get_value(config.model_kwargs, "embedding_type"));
+        }
+
         model = ModelVariantPerceiver::make<ModelVariantPerceiver>(
-                ploidy, num_classes, read_embedding_size, cnn_size, kernel_sizes, dimension,
-                num_blocks, num_heads, use_mapqc, use_dwells, use_haplotags, use_snp_qv,
-                bases_alphabet_size, bases_embedding_size, use_decoder_lstm, update_read_embeddings,
-                feature_column_map);
+                read_max_depth, ploidy, num_classes, cnn_size, kernel_sizes, dimension, num_blocks,
+                num_heads, self_attn_layers_per_block, use_mapqc, use_dwells, use_haplotags,
+                use_snp_qv, bases_alphabet_size, bases_embedding_size, use_decoder_lstm,
+                use_per_read_embedding, embedding_type, update_read_embeddings, feature_column_map);
 
     } else {
         throw std::runtime_error("Unsupported model type!");

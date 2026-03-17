@@ -208,14 +208,15 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},
                                 {"use_haplotags", "true"},
@@ -223,6 +224,8 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -732,14 +735,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Use dwells
                                 {"use_haplotags", "true"},  // <- Use haplotags
@@ -747,6 +751,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -767,14 +773,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Use dwells
                                 {"use_haplotags", "true"},  // <- Use haplotags
@@ -782,6 +789,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -805,14 +814,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Use dwells
                                 {"use_haplotags", "true"},  // <- Use haplotags
@@ -820,6 +830,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -843,14 +855,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Use dwells
                                 {"use_haplotags", "true"},  // <- Use haplotags
@@ -858,6 +871,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -883,14 +898,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "false"},     // <- No dwells
                                 {"use_haplotags", "false"},  // <- No haplotags
@@ -898,6 +914,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -922,14 +940,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},      // <- Use dwells
                                 {"use_haplotags", "false"},  // <- No haplotags
@@ -937,6 +956,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -964,14 +985,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "false"},    // <- No dwells
                                 {"use_haplotags", "true"},  // <- Has haplotags
@@ -979,6 +1001,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -1006,14 +1030,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "false"},     // <- No dwells
                                 {"use_haplotags", "false"},  // <- No haplotags
@@ -1021,6 +1046,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
@@ -1046,14 +1073,15 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                 .model_dir = "",
                 .model_kwargs =
                         {
+                                {"read_max_depth", "100"},
                                 {"ploidy", "2"},
                                 {"num_classes", "5"},
-                                {"read_embedding_size", "256"},
                                 {"cnn_size", "64"},
                                 {"kernel_sizes", "[ 1, 17,]"},
                                 {"dimension", "256"},
                                 {"num_blocks", "2"},
                                 {"num_heads", "8"},
+                                {"self_attn_layers_per_block", "8"},
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Has dwells
                                 {"use_haplotags", "true"},  // <- Has haplotags
@@ -1061,6 +1089,8 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
+                                {"use_per_read_embedding", "false"},
+                                {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
