@@ -1,7 +1,7 @@
 #include "basecall/CudaCaller.h"
 
+#include "ChunkBenchmarks.h"
 #include "basecall/crf_utils.h"
-#include "benchmarks/CudaChunkBenchmarks.h"
 #include "decode/Decoder.h"
 #include "torch_utils/cuda_utils.h"
 #include "utils/math_utils.h"
@@ -530,11 +530,13 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
     // See if we can find cached values for the chunk timings for this run condition
     cudaDeviceProp *prop = at::cuda::getCurrentDeviceProperties();
     const auto chunk_benchmarks =
-            CudaChunkBenchmarks::instance().get_chunk_timings(prop->name, model_name);
+            ChunkBenchmarks::instance().get_chunk_timings(prop->name, model_name);
     if (!chunk_benchmarks) {
         spdlog::info(
                 "Calculating optimized batch size for GPU \"{}\" and model {}. Full benchmarking "
-                "will run for this device, which may take some time.",
+                "will run for this device, which may take some time. Consider using "
+                "--run-batchsize-benchmarks to save these benchmarks to disk, as they can be "
+                "used in future runs with --batchsize-benchmarks-file.",
                 prop->name, model_name);
     }
 
@@ -597,8 +599,8 @@ void CudaCaller::determine_batch_dims(const BasecallerCreationParams &params) {
         // If we have just generated benchmarks that didn't previously exist, add them to the in-memory cache. This
         // will be of benefit to basecall servers which won't have to keep re-generating the benchmarks each time a
         // runner is created.
-        CudaChunkBenchmarks::instance().add_chunk_timings(prop->name, model_name,
-                                                          times_and_batch_sizes);
+        ChunkBenchmarks::instance().add_chunk_timings(prop->name, model_name,
+                                                      times_and_batch_sizes);
 
         spdlog::debug(
                 "Adding chunk timings to internal cache for GPU {}, model {} ({} "
