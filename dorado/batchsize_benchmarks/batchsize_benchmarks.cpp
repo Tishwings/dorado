@@ -15,6 +15,7 @@
 #include "utils/sys_utils.h"
 
 #include <c10/core/CachingDeviceAllocator.h>
+#include <torch/version.h>
 
 #include <algorithm>
 #include <atomic>
@@ -28,9 +29,18 @@
 
 #include <ATen/cuda/CUDAContextLight.h>
 #include <c10/cuda/CUDAGuard.h>
+
 #elif DORADO_METAL_BUILD
 #include "basecall/MetalCaller.h"
 #include "torch_utils/metal_utils.h"
+#endif
+
+// Older torch doesn't have support for the generic allocator interface
+#if DORADO_CUDA_BUILD && !(TORCH_VERSION_MAJOR >= 2 && TORCH_VERSION_MINOR > 7)
+#include <c10/cuda/CUDACachingAllocator.h>
+#define USE_CUDA_SPECIFIC_ALLOCATOR 1
+#else
+#define USE_CUDA_SPECIFIC_ALLOCATOR 0
 #endif
 
 namespace dorado::batchsize_benchmarks {
@@ -72,7 +82,11 @@ SpeedEntry calculate_one(const std::string &device,
 
     // Reset peak allocator counters so that we can measure how much was used during processing.
 #if DORADO_CUDA_BUILD
+#if USE_CUDA_SPECIFIC_ALLOCATOR
+    auto *const allocator = c10::cuda::CUDACachingAllocator::get();
+#else   // USE_CUDA_SPECIFIC_ALLOCATOR
     auto *const allocator = c10::getDeviceAllocator(torch_device.type());
+#endif  // USE_CUDA_SPECIFIC_ALLOCATOR
     allocator->resetPeakStats(torch_device.index());
 #elif DORADO_METAL_BUILD
     // We replace the allocator on the metal path and don't implement the DeviceAllocator
