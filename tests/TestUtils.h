@@ -37,13 +37,13 @@ private:
 public:
     ~TempDir();
 
-    TempDir(TempDir&& other) noexcept : m_path(other.m_path) {}
+    TempDir(TempDir&& other) noexcept { std::swap(m_path, other.m_path); }
     TempDir& operator=(TempDir&& other) = delete;
 
     TempDir(const TempDir&) = delete;
     TempDir& operator=(const TempDir&) = delete;
 
-    const std::filesystem::path m_path;
+    std::filesystem::path m_path;
 };
 
 TempDir make_temp_dir(const std::string& prefix);
