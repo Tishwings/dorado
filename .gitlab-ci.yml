@@ -85,7 +85,7 @@ variables:
 .windows_runner:
   tags:
     - windows-10
-    - VS2019
+    - VS2022
     - cuda-${CUDA}
     - on-prem
 
@@ -417,7 +417,7 @@ build:windows:
     - .build_and_test_dorado
   before_script:
     - export CUDA_TOOLKIT=$(cygpath -u $(cygpath -d "${WIN_CUDA_TOOLKIT}"))
-    - export BUILD_OPTIONS="-A x64 -T cuda=${CUDA} -DCUDAToolkit_ROOT=${CUDA_TOOLKIT} -D WIN_THREADS=4 -G \"Visual Studio 16 2019\""
+    - export BUILD_OPTIONS="-A x64 -T cuda=${CUDA} -DCUDAToolkit_ROOT=${CUDA_TOOLKIT} -D WIN_THREADS=4 -G \"Visual Studio 17 2022\""
 
 build:windows:debug:
   variables:
@@ -434,7 +434,7 @@ build:windows_koi_from_source:
     - .on_nightly_or_manual
   before_script:
     - !reference ["build:windows", before_script]
-    - export BUILD_OPTIONS="${BUILD_OPTIONS} -DBUILD_KOI_FROM_SOURCE=ON -DGITLAB_CI_TOKEN=${CI_JOB_TOKEN} -G \"Visual Studio 16 2019\""
+    - export BUILD_OPTIONS="${BUILD_OPTIONS} -DBUILD_KOI_FROM_SOURCE=ON -DGITLAB_CI_TOKEN=${CI_JOB_TOKEN} -G \"Visual Studio 17 2022\""
   artifacts: null
   timeout: 1h 30m
 
@@ -444,7 +444,7 @@ build:windows:no_ccache:
     - .on_nightly_or_manual
   before_script:
     - !reference ["build:windows", before_script]
-    - export BUILD_OPTIONS="${BUILD_OPTIONS} -D DORADO_DISABLE_CCACHE=ON -G \"Visual Studio 16 2019\""
+    - export BUILD_OPTIONS="${BUILD_OPTIONS} -D DORADO_DISABLE_CCACHE=ON -G \"Visual Studio 17 2022\""
   artifacts: null
 
 build:macos:arm:
@@ -507,7 +507,7 @@ build_archive:linux:x86:cuda13:
 .build_archive:windows:
   before_script:
     - export CUDA_TOOLKIT=$(cygpath -u $(cygpath -d "${WIN_CUDA_TOOLKIT}"))
-    - export BUILD_OPTIONS="-A x64 -T cuda=${CUDA} -DCUDAToolkit_ROOT=${CUDA_TOOLKIT} -D WIN_THREADS=4 -G \"Visual Studio 16 2019\""
+    - export BUILD_OPTIONS="-A x64 -T cuda=${CUDA} -DCUDAToolkit_ROOT=${CUDA_TOOLKIT} -D WIN_THREADS=4 -G \"Visual Studio 17 2022\""
   extends:
     - .windows_runner
     - .build_dorado_archive
