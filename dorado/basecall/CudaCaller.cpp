@@ -128,7 +128,9 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
 
     // If we allow this to be changed then calculate_memory_requirements() will
     // need updating.
-    assert(m_decoder_options.beam_width == default_beam_width);
+    if (m_decoder_options.beam_width != default_beam_width) {
+        throw std::logic_error("Decoder beam width is no longer constant");
+    }
 
     // Anything past this point should use the requested device.
     c10::cuda::CUDAGuard device_guard(m_options.device());
