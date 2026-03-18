@@ -8,13 +8,13 @@
 #include "data_loader/DataLoader.h"
 #include "read_pipeline/base/ReadPipeline.h"
 #include "read_pipeline/nodes/BasecallerNode.h"
-#include "spdlog/spdlog.h"
 #include "utils/jthread.h"
 #include "utils/parameters.h"
 #include "utils/string_utils.h"
 #include "utils/sys_utils.h"
 
 #include <c10/core/CachingDeviceAllocator.h>
+#include <spdlog/spdlog.h>
 #include <torch/version.h>
 
 #include <algorithm>

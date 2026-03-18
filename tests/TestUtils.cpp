@@ -1,6 +1,6 @@
 #include "TestUtils.h"
 
-#include "spdlog/spdlog.h"
+#include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <cstring>
