@@ -94,7 +94,7 @@ variables:
   before_script:
     - echo Dorado dependency stage
     - apt-get update
-    - apt-get install -y --no-install-recommends samtools curl libssl-dev libsz2 ccache automake
+    - apt-get install -y --no-install-recommends samtools curl libsz2 ccache automake
 
 .linux_test_dependencies:
   before_script:
