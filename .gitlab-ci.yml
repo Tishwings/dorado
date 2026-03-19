@@ -132,37 +132,27 @@ variables:
   - echo Dorado test stage
   - ctest -C ${BUILD_TYPE} --test-dir ${BUILD_DIR} --output-on-failure --verbose
 
-.enable_ont_python:
-    - if [[ -n ${ONT_PYTHON_URL} ]]; then
-    -   curl -LfsS ${ONT_PYTHON_URL} > ont_python.tar.gz
-    -   tar -xf ont_python.tar.gz
-    -   export PATH=${PWD}/ont-python/bin:${PWD}/ont-python:${PATH}
-    - fi
-
 .create_venv:
-  - !reference [.enable_ont_python]
-  # Make a venv and install stuff we need.
-  - export KERNEL=$(uname -s)
-  - if [[ ${KERNEL} =~ "MINGW" ]]; then
+  # Determine where we're getting python from.
+  - if [[ -n ${ONT_PYTHON_URL} ]]; then
+  -   curl -LfsS ${ONT_PYTHON_URL} > ont_python.tar.gz
+  -   tar -xf ont_python.tar.gz
+  -   PYTHON=${PWD}/ont-python/bin/python3
+  - elif [[ ${OSTYPE} == "msys" ]]; then
   -   /c/${PYTHON_VERSION//./}/python --version
   -   export PATH="/c/${PYTHON_VERSION//./}/":${PATH}
-  -   echo $(which python)
-  -   export PYTHON=$(which python)
+  -   PYTHON=python
   - else
-  -   export PYTHON=${PYTHON_VERSION}
+  -   PYTHON=${PYTHON_VERSION}
   - fi
+  # Make a venv and install stuff we need.
   - ${PYTHON} -m venv build_venv
   - source build_venv/*/activate
   - python --version
   - export PYTHON=python
   - python -m pip install -U pip
-  - if [[ ${KERNEL} =~ "Darwin" ]]; then
-      # cmake 3.31 has issues with macOS 13.6.6/curl 8.4.0 (see INSTX-7966)
-  -   pip install -U "cmake<3.31"
-  - elif [[ ${KERNEL} =~ "MINGW" ]]; then
-      # We want a local install of cmake on Windows (see INSTX-13714)
-  -   pip install -U "cmake"
-  - fi
+  # cmake 3.31 has issues with macOS 13.6.6/curl 8.4.0 (see INSTX-7966)
+  - pip install -U "cmake<3.31"
   - cmake --version
 
 .run_tetra_tests:
@@ -211,6 +201,7 @@ variables:
 .build_dorado_archive:
   stage: build
   script:
+    - !reference [.create_venv]
     - !reference [.run_dorado_cmake_build]
     - !reference [.run_dorado_cmake_cpack]
   artifacts:
@@ -372,6 +363,7 @@ build:linux:x86:clang_tidy:
   extends:
     - .linux_runner
   script:
+    - !reference [.create_venv]
     - !reference [.set_parallel_jobs]
     - apt update
     - apt install -y autoconf autotools-dev automake wget libc6-dbg
@@ -524,9 +516,6 @@ build_archive:linux:x86:cuda13:
   before_script:
     - export CUDA_TOOLKIT=$(cygpath -u $(cygpath -d "${WIN_CUDA_TOOLKIT}"))
     - export BUILD_OPTIONS="-A x64 -T cuda=${CUDA} -DCUDAToolkit_ROOT=${CUDA_TOOLKIT} -D WIN_THREADS=4 -G ${WIN_CMAKE_GENERATOR}"
-  script:
-    - !reference [.create_venv]
-    - !reference [.build_dorado_archive, script]
   extends:
     - .windows_runner
     - .build_dorado_archive
@@ -548,7 +537,6 @@ build_archive:macos:arm:
     - .build_dorado_archive
     - .on_nightly_or_manual
   script:
-    - !reference [.create_venv]
     - !reference [.build_dorado_archive, script]
     - !reference [.sign_dorado:macos, script]
 
@@ -567,6 +555,7 @@ build_archive:macos:arm:
     VALIDATE_BAM: 1
     PYTHON: python3
   script:
+    - !reference [.create_venv]
     # Do everything inside a newly created folder, since some runners only run
     # tests and hence never perform a git clean.
     - rm -rf test_archive
@@ -646,9 +635,6 @@ test:linux:x86:noble:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
-  script:
-    - !reference [.enable_ont_python]
-    - !reference [.test_dorado, script]
   extends:
     - .linux_test_dependencies
     - .linux_runner
@@ -660,9 +646,6 @@ test:linux:arm64:jammy:
   image: ${DORADO_DOCKER_ROOT}/dorado-l4t-r36.4.0:1.0
   variables:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
-  script:
-    - !reference [.enable_ont_python]
-    - !reference [.test_dorado, script]
   extends:
     - .linux_test_dependencies
     - .linux_orin_cuda_12_runner
@@ -674,9 +657,6 @@ test:linux:arm64:thor:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
-  script:
-    - !reference [.enable_ont_python]
-    - !reference [.test_dorado, script]
   extends:
     - .linux_test_dependencies
     - .linux_thor_runner
@@ -689,9 +669,6 @@ test:linux:arm64:dgx_spark:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
-  script:
-    - !reference [.enable_ont_python]
-    - !reference [.test_dorado, script]
   extends:
     - .linux_test_dependencies
     - .linux_dgx_spark_runner
