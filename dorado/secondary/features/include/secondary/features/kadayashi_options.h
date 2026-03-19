@@ -14,6 +14,7 @@ struct KadayashiOptions {
     float min_strand_cov_frac{0.03f};
     float max_gapcompressed_seqdiv{0.1f};
     bool use_dvr_for_phasing{false};
+    bool ambig_ref{false};
 };
 
 }  // namespace dorado::secondary

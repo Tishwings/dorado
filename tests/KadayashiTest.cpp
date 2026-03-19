@@ -582,7 +582,8 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
                 fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
                 pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
-                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false);
+                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
+                false /*ambig_ref*/);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
     }
 
@@ -592,7 +593,8 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
                 fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
                 pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
-                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, true);
+                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, true,
+                false /*ambig_ref*/);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
     }
 
@@ -601,7 +603,8 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
                 fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
                 pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction, 100,
-                1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false);
+                1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
+                false /*ambig_ref*/);
         CATCH_CHECK(result3.variants.empty());
     }
 }

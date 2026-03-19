@@ -51,7 +51,7 @@ constexpr int TRF_MOTIF_MAX_LEN = 200;
 constexpr int TRF_ADD_PADDING = 10;
 constexpr int TRF_CLOSE_GAP_THRESHOLD = 50;
 
-constexpr char SENTINEL_REF_ALLELE[] = "M";
+constexpr char SENTINEL_REF_ALLELE[] = "!";
 constexpr int SENTINEL_REF_ALLELE_L = 1;
 
 constexpr int DORADO_FEATURE_MAT_READ_SENTINAL_LEN = 5;
@@ -59,6 +59,16 @@ constexpr int DORADO_FEATURE_MAT_READ_SENTINAL_LEN = 5;
 constexpr int MEDAKA_FEATURE_MATRIX_MAX_VAR_LEN = 16777216;  // 1<<24
 
 namespace {
+
+bool check_ambig_in_string(const std::string_view &seq) {
+    for (char c : seq) {
+        const unsigned char lookup = md_op_table[static_cast<int>(c)];
+        if (lookup != 2) {
+            return true;
+        }
+    }
+    return false;
+}
 
 void add_allele_qa_v_nt4seq(std::vector<qa_t> &h,
                             const uint32_t pos,
@@ -1583,7 +1593,7 @@ variant_dorado_style_t convert_fullinfo_var_to_dorado_style(const variant_fullin
 variant_fullinfo_t derive_variant_fullinfo_from_varcall(const ta_t &var,
                                                         const std::string_view refseq_substring,
                                                         const uint32_t ref_start,
-                                                        const bool allow_N_base) {
+                                                        const bool ambig_ref) {
     // Note:
     //   - Variant position will be in 0-index.
     //   - Multi-allele variant should have genotypes 1 or 2.
@@ -1598,13 +1608,18 @@ variant_fullinfo_t derive_variant_fullinfo_from_varcall(const ta_t &var,
     if (var.type == TA_TYPE_HETMULTI_CONSOLIDATED) {
         ref_consolidatedmultiallel_s =
                 std::string(refseq_substring.substr(var.pos - ref_start, var.ref_len));
+        if ((!ambig_ref) && check_ambig_in_string(ref_consolidatedmultiallel_s)) {
+            ret.is_valid = false;
+            ret.is_confident = false;
+            return ret;
+        }
     } else {
         if (var.pos < ref_start) {  // might happen if pileup used expanded interval
             ret.is_valid = false;
             ret.is_confident = false;
             return ret;
         } else if (var.pos == ref_start) {
-            if (!allow_N_base) {
+            if (!ambig_ref) {
                 ret.is_valid = false;
                 ret.is_confident = false;
                 return ret;
@@ -1612,15 +1627,12 @@ variant_fullinfo_t derive_variant_fullinfo_from_varcall(const ta_t &var,
             ref_s += refseq_substring[var.pos - ref_start];
         } else {
             const int tmppos = var.pos - ref_start;  // 0-index
-            if (!allow_N_base) {
-                if ((refseq_substring[tmppos - 1] == 'N') || (refseq_substring[tmppos] == 'N') ||
-                    (refseq_substring[tmppos - 1] == 'n') || (refseq_substring[tmppos] == 'n')) {
-                    ret.is_valid = false;
-                    ret.is_confident = false;
-                    return ret;
-                }
-            }
             ref_s += refseq_substring[tmppos];
+            if ((!ambig_ref) && check_ambig_in_string(ref_s)) {
+                ret.is_valid = false;
+                ret.is_confident = false;
+                return ret;
+            }
         }
     }
 
@@ -1727,6 +1739,14 @@ variant_fullinfo_t derive_variant_fullinfo_from_varcall(const ta_t &var,
         ret.genotype1[1] = ret.genotype0[1];
         ret.genotype1[2] = ret.genotype0[0];
         ret.is_phased1 = var.genotype[1] == '|';
+    }
+
+    if ((!ambig_ref) &&
+        (check_ambig_in_string(ret.ref_allele_seq0) || check_ambig_in_string(ret.ref_allele_seq1) ||
+         check_ambig_in_string(ret.alt_allele_seq0) ||
+         check_ambig_in_string(ret.alt_allele_seq1))) {
+        ret.is_valid = false;
+        ret.is_confident = false;
     }
 
     return ret;
@@ -2581,7 +2601,8 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
                                                     const int min_strand_cov,
                                                     const float min_strand_cov_frac,
                                                     const float max_gapcompressed_seqdiv,
-                                                    const bool use_dvr_for_phasing) {
+                                                    const bool use_dvr_for_phasing,
+                                                    const bool ambig_ref) {
     dorado::secondary::BamFileView hf_view{fp_bam, fp_bai, fp_header};
 
     phase_return_t phasing_result;
@@ -2632,7 +2653,7 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
             continue;
         }
         const variant_fullinfo_t var =
-                derive_variant_fullinfo_from_varcall(varcall, refseq_s, ref_start, true);
+                derive_variant_fullinfo_from_varcall(varcall, refseq_s, ref_start, ambig_ref);
         if (var.is_valid) {
             vr.variants.push_back(var);
         }
@@ -2659,12 +2680,13 @@ varcall_result_t kadayashi_phase_and_varcall_wrapper(samFile *fp_bam,
                                                      const int min_strand_cov,
                                                      const float min_strand_cov_frac,
                                                      const float max_gapcompressed_seqdiv,
-                                                     const bool use_dvr_for_phasing) {
+                                                     const bool use_dvr_for_phasing,
+                                                     const bool ambig_ref) {
     ck_and_varcall_result_t ck_and_vr = kadayashi_phase_and_varcall(
             fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end,
             disable_interval_expansion, min_base_quality, min_varcall_coverage,
             min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
-            max_gapcompressed_seqdiv, use_dvr_for_phasing);
+            max_gapcompressed_seqdiv, use_dvr_for_phasing, ambig_ref);
     chunk_t &ck = ck_and_vr.ck;
 
     if (!ck.is_valid || ck.varcalls.empty()) {

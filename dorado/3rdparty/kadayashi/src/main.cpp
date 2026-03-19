@@ -282,8 +282,8 @@ int main(int argc, char *argv[]) {
                 clio.varcall_w, clio.varcall_regions, clio.pp.min_base_quality,
                 clio.pp.min_varcall_coverage, clio.pp.min_varcall_fraction, clio.pp.max_clipping,
                 clio.pp.min_strand_cov, clio.pp.min_strand_cov_frac,
-                clio.pp.max_gapcompressed_seqdiv, clio.vcf_write_allow_refbase_N,
-                clio.pp.disable_region_expansion, clio.varcall_use_dvr, clio.bed_flanking);
+                clio.pp.max_gapcompressed_seqdiv, clio.ambig_ref, clio.pp.disable_region_expansion,
+                clio.varcall_use_dvr, clio.bed_flanking);
         spdlog::info("[kdys::{}] varcall main routine done, used {:.1f}s", __func__,
                      kadayashi::get_timestamp() - timestamp);
 

@@ -473,6 +473,7 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.kadayashi_opt.min_strand_cov_frac = parser.get<float>("kada-min-strand-cov-fract");
     opt.kadayashi_opt.max_gapcompressed_seqdiv = parser.get<float>("kada-max-gapcomp-seq-div");
     opt.kadayashi_opt.use_dvr_for_phasing = parser.get<bool>("kada-use-dvr");
+    opt.kadayashi_opt.ambig_ref = opt.ambig_ref;
 
     opt.dump_variants = parser.get<bool>("dump-variants");
     opt.legacy_feature_gen = parser.get<bool>("legacy-feature-gen");

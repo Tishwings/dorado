@@ -25,20 +25,23 @@ inline unsigned char filter_base_by_qv(char raw, int min_qv) {
     return static_cast<int>(raw) - 33 >= min_qv ? raw : 'N';
 }
 
+}  // namespace
+
 // clang-format off
 const unsigned char md_op_table[256]={
     // [0-9] gives 0
     // [^] gives 1
-    // [ATCGatcgUuNn] gives 2
+    // [ACGTUacgtu] gives 2
+    // [BDHKMNRSVWYbdhkmnrsvwy] gives 3
     // else: 4
     4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
     4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
     4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
     0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 4, 4,  4, 4, 4, 4,
-    4, 2, 4, 2,  4, 4, 4, 2,  4, 4, 4, 4,  4, 4, 2/*N*/, 4,
-    4, 4, 4, 4,  2, 2, 4, 4,  4, 4, 4, 4,  4, 4, 1, 4,
-    4, 2, 4, 2,  4, 4, 4, 2,  4, 4, 4, 4,  4, 4, 2/*n*/, 4,
-    4, 4, 4, 4,  2, 2, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
+    4, 2, 3, 2,  3, 4, 4, 2,  3, 4, 4, 3,  4, 3, 3, 4,
+    4, 4, 3, 3,  2, 2, 3, 3,  4, 3, 4, 4,  4, 4, 1, 4,
+    4, 2, 3, 2,  3, 4, 4, 2,  3, 4, 4, 3,  4, 3, 3, 4,
+    4, 4, 3, 3,  2, 2, 3, 3,  4, 3, 4, 4,  4, 4, 1, 4,
     4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
     4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
     4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
@@ -49,8 +52,6 @@ const unsigned char md_op_table[256]={
     4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,
 };
 // clang-format on
-
-}  // namespace
 
 float get_tag_de_f(const bam1_t *aln) {
     assert(aln);
@@ -268,7 +269,7 @@ bool parse_variants_for_one_read(const bam1_t *aln,
                 continue;
             }
             // is current a SNP?
-            if (md_type == 2) {
+            if (md_type == 2 || md_type == 3 /*ambiguous base*/) {
                 snp_base.clear();
                 snp_base.push_back(
                         filter_base_by_qv(seq_nt16_str[bam_seqi(seqi, self_pos)], min_base_qv));
