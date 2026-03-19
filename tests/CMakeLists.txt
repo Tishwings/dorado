@@ -115,6 +115,11 @@ add_library(dorado_tests_common STATIC
     TestUtils.cpp
 )
 enable_warnings_as_errors(dorado_tests_common)
+target_include_directories(dorado_tests_common
+    PUBLIC
+        # Per-target tests need to be able to include TestUtils.h
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
 target_link_libraries(dorado_tests_common
     PUBLIC
         dorado_torch_utils

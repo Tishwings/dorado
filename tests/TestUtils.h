@@ -1,7 +1,5 @@
 #pragma once
 
-#include <spdlog/spdlog.h>
-
 #include <cstring>
 #include <filesystem>
 #include <string>
@@ -37,27 +35,9 @@ private:
     TempDir(std::filesystem::path path) : m_path(std::move(path)) {}
 
 public:
-    ~TempDir() {
-        if (!m_path.empty()) {
-            bool deleted = false;
-            size_t tries = 0;
-            while (!deleted && tries < 5) {
-                try {
-                    tries++;
-                    deleted = std::filesystem::remove_all(m_path);
-                } catch (std::exception& e) {
-                    std::string what = e.what();
-                    spdlog::warn(what);
-                }
-            }
-            if (!deleted) {
-                spdlog::warn(std::string("Could not delete ") + m_path.string() +
-                             " after 5 retries!");
-            }
-        }
-    }
+    ~TempDir();
 
-    TempDir(TempDir&& other) { std::swap(m_path, other.m_path); }
+    TempDir(TempDir&& other) noexcept { std::swap(m_path, other.m_path); }
     TempDir& operator=(TempDir&& other) = delete;
 
     TempDir(const TempDir&) = delete;
@@ -67,12 +47,6 @@ public:
 };
 
 TempDir make_temp_dir(const std::string& prefix);
-
-class TraceLogger {
-public:
-    TraceLogger() { spdlog::set_level(spdlog::level::trace); }
-    ~TraceLogger() { spdlog::set_level(spdlog::level::off); }
-};
 
 std::string generate_random_sequence_string(int len);
 

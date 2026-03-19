@@ -4,14 +4,11 @@
 #include "hts_utils/hts_types.h"
 #include "interface.h"
 
-#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iosfwd>
 #include <memory>
-#include <optional>
 #include <string>
-#include <unordered_map>
 
 struct sam_hdr_t;
 

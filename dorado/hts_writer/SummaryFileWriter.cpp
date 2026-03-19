@@ -9,9 +9,9 @@
 #include <spdlog/spdlog.h>
 
 #include <array>
+#include <fstream>
 #include <iomanip>
 #include <ostream>
-#include <sstream>
 #include <string_view>
 #include <vector>
 

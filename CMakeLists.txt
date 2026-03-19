@@ -111,15 +111,19 @@ if (GENERATE_TEST_COVERAGE)
     if (NOT DORADO_DISABLE_TESTS)
         setup_target_for_coverage_gcovr_xml_html(
             NAME dorado_test_coverage
-            EXECUTABLE ctest --test-dir "${CMAKE_BINARY_DIR}" --verbose -R "dorado.*tests"
-            DEPENDENCIES dorado_tests dorado_smoke_tests
+            EXECUTABLE ctest --test-dir "${CMAKE_BINARY_DIR}" --verbose -E ".*minimap.*"
+            DEPENDENCIES
+                dorado_smoke_tests
+                dorado_tests
+                test_dorado_benchmarks
             BASE_DIRECTORY "${PROJECT_SOURCE_DIR}"
             EXCLUDE
-                "${DORADO_3RD_PARTY_SOURCE}/*"
-                "${DORADO_3RD_PARTY_DOWNLOAD}/*"
-                "${PROJECT_SOURCE_DIR}/dorado/cli/*"
-                "${PROJECT_SOURCE_DIR}/tests/*"
-                "${CMAKE_BINARY_DIR}/3rdparty/*"
+                "${DORADO_3RD_PARTY_SOURCE}/.*"
+                "${DORADO_3RD_PARTY_DOWNLOAD}/.*"
+                "${PROJECT_SOURCE_DIR}/dorado/cli/.*"
+                "${PROJECT_SOURCE_DIR}/dorado/.*/tests/.*"
+                "${PROJECT_SOURCE_DIR}/tests/.*"
+                "${CMAKE_BINARY_DIR}/.*"
         )
     endif()
 endif()
@@ -193,6 +197,7 @@ add_subdirectory(dorado/aligner)
 add_subdirectory(dorado/alignment)
 add_subdirectory(dorado/api)
 add_subdirectory(dorado/basecall)
+add_subdirectory(dorado/batchsize_benchmarks)
 add_subdirectory(dorado/compat)
 add_subdirectory(dorado/config)
 add_subdirectory(dorado/correct)

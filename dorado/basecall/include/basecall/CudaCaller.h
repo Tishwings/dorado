@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -53,16 +54,25 @@ public:
     stats::NamedStats sample_stats() const;
     std::pair<int, int> batch_timeouts_ms() const;
 
+    static int get_batch_size_granularity(const config::BasecallModelConfig &model_config);
+    static int64_t get_gpu_mem_limit(c10::Device device, float memory_limit_fraction);
+    static int get_max_safe_batch_size(c10::Device device,
+                                       float memory_limit_fraction,
+                                       const config::BasecallModelConfig &model_config);
+
 private:
     struct GPUTaskQueue;
     GPUTaskQueue &get_task_queue();
 
-    static int get_batch_size_granularity(const config::BasecallModelConfig &model_config) {
-        // TODO: we may want to use different numbers based on model type and GPU arch
-        return model_config.is_tx_model() ? 32 : 64;
-    }
-
-    std::pair<int64_t, int64_t> calculate_memory_requirements() const;
+    static std::pair<int64_t, int64_t> calculate_memory_requirements(
+            const config::BasecallModelConfig &model_config);
+    struct BatchDimsAndMaxSizes;
+    static BatchDimsAndMaxSizes calculate_batch_sizes(
+            c10::Device device,
+            float memory_limit_fraction,
+            const config::BasecallModelConfig &model_config,
+            std::optional<PipelineType> pipeline_type,
+            int requested_batch_size);
     void determine_batch_dims(const BasecallerCreationParams &params);
 
     void start_threads();

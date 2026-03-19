@@ -269,10 +269,6 @@ std::vector<CUDADeviceInfo> get_cuda_device_info(const std::string &device_strin
 
         cudaSetDevice(device_id);
         cudaMemGetInfo(&device_info.free_mem, &device_info.total_mem);
-        cudaDeviceGetAttribute(&device_info.compute_cap_major, cudaDevAttrComputeCapabilityMajor,
-                               device_id);
-        cudaDeviceGetAttribute(&device_info.compute_cap_minor, cudaDevAttrComputeCapabilityMinor,
-                               device_id);
         cudaGetDeviceProperties(&device_info.device_properties, device_id);
 
         if (!device_info.in_use) {

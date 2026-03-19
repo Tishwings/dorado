@@ -10,7 +10,7 @@
 
 namespace dorado::model_resolution {
 
-Models::Models(const ModelSources& sources) : m_sources(sources) {
+Models::Models(ModelSources sources) : m_sources(std::move(sources)) {
     m_simplex_config = config::load_model_config(m_sources.simplex.path);
 
     for (const auto& mod : m_sources.mods) {

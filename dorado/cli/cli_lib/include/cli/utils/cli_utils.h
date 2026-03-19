@@ -102,14 +102,14 @@ inline void add_internal_arguments(argparse::ArgumentParser& parser) {
             .default_value(std::string(""));
     parser.add_argument("--run-batchsize-benchmarks")
             .hidden()
-            .help("run auto batchsize selection benchmarking instead of using cached benchmark "
-                  "figures.")
-            .flag();
-    parser.add_argument("--emit-batchsize-benchmarks")
+            .help("Run auto batchsize selection benchmarking instead of using cached benchmark "
+                  "figures, and create/update the file specified by --batchsize-benchmarks-file. "
+                  "Choices are 'break' to quit after benchmarking, or 'continue' to start "
+                  "basecalling the data.")
+            .choices("continue", "break");
+    parser.add_argument("--batchsize-benchmarks-file")
             .hidden()
-            .help("Write out a CSV and CPP file to the working directory with the auto batchsize "
-                  "selection performance stats. Implies --run-batchsize-benchmarks")
-            .flag();
+            .help("Load and use the benchmarking figures provided.");
     parser.add_argument("--run-for")
             .hidden()
             .help("For performance benchmarking. Run for the specified number of seconds, then "

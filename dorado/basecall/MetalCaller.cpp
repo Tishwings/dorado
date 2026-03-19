@@ -263,6 +263,50 @@ MetalLSTMCaller::MetalLSTMCaller(const BasecallModelConfig &model_config,
 
 MetalLSTMCaller::~MetalLSTMCaller() = default;
 
+at::Tensor MetalLSTMCaller::create_input_tensor() const {
+    // Metal convolution kernels operate with channel ordering (N, T, C).  If m_input
+    // is to be submitted directly then it must also have this arrangement.
+    // Note that this is not the same as other caller implementations, which
+    // have T innermost.
+    return at::zeros({m_batch_size, m_in_chunk_size, m_config.num_features}, at::kHalf);
+}
+
+int MetalLSTMCaller::get_max_safe_batch_size(float memory_limit_fraction,
+                                             const config::BasecallModelConfig &model_config) {
+    const size_t physical_memory = get_apple_physical_memory_bytes();
+    const size_t usable_memory = physical_memory * memory_limit_fraction;
+    spdlog::debug("Physical/Usable memory available: {}/{} GB", physical_memory / BYTES_PER_GB,
+                  usable_memory / BYTES_PER_GB);
+
+    // Constrain the maximum batch size to use about half physical memory for decode buffers,
+    // with neural network GPU buffers and CPU buffers assumed to occupy a subset of the
+    // remaining memory.  This generally constrains the batch size to use fewer than
+    // the maximum GPU cores when running sup models on systems with a large GPU core
+    // to system memory ratio.
+    const auto chunk_size = model_config.basecaller.chunk_size();
+    const auto out_chunk_size = chunk_size / model_config.stride;
+
+    // TODO -- we don't honour the config n_base
+    constexpr int n_base = 4;
+    const int states = pow(n_base, model_config.state_len);
+
+    const auto decode_buffer_size_per_elem =
+            static_cast<size_t>(out_chunk_size) *
+            (static_cast<size_t>(model_config.outsize) +      // Scores
+             static_cast<size_t>(states) * sizeof(int16_t) +  // Posts
+             static_cast<size_t>(states) * sizeof(float));    // Back guides.
+    spdlog::trace("decode_buffer_size_per_elem {}", decode_buffer_size_per_elem);
+    const int max_batch_size = static_cast<int>(
+            std::clamp(utils::pad_to(usable_memory / (2 * decode_buffer_size_per_elem),
+                                     static_cast<size_t>(MTL_CORE_BATCH_SIZE)),
+                       static_cast<size_t>(MTL_CORE_BATCH_SIZE),
+                       static_cast<size_t>(MTL_CORE_BATCH_SIZE * get_mtl_device_core_count())));
+    spdlog::trace("max_batch_size {}", max_batch_size);
+    return max_batch_size;
+}
+
+int MetalLSTMCaller::get_batch_size_granularity() { return MTL_CORE_BATCH_SIZE; }
+
 void MetalLSTMCaller::set_chunk_batch_size(const BasecallModelConfig &model_config,
                                            const std::vector<at::Tensor> &state_dict,
                                            int chunk_size,
@@ -345,31 +389,7 @@ void MetalLSTMCaller::set_chunk_batch_size(const BasecallModelConfig &model_conf
 int MetalLSTMCaller::benchmark_batch_sizes(const BasecallModelConfig &model_config,
                                            const std::vector<at::Tensor> &state_dict,
                                            float memory_limit_fraction) {
-    const size_t physical_memory = get_apple_physical_memory_bytes();
-    const size_t usable_memory = physical_memory * memory_limit_fraction;
-    spdlog::debug("Physical/Usable memory available: {}/{} GB", physical_memory / BYTES_PER_GB,
-                  usable_memory / BYTES_PER_GB);
-
-    // Constrain the maximum batch size to use about half physical memory for decode buffers,
-    // with neural network GPU buffers and CPU buffers assumed to occupy a subset of the
-    // remaining memory.  This generally constrains the batch size to use fewer than
-    // the maximum GPU cores when running sup models on systems with a large GPU core
-    // to system memory ratio.
-    const auto chunk_size = model_config.basecaller.chunk_size();
-    const auto out_chunk_size = chunk_size / model_config.stride;
-
-    const auto decode_buffer_size_per_elem =
-            static_cast<size_t>(out_chunk_size) *
-            (static_cast<size_t>(model_config.outsize) +        // Scores
-             static_cast<size_t>(m_states) * sizeof(int16_t) +  // Posts
-             static_cast<size_t>(m_states) * sizeof(float));    // Back guides.
-    spdlog::trace("decode_buffer_size_per_elem {}", decode_buffer_size_per_elem);
-    const int max_batch_size = static_cast<int>(
-            std::clamp(utils::pad_to(usable_memory / (2 * decode_buffer_size_per_elem),
-                                     static_cast<size_t>(MTL_CORE_BATCH_SIZE)),
-                       static_cast<size_t>(MTL_CORE_BATCH_SIZE),
-                       static_cast<size_t>(MTL_CORE_BATCH_SIZE * get_mtl_device_core_count())));
-    spdlog::trace("max_batch_size {}", max_batch_size);
+    const int max_batch_size = get_max_safe_batch_size(memory_limit_fraction, model_config);
 
     // Subject to the above memory constraint, impose a minimum batch size
     // that will use 1/4 of GPU cores for LSTM execution.
@@ -394,7 +414,8 @@ int MetalLSTMCaller::benchmark_batch_sizes(const BasecallModelConfig &model_conf
     // the true effect of memory thrashing, so we are relying on the memory limit
     // above to avoid that scenario.
     const int benchmark_chunk_size =
-            std::min(chunk_size, model_config.stride_inner() * 300 / model_config.scale_factor());
+            std::min(model_config.basecaller.chunk_size(),
+                     model_config.stride_inner() * 300 / model_config.scale_factor());
 
     // Iterate through batch size candidates to find the most efficient one.
     int best_batch_size = -1;
@@ -547,6 +568,18 @@ MetalTxCaller::MetalTxCaller(const BasecallModelConfig &model_config) : MetalCal
 }
 
 MetalTxCaller::~MetalTxCaller() = default;
+
+at::Tensor MetalTxCaller::create_input_tensor() const {
+    // NCT
+    return at::zeros({m_batch_size, m_config.num_features, m_in_chunk_size}, at::kHalf);
+}
+
+int MetalTxCaller::get_max_safe_batch_size(float, const config::BasecallModelConfig &) {
+    // TODO: better number here
+    return 32;
+}
+
+int MetalTxCaller::get_batch_size_granularity() { return 8; }
 
 void MetalTxCaller::load_tx_model(const BasecallModelConfig &model_config) {
     const auto device_type = torch::kMPS;

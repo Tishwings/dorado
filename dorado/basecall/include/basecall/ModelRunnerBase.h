@@ -46,8 +46,6 @@ struct BasecallerCreationParams {
     float memory_limit_fraction;
     PipelineType pipeline_type;
     float batch_size_time_penalty;
-    bool run_batchsize_benchmarks;
-    bool emit_batchsize_benchmarks;
     bool variable_chunk_sizes;
 };
 

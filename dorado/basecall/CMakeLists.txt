@@ -1,5 +1,3 @@
-add_subdirectory(benchmarks)
-
 dorado_add_library(dorado_basecall
     NAME
         dorado_basecall
@@ -16,6 +14,8 @@ dorado_add_library(dorado_basecall
         ModelRunner.h
         ModelRunnerBase.h
     SOURCES_PRIVATE
+        ChunkBenchmarks.cpp
+        ChunkBenchmarks.h
         crf_utils.cpp
         decode/beam_search.cpp
         decode/beam_search.h
@@ -55,7 +55,6 @@ else()
             CudaModelRunner.cpp
             decode/CUDADecoder.cpp
     )
-    target_link_libraries(dorado_basecall PRIVATE dorado_benchmarks)
 endif()
 
 if (TARGET koi)

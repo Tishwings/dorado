@@ -3,6 +3,7 @@
 #include "api/pipeline_creation.h"
 #include "api/runner_creation.h"
 #include "basecall_output_args.h"
+#include "batchsize_benchmarks/batchsize_benchmarks.h"
 #include "cli/cli.h"
 #include "cli/utils/cli_utils.h"
 #include "config/BasecallModelConfig.h"
@@ -64,6 +65,12 @@
 #include <thread>
 #include <vector>
 
+// HACK: DynamicProgress uses magic to move around in the terminal but assumes
+// cout. Rather than patching it to support using cerr just rename the symbol.
+#define cout cerr
+#include <indicators/dynamic_progress.hpp>
+#undef cout
+
 #if DORADO_CUDA_BUILD
 #include "torch_utils/cuda_utils.h"
 #endif
@@ -110,11 +117,11 @@ struct BasecallerOptions {
     int max_reads;
     int min_qscore;
     int run_for;
+    std::optional<int> modified_bases_batchsize;
+    std::optional<int> modified_bases_threshold;
 
-    bool emit_batchsize_benchmarks;
     bool enable_read_splitting;
     bool estimate_poly_a;
-    bool run_batchsize_benchmarks;
     bool variable_chunk_sizes;
 };
 
@@ -278,19 +285,24 @@ void set_dorado_basecaller_args(argparse::ArgumentParser& parser, int& verbosity
 }
 
 ModBaseBatchParams validate_modbase_params(const std::vector<std::filesystem::path>& paths,
-                                           const argparse::ArgumentParser& parser,
-                                           size_t device_count) {
+                                           const BasecallerOptions& options) {
+#if DORADO_CUDA_BUILD
+    const size_t device_count = utils::parse_cuda_device_string(options.device).size();
+#else
+    const size_t device_count = 1;
+#endif
+
     // Convert path to params.
     auto params = get_modbase_params(paths, device_count);
 
     // Allow user to override batchsize.
-    if (auto modbase_batchsize = parser.present<int>("--modified-bases-batchsize");
+    if (const auto& modbase_batchsize = options.modified_bases_batchsize;
         modbase_batchsize.has_value()) {
         params.batchsize = *modbase_batchsize;
     }
 
     // Allow user to override threshold.
-    if (auto methylation_threshold = parser.present<float>("--modified-bases-threshold");
+    if (const auto& methylation_threshold = options.modified_bases_threshold;
         methylation_threshold.has_value()) {
         if (methylation_threshold < 0.f || methylation_threshold > 1.f) {
             throw std::runtime_error("--modified-bases-threshold must be between 0 and 1.");
@@ -388,6 +400,28 @@ std::optional<Infos> validate_infos(const argparse::ArgumentParser& parser) {
     };
 }
 
+void set_config_batch_params(BasecallModelConfig& config,
+                             float memory_limit_fraction,
+                             const std::string& device) {
+    // If the batchsize is already set then don't update anything.
+    if (device == "cpu" || config.basecaller.batch_size() != default_parameters.batchsize) {
+        return;
+    }
+
+    // Lookup the batch size for this device.
+    const auto batch_size = batchsize_benchmarks::get(device, memory_limit_fraction, config, 0.0);
+    if (batch_size.has_value()) {
+        config.basecaller.set_batch_size(batch_size.value());
+        config.normalise_basecaller_params();
+    } else {
+        spdlog::info(
+                "Failed to find optimal batch size for {}. Consider generating a benchmark with "
+                "--run-batchsize-benchmarks, or loading an existing benchmark with "
+                "--batchsize-benchmarks-file",
+                device);
+    }
+}
+
 struct Runners {
     size_t num_devices;
     std::vector<basecall::RunnerPtr> runners;
@@ -408,8 +442,32 @@ Runners create_runners(const BasecallerOptions& options,
                                                        modbase_params.runners_per_caller,
                                                        modbase_params.batchsize);
 
-    std::vector<basecall::RunnerPtr> runners;
-    size_t num_devices = 0;
+    struct BasecallerRunners {
+        std::vector<dorado::basecall::RunnerPtr> runners;
+        size_t num_devices = 0;
+    };
+    auto create_device_runners = [&](const std::string& device_id, float memory_limit_fraction,
+                                     bool use_variable_chunk_sizes) {
+        // Lookup the batch size for this device if it wasn't set by the user.
+        auto device_config = model_config;
+        set_config_batch_params(device_config, memory_limit_fraction, device_id);
+
+        BasecallerRunners basecaller_runners;
+        std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
+                api::create_basecall_runners(
+                        {
+                                .model_config = device_config,
+                                .device = device_id,
+                                .memory_limit_fraction = memory_limit_fraction,
+                                .pipeline_type = api::PipelineType::simplex,
+                                .batch_size_time_penalty = 0.f,
+                                .variable_chunk_sizes = use_variable_chunk_sizes,
+                        },
+                        num_runners, 0);
+        return basecaller_runners;
+    };
+
+    BasecallerRunners basecaller_runners;
 #if DORADO_CUDA_BUILD
     if (options.device != "cpu") {
         // Iterate over the separate devices to create the basecall runners.
@@ -431,65 +489,37 @@ Runners create_runners(const BasecallerOptions& options,
                 api::check_variable_chunk_sizes_supported(model_config, device_ids);
 
         cxxpool::thread_pool pool{gpu_fractions.size()};
-        struct BasecallerRunners {
-            std::vector<dorado::basecall::RunnerPtr> runners;
-            size_t num_devices{};
-        };
-
         std::vector<std::future<BasecallerRunners>> futures;
-        auto create_device_runners = [&](const std::string& device_id, float fraction) {
-            BasecallerRunners basecaller_runners;
-            std::tie(basecaller_runners.runners, basecaller_runners.num_devices) =
-                    api::create_basecall_runners(
-                            {
-                                    model_config,
-                                    device_id,
-                                    fraction,
-                                    api::PipelineType::simplex,
-                                    0.f,
-                                    options.run_batchsize_benchmarks,
-                                    options.emit_batchsize_benchmarks,
-                                    use_variable_chunk_sizes,
-                            },
-                            num_runners, 0);
-            return basecaller_runners;
-        };
-
         futures.reserve(gpu_fractions.size());
         for (const auto& [device_id, fraction] : gpu_fractions) {
-            futures.push_back(pool.push(create_device_runners, std::cref(device_id), fraction));
+            futures.push_back(pool.push([&] {
+                return create_device_runners(device_id, fraction, use_variable_chunk_sizes);
+            }));
         }
 
         for (auto& future : futures) {
             auto data = future.get();
-            runners.insert(runners.end(), std::make_move_iterator(data.runners.begin()),
-                           std::make_move_iterator(data.runners.end()));
-            num_devices += data.num_devices;
+            basecaller_runners.runners.insert(basecaller_runners.runners.end(),
+                                              std::make_move_iterator(data.runners.begin()),
+                                              std::make_move_iterator(data.runners.end()));
+            basecaller_runners.num_devices += data.num_devices;
         }
 
-        if (num_devices == 0) {
+        if (basecaller_runners.num_devices == 0) {
             throw std::runtime_error("CUDA device requested but no devices found.");
         }
     } else
 #endif
     {
-        std::tie(runners, num_devices) = api::create_basecall_runners(
-                {
-                        model_config,
-                        options.device,
-                        1.f,
-                        api::PipelineType::simplex,
-                        0.f,
-                        options.run_batchsize_benchmarks,
-                        options.emit_batchsize_benchmarks,
-                        false,
-                },
-                num_runners, 0);
+        const float memory_limit_fraction = 1.f;
+        const bool use_variable_chunk_sizes = false;
+        basecaller_runners = create_device_runners(options.device, memory_limit_fraction,
+                                                   use_variable_chunk_sizes);
     }
 
     return {
-            .num_devices = num_devices,
-            .runners = std::move(runners),
+            .num_devices = basecaller_runners.num_devices,
+            .runners = std::move(basecaller_runners.runners),
             .modbase_runners = std::move(modbase_runners),
     };
 }
@@ -667,6 +697,102 @@ Models load_basecaller_models(const argparse::ArgumentParser& parser,
     }
 }
 
+std::optional<int> load_and_generate_benchmarks(const Models& models,
+                                                const argparse::ArgumentParser& parser,
+                                                const InputPod5FolderInfo& pod5_folder_info,
+                                                const std::string& device_string) {
+    // See if the user wants to generate benchmarks for each device.
+    const auto benchmarks_file = parser.present<std::string>("--batchsize-benchmarks-file");
+    const auto run_benchmark_option = parser.present<std::string>("--run-batchsize-benchmarks");
+    const bool run_benchmarks = run_benchmark_option.has_value();
+    const bool quit_after_benchmarks = run_benchmark_option == "break";
+
+    if (run_benchmarks && !benchmarks_file.has_value()) {
+        spdlog::error("--run-batchsize-benchmarks requires --batchsize-benchmarks-file to be set");
+        return EXIT_FAILURE;
+    } else if (run_benchmarks && device_string == "cpu") {
+        spdlog::error("CPU isn't a supported device for generating benchmarks");
+        return EXIT_FAILURE;
+    }
+
+    // Load benchmarks if provided.
+    if (benchmarks_file.has_value()) {
+        const auto& path = benchmarks_file.value();
+        if (!batchsize_benchmarks::load_cache(path)) {
+            if (run_benchmarks && !std::filesystem::exists(path)) {
+                // If we're running benchmarks for the first time then the file doesn't need to exist.
+            } else {
+                spdlog::error("Failed to load benchmark cache: {}", path);
+                return EXIT_FAILURE;
+            }
+        }
+    }
+
+    // Generate benchmarks for all devices if requested.
+    if (run_benchmarks) {
+#if DORADO_CUDA_BUILD
+        // Split the device string into each device.
+        const auto devices = utils::parse_cuda_device_string(device_string);
+#else
+        const std::array devices = {device_string};
+#endif
+
+        std::unique_ptr<SimpleProgressBar[]> bars_storage;
+        indicators::DynamicProgress<SimpleProgressBar> progress_bar;
+
+        const auto& config = models.get_simplex_config();
+        auto generate_benchmarks_for_device = [&config, &pod5_folder_info, &progress_bar,
+                                               &devices](std::size_t idx) {
+            auto progress_callback = [&](float progress) {
+                progress_bar[idx].set_progress(100 * progress);
+            };
+            batchsize_benchmarks::generate(devices.at(idx), config, pod5_folder_info.files(),
+                                           progress_callback);
+        };
+
+        // Run through all the devices.
+        const std::size_t num_devices = devices.size();
+        bars_storage = std::make_unique<SimpleProgressBar[]>(num_devices);
+        {
+            spdlog::info("Running benchmark generation. This may take a while");
+
+            std::vector<std::future<void>> results(num_devices);
+            cxxpool::thread_pool pool(num_devices);
+            for (std::size_t idx = 0; idx < num_devices; idx++) {
+                auto& bar = bars_storage[idx];
+                bar.set_option(indicators::option::PrefixText{devices.at(idx)});
+                progress_bar.push_back(bar);
+                results[idx] = pool.push([&, idx] { generate_benchmarks_for_device(idx); });
+            }
+
+            // generate() can throw on error, which will be rethrown when we get the result.
+            for (auto&& future : results) {
+                try {
+                    future.get();
+                } catch (const std::exception& e) {
+                    spdlog::error(e.what());
+                    return EXIT_FAILURE;
+                }
+            }
+
+            // Force a redraw of the final progress bar state.
+            // Note: there's no way to directly call print_progress() but it's called if we index into it.
+            (void)progress_bar[0];
+        }
+
+        spdlog::info("Benchmarking finished");
+        if (!batchsize_benchmarks::export_cache(benchmarks_file.value())) {
+            spdlog::warn("Failed to write out benchmark cache: {}", benchmarks_file.value());
+        }
+
+        if (quit_after_benchmarks) {
+            return EXIT_SUCCESS;
+        }
+    }
+
+    return std::nullopt;
+}
+
 void update_headers(std::span<std::string_view> args,
                     const Models& models,
                     const BasecallerOptions& options,
@@ -783,13 +909,14 @@ void run(const BasecallerOptions& options,
          std::span<std::string_view> args,
          const Models& models,
          size_t num_runners,
-         const ModBaseBatchParams& modbase_params,
          std::optional<std::unordered_set<std::string>> read_list,
          const alignment::Minimap2Options& aligner_options,
          const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
          const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info) {
     const BasecallModelConfig& model_config = models.get_simplex_config();
     spdlog::trace(model_config.to_string());
+
+    const auto modbase_params = validate_modbase_params(models.get_modbase_model_paths(), options);
     spdlog::trace(modbase_params.to_string());
 
     size_t num_reads =
@@ -986,21 +1113,14 @@ int basecaller(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Force on running of batchsize benchmarks if emission is on
-    const bool run_batchsize_benchmarks = parser.get<bool>("--emit-batchsize-benchmarks") ||
-                                          parser.get<bool>("--run-batchsize-benchmarks");
-
     const auto device = cli::parse_device(parser);
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
     models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
 
-    size_t device_count = 1;
-#if DORADO_CUDA_BUILD
-    device_count = utils::get_cuda_device_info(device, false).size();
-#endif
-
-    const auto modbase_params =
-            validate_modbase_params(models.get_modbase_model_paths(), parser, device_count);
+    if (auto ret = load_and_generate_benchmarks(models, parser, pod5_folder_info, device);
+        ret.has_value()) {
+        return ret.value();
+    }
 
     auto run_for_arg = parser.get<int>("--run-for");
     if (run_for_arg < 0) {
@@ -1029,15 +1149,15 @@ int basecaller(int argc, char* argv[]) {
                 .max_reads = parser.get<int>("--max-reads"),
                 .min_qscore = parser.get<int>("--min-qscore"),
                 .run_for = run_for_arg,
-                .emit_batchsize_benchmarks = parser.get<bool>("--emit-batchsize-benchmarks"),
+                .modified_bases_batchsize = parser.present<int>("--modified-bases-batchsize"),
+                .modified_bases_threshold = parser.present<int>("--modified-bases-threshold"),
                 .enable_read_splitting = !parser.get<bool>("--disable-read-splitting"),
                 .estimate_poly_a = estimate_poly_a,
-                .run_batchsize_benchmarks = run_batchsize_benchmarks,
                 .variable_chunk_sizes = !parser.get<bool>("--disable-variable-chunk-sizes"),
         };
-        run(options, args, models, default_parameters.num_runners, modbase_params,
+        run(options, args, models, default_parameters.num_runners,
             utils::load_read_list(parser.get<std::string>("--read-ids")), *minimap_options,
-            std::move(infos->barcoding_info), std::move(infos->adapter_info));
+            infos->barcoding_info, infos->adapter_info);
     } catch (const std::exception& e) {
         spdlog::error("{}", e.what());
         return EXIT_FAILURE;
