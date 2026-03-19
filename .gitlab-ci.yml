@@ -34,9 +34,9 @@ variables:
   BUILD_TARGET: install
   BUILD_TYPE: Release
   GIT_SUBMODULE_STRATEGY: recursive
-  ONT_PYTHON_FILENAME_LINUX_X86_312: ont-python-Linux-x86_64-3.12.1-1.tar.gz
-  ONT_PYTHON_FILENAME_LINUX_ARM64_312: ont-python-Linux-aarch64-3.12.1-1.tar.gz
-  PYTHON_VERSION: "python3.12"
+  ONT_PYTHON_FILENAME_LINUX_X86_313: ont-python-Linux-x86_64-3.13.7-1.tar.gz
+  ONT_PYTHON_FILENAME_LINUX_ARM64_313: ont-python-Linux-aarch64-3.13.7-1.tar.gz
+  PYTHON_VERSION: "python3.13"
   CUDA: "12.8"
   WIN_CUDA_TOOLKIT: "/c/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v${CUDA}"
   WIN_CMAKE_GENERATOR: "\"Visual Studio 17 2022\""
@@ -283,7 +283,7 @@ build:linux:x86:noble_koi_from_source:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
     BUILD_OPTIONS: "-DBUILD_KOI_FROM_SOURCE=ON -DGITLAB_CI_TOKEN=${CI_JOB_TOKEN} -DONT_MM2_EXE=ON"
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_build_dependencies
     - .linux_runner
@@ -295,7 +295,7 @@ build:linux:x86:noble:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
     BUILD_OPTIONS: "-DONT_MM2_EXE=ON"
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_build_dependencies
     - .linux_runner
@@ -402,7 +402,7 @@ build:linux:arm64:jammy:
   image: ${DORADO_DOCKER_ROOT}/dorado-l4t-r36.4.0:1.0
   variables:
     BUILD_OPTIONS: "-DONT_MM2_EXE=ON"
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
     - .linux_arm64_runner
@@ -412,7 +412,7 @@ build:linux:arm64:cuda13:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
     BUILD_OPTIONS: "-DONT_MM2_EXE=ON"
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
     - .linux_arm64_runner
@@ -421,7 +421,7 @@ build:linux:arm64:cuda13:
 build:linux:x86:noble:no_ccache:
   variables:
     BUILD_OPTIONS: "-D DORADO_DISABLE_CCACHE=ON"
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - build:linux:x86:noble
     - .on_nightly_or_manual
@@ -645,7 +645,7 @@ test:windows:
 test:linux:x86:noble:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   script:
     - !reference [.enable_ont_python]
     - !reference [.test_dorado, script]
@@ -659,7 +659,7 @@ test:linux:x86:noble:
 test:linux:arm64:jammy:
   image: ${DORADO_DOCKER_ROOT}/dorado-l4t-r36.4.0:1.0
   variables:
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   script:
     - !reference [.enable_ont_python]
     - !reference [.test_dorado, script]
@@ -673,7 +673,7 @@ test:linux:arm64:jammy:
 test:linux:arm64:thor:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   script:
     - !reference [.enable_ont_python]
     - !reference [.test_dorado, script]
@@ -688,7 +688,7 @@ test:linux:arm64:thor:
 test:linux:arm64:dgx_spark:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   script:
     - !reference [.enable_ont_python]
     - !reference [.test_dorado, script]
@@ -700,8 +700,6 @@ test:linux:arm64:dgx_spark:
     - build:linux:arm64:cuda13
 
 test:macos:arm:
-  variables:
-    PYTHON: python3.10
   extends:
     - .macos_arm_runner
     - .test_dorado
