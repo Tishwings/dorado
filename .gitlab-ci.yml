@@ -116,7 +116,7 @@ variables:
 
 .setup_ccache:
   - if [[ -d '/data/gitlab-ci-cache' ]] && [[ $OSTYPE != 'darwin'* ]] && [[ $OSTYPE != 'msys' ]]; then
-  - export CCACHE_DIR=/data/gitlab-ci-cache
+  -   export CCACHE_DIR=/data/gitlab-ci-cache
   - fi
   - ccache -s || true
 
