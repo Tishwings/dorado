@@ -383,6 +383,7 @@ regression_tests:speed:email:
   dependencies: []
   variables:
     GIT_SUBMODULE_STRATEGY: normal
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   rules:
     - if: "$NIGHTLY_BUILD"
   script:
@@ -415,7 +416,6 @@ run_rebase:
 .perform_rebase:
   variables:
     GIT_SUBMODULE_STRATEGY: normal
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   script:
     - if [ ! -d regression_test/output ]; then echo "Not triggering rebase as no output has been found" && exit 0; fi
     # Use tetra and do the rebase
@@ -443,6 +443,8 @@ run_rebase:
 
 rebase_dorado:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
+  variables:
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   stage: rebase
   interruptible: false
   needs:
