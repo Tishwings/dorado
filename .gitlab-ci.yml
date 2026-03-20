@@ -495,7 +495,7 @@ build_archive:linux:arm64:cuda13:
     - .on_nightly_or_manual
 
 .build_archive:linux:x86:
-  image: ${DORADO_DOCKER_ROOT}/dorado-rocky8-cuda-${CUDA}.0:1.0
+  image: ${DORADO_DOCKER_ROOT}/dorado-rocky8-cuda-${CUDA}.0:1.1
   variables:
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   script:
