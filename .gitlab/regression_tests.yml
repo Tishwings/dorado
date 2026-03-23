@@ -8,7 +8,6 @@
 
 .linux_regression_dependencies:
   before_script:
-    - !reference [.enable_ont_python]
     - !reference [.create_venv]
     - !reference [.prepare_git-lfs]
     - export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PWD}/lib
@@ -163,7 +162,7 @@ regression_test_platforms:linux:x86:cuda12:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
     BUILD_TYPE: Release
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_regression_dependencies
     - .linux_runner
@@ -182,7 +181,7 @@ regression_test:linux:arm64:jammy:
   variables:
     BUILD_TYPE: Release
     BUILD_CUDA: 1
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_regression_dependencies
     - .linux_orin_cuda_12_runner
@@ -197,7 +196,7 @@ regression_test:linux:x86:cuda12:
   variables:
     BUILD_TYPE: Release
     BUILD_CUDA: 1
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_regression_dependencies
     - .linux_regression_runner_v100
@@ -294,7 +293,7 @@ regression_tests:speed:linux:arm64:jammy:
   variables:
     BUILD_TYPE: Release
     BUILD_CUDA: 1
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   needs:
     - build_archive:linux:arm64:jammy
   extends:
@@ -307,7 +306,7 @@ regression_tests:speed:linux:arm64:jammy:
   variables:
     BUILD_TYPE: Release
     BUILD_CUDA: 1
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_regression_dependencies
     - .speed_regression_test
@@ -384,6 +383,7 @@ regression_tests:speed:email:
   dependencies: []
   variables:
     GIT_SUBMODULE_STRATEGY: normal
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   rules:
     - if: "$NIGHTLY_BUILD"
   script:
@@ -416,7 +416,6 @@ run_rebase:
 .perform_rebase:
   variables:
     GIT_SUBMODULE_STRATEGY: normal
-    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_312}
   script:
     - if [ ! -d regression_test/output ]; then echo "Not triggering rebase as no output has been found" && exit 0; fi
     # Use tetra and do the rebase
@@ -444,6 +443,8 @@ run_rebase:
 
 rebase_dorado:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
+  variables:
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   stage: rebase
   interruptible: false
   needs:

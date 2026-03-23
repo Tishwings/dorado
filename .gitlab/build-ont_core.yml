@@ -29,6 +29,7 @@ build:linux:x86:noble:ont_core:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
     BUILD_PRESET: "linux-x64-conan_gcc13-dorado-release"
+    ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_runner
     - .test_ont_core_compatibility
