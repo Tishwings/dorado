@@ -76,6 +76,9 @@ void InitLogging() {
     if (!is_safe_to_log()) {
         spdlog::set_level(spdlog::level::off);
     }
+
+    // Flush on errors so that messages make it to stderr before we fast-exit.
+    spdlog::default_logger()->flush_on(spdlog::level::err);
 }
 
 void SetVerboseLogging(VerboseLogLevel level) {
