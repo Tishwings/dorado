@@ -167,6 +167,10 @@ CudaCaller::CudaCaller(const BasecallerCreationParams &params)
     m_stream.synchronize();
 
     start_threads();
+
+    // This isn't the thread that we run on, so clean up any unreferenced allocations
+    // otherwise they'll stick around forever.
+    c10::cuda::CUDACachingAllocator::emptyCache();
 }
 
 CudaCaller::~CudaCaller() { terminate(); }
