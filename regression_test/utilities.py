@@ -19,8 +19,10 @@ def run_dorado(
         cmd_args, timeout=timeout, text=True, stdout=out, stderr=err
     )
     if result.returncode != 0:
+        out = result.stdout if outfile is None else f"Written to {outfile.name}"
+        err = result.stderr if errfile is None else f"Written to {errfile.name}"
         raise Exception(
-            f"Error running {cmd_args}: returncode={result.returncode}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            f"Error running {cmd_args}: returncode={result.returncode}\nstdout:\n{out}\nstderr:\n{err}"
         )
 
 
