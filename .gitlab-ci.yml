@@ -558,9 +558,6 @@ build_archive:macos:arm:
     GIT_STRATEGY: none
     MODEL: dna_r10.4.1_e8.2_400bps_hac@v5.0.0
     BATCH: 384
-    NO_TEST_DORADO_CORRECT: 0
-    NO_TEST_DORADO_POLISH: 0
-    NO_TEST_DUPLEX: 0
     VALIDATE_FASTQ: 1
     VALIDATE_BAM: 1
     PYTHON: python3

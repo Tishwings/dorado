@@ -1,15 +1,9 @@
 #!/bin/bash
 
 # Integration tests for Dorado Correct.
-# Note: To disable these tests, set the following env variable: "NO_TEST_DORADO_CORRECT=1".
 
 set -ex
 set -o pipefail
-
-# Do nothing if this env variable is set.
-if [[ "${NO_TEST_DORADO_CORRECT}" == "1" ]]; then
-    exit 0
-fi
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <dorado executable> [<out_dir>]"
