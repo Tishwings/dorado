@@ -1,15 +1,9 @@
 #!/bin/bash
 
 # Integration tests for Dorado Polish.
-# Note: To disable these tests, set the following env variable: "NO_TEST_DORADO_POLISH=1".
 
 set -ex
 set -o pipefail
-
-# Do nothing if this env variable is set.
-if [[ "${NO_TEST_DORADO_POLISH}" == "1" ]]; then
-    exit 0
-fi
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <dorado executable> [<out_dir>]"
@@ -57,4 +51,9 @@ export DORADO_BIN
 export TEST_DATA_DIR
 export MODEL_DIR
 export MODEL_NAME
-python3 ${CRAM} --verbose ${TEST_DIR}/cram/variant/*.t
+export OUTPUT_DIR=${output_dir}
+python3 \
+    ${CRAM} \
+    --verbose \
+    --shell=${TEST_DIR}/cram/cram_shell_wrapper.sh \
+    ${TEST_DIR}/cram/variant/*.t

@@ -510,8 +510,8 @@ if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
     dorado_aligner_realigning_and_unmapped
 fi
 
-# Skip duplex tests if NO_TEST_DUPLEX is set.
-if [[ "${NO_TEST_DUPLEX}" -ne "1" ]]; then
+# Duplex tests.
+if true; then
     title dorado duplex basespace test stage
     $dorado_bin duplex basespace $data_dir/basespace/pairs.bam ${models_directory_arg} --threads 1 --pairs $data_dir/basespace/pairs.txt > $output_dir/calls.bam
 
