@@ -58,6 +58,10 @@ export DORADO_BIN
 export TEST_DATA_DIR
 export MODEL_DIR
 export OUTPUT_DIR=${output_dir}
-python3 ${CRAM} --verbose --shell=${TEST_DIR}/cram/cram_shell_wrapper.sh ${TEST_DIR}/cram/correct/*.t
+python3 \
+    ${CRAM} \
+    --verbose \
+    --shell=${TEST_DIR}/cram/cram_shell_wrapper.sh \
+    ${TEST_DIR}/cram/correct/*.t
 
 rm -rf ${output_dir}
