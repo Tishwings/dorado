@@ -9,6 +9,12 @@
 if [[ $# -ne 1 ]] ; then
     echo "Unexpected args"
     exit 1
+elif [[ -z ${TESTFILE} ]] ; then
+    echo "cram didn't set TESTFILE - has the behaviour changed?"
+    exit 1
+elif [[ -z ${OUTPUT_DIR} ]] ; then
+    echo "OUTPUT_DIR must be set before calling cram"
+    exit 1
 fi
 
 # Put each test in its own folder.
