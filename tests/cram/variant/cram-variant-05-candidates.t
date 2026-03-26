@@ -70,3 +70,20 @@ Tiled region selection for inference, an alternative windowing approach for samp
   > diff out/expected.processed_regions.sorted.bed out/processed_regions.sorted.bed
   Exit code: 0
   [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+
+Candidate filtering with an empty candidates file should succeed and produce no calls.
+  $ rm -rf out; mkdir -p out
+  > in_dir=${TEST_DATA_DIR}/variant/test-02-supertiny
+  > in_bam=${in_dir}/in.aln.bam
+  > in_ref=${in_dir}/in.ref.fasta.gz
+  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > touch out/empty_candidates.list
+  > ${DORADO_BIN} variant -vv --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --candidate-filtering --candidates out/empty_candidates.list --window-len 300 --window-overlap 100 --variant-flanking-bases 100 --ignore-read-groups -o out 2> out/stderr
+  > echo "Exit code: $?"
+  > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
+  > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
+  > grep -v "^#" out/variants.vcf > out/result.no_header.vcf || true
+  > test ! -s out/result.no_header.vcf
+  > test ! -s out/processed_regions.bed
+  Exit code: 0
+  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
