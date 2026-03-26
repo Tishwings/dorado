@@ -38,8 +38,8 @@ public:
     void terminate(const TerminateOptions&) override;
     void restart() override;
 
-    static std::optional<int64_t> next_hit(const std::vector<int64_t>& ctx_hit_signal_idxs,
-                                           const int64_t chunk_signal_start);
+    static std::optional<int64_t> next_hit(const std::vector<size_t>& ctx_hit_signal_idxs,
+                                           const size_t chunk_signal_start);
 
     static int64_t resolve_score_index(const int64_t hit_sig_abs,
                                        const int64_t chunk_signal_start,
@@ -56,7 +56,7 @@ public:
 
     static std::vector<std::pair<int64_t, int64_t>> get_chunk_starts(
             const int64_t signal_len,
-            const std::vector<int64_t>& hits_to_sig,
+            const std::vector<size_t>& hits_to_sig,
             const int64_t chunk_size,
             const int64_t context_samples_before,
             const int64_t context_samples_after,
@@ -68,7 +68,7 @@ public:
 
 private:
     using ModBaseChunks = std::vector<std::unique_ptr<ModBaseChunkCallerNode::ModBaseChunk>>;
-    using PerBaseIntVec = std::array<std::vector<int64_t>, 4>;
+    using PerBaseSizeTVec = std::array<std::vector<size_t>, 4>;
 
     void start_threads();
     void terminate_impl(utils::AsyncQueueTerminateFast fast);
@@ -139,11 +139,11 @@ private:
                                                       const std::vector<uint8_t>& moves,
                                                       const std::string& read_id) const;
 
-    bool populate_hits_seq(PerBaseIntVec& context_hits_seq,
+    bool populate_hits_seq(PerBaseSizeTVec& context_hits_seq,
                            const std::string& seq,
                            const modbase::RunnerPtr& runner) const;
-    void populate_hits_sig(PerBaseIntVec& context_hits_sig,
-                           const PerBaseIntVec& context_hits_seq,
+    void populate_hits_sig(PerBaseSizeTVec& context_hits_sig,
+                           const PerBaseSizeTVec& context_hits_seq,
                            const std::vector<uint64_t>& seq_to_sig_map) const;
 
     void populate_signal(at::Tensor& signal,

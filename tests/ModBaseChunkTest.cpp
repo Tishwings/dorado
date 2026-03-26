@@ -11,7 +11,7 @@
 #define TEST_GROUP "[modbase_chunk]"
 
 using namespace dorado::modbase;
-using Hits = std::vector<int64_t>;
+using Hits = std::vector<size_t>;
 using ChunkStart = std::pair<int64_t, int64_t>;
 using ChunkStarts = std::vector<ChunkStart>;
 using ScoreIdxs = std::vector<std::vector<int64_t>>;
