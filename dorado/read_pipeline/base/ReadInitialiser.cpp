@@ -43,6 +43,13 @@ ReadInitialiser::ReadInitialiser(sam_hdr_t* hdr, AlignmentCounts aln_counts, Tri
           m_trim_flags(trim_flags) {}
 
 void ReadInitialiser::update_read_attributes(HtsData& data) const {
+    if (const auto tm_tag = bam_aux_get(data.bam_ptr.get(), "tm"); tm_tag != nullptr) {
+        // update trim flags from the record itself
+        std::string_view tm_str = bam_aux2Z(tm_tag);
+        data.read_attrs.trim_flags = TrimFlags::from_string(tm_str);
+        data.read_attrs.trim_flags.merge(m_trim_flags);
+    }
+
     if (const auto rg_tag = bam_aux_get(data.bam_ptr.get(), "RG"); rg_tag != nullptr) {
         const std::string rg_tag_value = bam_aux2Z(rg_tag);
         const auto read_group_it = m_read_groups.find(rg_tag_value);

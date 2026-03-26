@@ -1,5 +1,6 @@
 #include "hts_utils/fastq_tags.h"
 
+#include "hts_utils/hts_types.h"
 #include "utils/string_utils.h"
 
 #if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER)
@@ -29,12 +30,13 @@ ReadGroupData parse_rg_from_hts_tags(const std::string_view tag_str) {
     constexpr std::string_view KEY_SAMPLE_ID{"LB:Z:"};
     constexpr std::string_view KEY_BARCODE_ID{"SM:Z:"};
     constexpr std::string_view KEY_ALIAS_ID{"al:Z:"};
+    constexpr std::string_view KEY_TRIM_MODE_ID{"tm:Z:"};
 
     const std::regex pattern(R"(^([0-9a-f\-]{1,})_(.*@v\d+\.\d+\.\d+)(.*)$)");
 
     const std::unordered_set<std::string_view> key_set{
             KEY_READ_GROUP, KEY_FLOWCELL_ID, KEY_DEVICE_ID, KEY_EXPERIMENT_START_TIME,
-            KEY_SAMPLE_ID,  KEY_BARCODE_ID,  KEY_ALIAS_ID,
+            KEY_SAMPLE_ID,  KEY_BARCODE_ID,  KEY_ALIAS_ID,  KEY_TRIM_MODE_ID,
     };
 
     const std::vector<std::string_view> tokens = dorado::utils::split_view(tag_str, '\t');
@@ -92,6 +94,10 @@ ReadGroupData parse_rg_from_hts_tags(const std::string_view tag_str) {
         } else if (token.starts_with(KEY_ALIAS_ID)) {
             // Example: al:Z:patient_1
             ret.data.barcode_alias = val;
+            ret.found = true;
+        } else if (token.starts_with(KEY_TRIM_MODE_ID)) {
+            // Example: tm:Z:adapter,barcode
+            ret.data.trim_flags = TrimFlags::from_string(val);
             ret.found = true;
         }
     }
