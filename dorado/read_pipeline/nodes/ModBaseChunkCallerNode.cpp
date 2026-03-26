@@ -890,7 +890,7 @@ void ModBaseChunkCallerNode::duplex_mod_call(Message&& message) {
 }
 
 void ModBaseChunkCallerNode::create_and_submit_chunks(
-        modbase::RunnerPtr& runner,
+        const modbase::RunnerPtr& runner,
         const size_t model_id,
         const int64_t previous_chunk_count,
         std::vector<std::unique_ptr<ModBaseChunk>>& batched_chunks) const {

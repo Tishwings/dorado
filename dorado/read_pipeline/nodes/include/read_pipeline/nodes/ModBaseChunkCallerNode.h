@@ -78,7 +78,7 @@ private:
 
     void input_thread_fn();
 
-    void create_and_submit_chunks(modbase::RunnerPtr& runner,
+    void create_and_submit_chunks(const modbase::RunnerPtr& runner,
                                   const size_t model_id,
                                   const int64_t previous_chunk_count,
                                   std::vector<std::unique_ptr<ModBaseChunk>>& batched_chunks) const;
@@ -92,7 +92,7 @@ private:
     // Called by chunk_caller_thread_fn, calls the model and enqueues the results
     void call_batch(size_t worker_id, size_t model_id, ModBaseChunks& batched_chunks);
 
-    std::vector<modbase::RunnerPtr> m_runners;
+    const std::vector<modbase::RunnerPtr> m_runners;
     const int64_t m_canonical_stride;
     const uint64_t m_sequence_stride_ratio;
     const int64_t m_batch_size;
