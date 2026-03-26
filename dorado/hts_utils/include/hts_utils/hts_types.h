@@ -2,6 +2,7 @@
 
 #include "utils/string_utils.h"
 
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -58,6 +59,7 @@ class TrimFlags {
         ADAPTER = 1 << 0,
         PRIMER = 1 << 1,
         BARCODE = 1 << 2,
+        ALL = ADAPTER | PRIMER | BARCODE,
     };
 
     // TODO: std::to_underlying isn't available until VS2022
@@ -75,6 +77,9 @@ class TrimFlags {
 
 public:
     constexpr TrimFlags() = default;
+    constexpr TrimFlags(FlagType flags) : m_flags(flags) {
+        assert(m_flags <= static_cast<FlagType>(Flag::ALL));
+    }
 
     constexpr void set_adapter() noexcept { set(Flag::ADAPTER, true); }
     constexpr void set_primer() noexcept { set(Flag::PRIMER, true); }

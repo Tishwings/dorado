@@ -31,6 +31,8 @@ void check_read_attrs(const dorado::HtsData::ReadAttributes &result,
     CATCH_CHECK(result.is_status_pass == expected.is_status_pass);
     CATCH_CHECK(result.barcode_id == expected.barcode_id);
     CATCH_CHECK(result.barcode_alias == expected.barcode_alias);
+    CATCH_CHECK(result.trim_flags.m_flags ==
+                expected.trim_flags.m_flags);  // Check the inner value for catch2 logging purposes
 }
 
 fs::path write_file_with_barcode_tags(const fs::path &output_dir,
@@ -285,18 +287,21 @@ CATCH_TEST_CASE(TEST_GROUP " fallback merges multiple BAMs without RG lines", TE
 CATCH_TEST_CASE(TEST_GROUP " maps read groups to attributes", TEST_GROUP) {
     std::unordered_map<std::string, ReadGroup> read_groups;
 
-    ReadGroup rg_one{};
-    rg_one.run_id = "run-1";
-    rg_one.flowcell_id = "flow-1";
-    rg_one.position_id = "pos-1";
-    rg_one.sample_id = "sample-1";
-    rg_one.experiment_id = "exp-1";
-    rg_one.exp_start_time = "2022-04-27T16:47:57.305+00:00";
+    ReadGroup rg_one{
+            .run_id = "run-1",
+            .flowcell_id = "flow-1",
+            .exp_start_time = "2022-04-27T16:47:57.305+00:00",
+            .sample_id = "sample-1",
+            .position_id = "pos-1",
+            .experiment_id = "exp-1",
+    };
     read_groups.emplace("rg-one", rg_one);
 
-    ReadGroup rg_two{};
-    rg_two.flowcell_id = "flow-2";
-    rg_two.sample_id = "sample-2";
+    ReadGroup rg_two{
+            .flowcell_id = "flow-2",
+            .sample_id = "sample-2",
+            .trim_flags = TrimFlags::from_string("adapter,primer"),
+    };
     read_groups.emplace("rg-two", rg_two);
 
     utils::HeaderMapper mapper(read_groups, std::nullopt, nullptr);
@@ -304,32 +309,34 @@ CATCH_TEST_CASE(TEST_GROUP " maps read groups to attributes", TEST_GROUP) {
     CATCH_REQUIRE(result_attrs_map.size() == 2);
 
     const HtsData::ReadAttributes expected_one{
-            "",
-            "exp-1",
-            "sample-1",
-            "pos-1",
-            "flow-1",
-            "run-1",
-            "0000000000000000000000000000000000000000",
-            "",
-            "",
-            1651078077305,
-            0,
-            true,
+            .sequencing_kit = "",
+            .experiment_id = "exp-1",
+            .sample_id = "sample-1",
+            .position_id = "pos-1",
+            .flowcell_id = "flow-1",
+            .protocol_run_id = "run-1",
+            .acquisition_id = "0000000000000000000000000000000000000000",
+            .barcode_id = "",
+            .barcode_alias = "",
+            .protocol_start_time_ms = 1651078077305,
+            .subread_id = 0,
+            .is_status_pass = true,
+            .trim_flags = 0,
     };
     const HtsData::ReadAttributes expected_two{
-            "",
-            "",
-            "sample-2",
-            "0",
-            "flow-2",
-            "00000000-0000-0000-0000-000000000000",
-            "0000000000000000000000000000000000000000",
-            "",
-            "",
-            0,
-            0,
-            true,
+            .sequencing_kit = "",
+            .experiment_id = "",
+            .sample_id = "sample-2",
+            .position_id = "0",
+            .flowcell_id = "flow-2",
+            .protocol_run_id = "00000000-0000-0000-0000-000000000000",
+            .acquisition_id = "0000000000000000000000000000000000000000",
+            .barcode_id = "",
+            .barcode_alias = "",
+            .protocol_start_time_ms = 0,
+            .subread_id = 0,
+            .is_status_pass = true,
+            .trim_flags = 3,
     };
 
     CATCH_REQUIRE(result_attrs_map.contains("rg-one"));
