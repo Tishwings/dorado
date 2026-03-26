@@ -90,7 +90,7 @@ private:
     void duplex_mod_call(Message&& message);
 
     // Called by chunk_caller_thread_fn, calls the model and enqueues the results
-    void call_batch(size_t worker_id, size_t model_id, ModBaseChunks& batched_chunks);
+    void call_batch(modbase::ModBaseRunner& runner, size_t model_id, ModBaseChunks& batched_chunks);
 
     const std::vector<modbase::RunnerPtr> m_runners;
     const int64_t m_canonical_stride;
@@ -144,7 +144,8 @@ private:
                            const modbase::ModBaseRunner& runner) const;
     void populate_hits_sig(PerBaseSizeTVec& context_hits_sig,
                            const PerBaseSizeTVec& context_hits_seq,
-                           const std::vector<uint64_t>& seq_to_sig_map) const;
+                           const std::vector<uint64_t>& seq_to_sig_map,
+                           const modbase::ModBaseRunner& runner) const;
 
     void populate_signal(at::Tensor& signal,
                          std::vector<uint64_t>& seq_to_sig_map,
