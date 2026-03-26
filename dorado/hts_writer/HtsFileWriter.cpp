@@ -52,12 +52,7 @@ void HtsFileWriter::prepare_item(HtsData &hts_data) const {
                                alias.data());
         }
 
-        auto trim_flags = hts_data.read_attrs.trim_flags;
-        if (const auto tag = bam_aux_get(hts_data.bam_ptr.get(), "tm"); tag != nullptr) {
-            auto existing_flags = TrimFlags::from_string(bam_aux2Z(tag));
-            trim_flags.merge(existing_flags);
-        }
-        std::string trim_flags_str = to_string(trim_flags);
+        std::string trim_flags_str = to_string(hts_data.read_attrs.trim_flags);
         bam_aux_update_str(hts_data.bam_ptr.get(), "tm",
                            static_cast<int>(trim_flags_str.length() + 1), trim_flags_str.c_str());
     } else {

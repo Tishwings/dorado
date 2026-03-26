@@ -797,23 +797,10 @@ void update_headers(std::span<std::string_view> args,
                     const Models& models,
                     const BasecallerOptions& options,
                     const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
-                    const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info,
+                    const TrimFlags& trim_flags,
                     Pipeline& pipeline,
                     NodeHandle aligner_idx,
                     NodeHandle hts_writer_idx) {
-    TrimFlags trim_flags;
-    if (barcoding_info && barcoding_info->trim) {
-        trim_flags.set_barcode();
-    }
-    if (adapter_info) {
-        if (adapter_info->trim_primers) {
-            trim_flags.set_primer();
-        }
-        if (adapter_info->trim_adapters) {
-            trim_flags.set_adapter();
-        }
-    }
-
     auto read_groups = file_info::load_read_groups(
             options.pod5_folder_info.files().get(), models.get_simplex_config().stride,
             models.get_simplex_model_name(), utils::join(models.get_modbase_model_names(), ","),
@@ -980,7 +967,20 @@ void run(const BasecallerOptions& options,
         throw std::runtime_error("Failed to create pipeline");
     }
 
-    update_headers(args, models, options, barcoding_info, adapter_info, *pipeline, aligner_idx,
+    TrimFlags trim_flags;
+    if (barcoding_info && barcoding_info->trim) {
+        trim_flags.set_barcode();
+    }
+    if (adapter_info) {
+        if (adapter_info->trim_primers) {
+            trim_flags.set_primer();
+        }
+        if (adapter_info->trim_adapters) {
+            trim_flags.set_adapter();
+        }
+    }
+
+    update_headers(args, models, options, barcoding_info, trim_flags, *pipeline, aligner_idx,
                    hts_writer_idx);
 
     std::unordered_set<std::string> reads_already_processed =
@@ -1017,6 +1017,9 @@ void run(const BasecallerOptions& options,
                                        std::move(reads_already_processed));
         loader.add_read_initialiser(
                 [client_info](ReadCommon& read) { read.client_info = client_info; });
+        loader.add_read_initialiser(
+                [&trim_flags](ReadCommon& read) { read.trim_flags = trim_flags; });
+
         // This is blocking on all reads
         loader.load_reads(options.pod5_folder_info.files(), ReadOrder::UNRESTRICTED);
     }
