@@ -52,22 +52,25 @@ struct HtsFileDestructor {
 using HtsFilePtr = std::unique_ptr<htsFile, HtsFileDestructor>;
 
 class TrimFlags {
-    enum class Flag : std::uint8_t {
+    using FlagType = std::uint8_t;
+
+    enum class Flag : FlagType {
         ADAPTER = 1 << 0,
         PRIMER = 1 << 1,
         BARCODE = 1 << 2,
     };
 
+    // TODO: std::to_underlying isn't available until VS2022
     constexpr void set(Flag flag, bool enabled) noexcept {
         if (enabled) {
-            m_flags |= std::to_underlying(flag);
+            m_flags |= static_cast<FlagType>(flag);
         } else {
-            m_flags &= ~std::to_underlying(flag);
+            m_flags &= ~static_cast<FlagType>(flag);
         }
     }
 
     constexpr bool has(Flag flag) const noexcept {
-        return (m_flags & std::to_underlying(flag)) != 0;
+        return (m_flags & static_cast<FlagType>(flag)) != 0;
     }
 
 public:
@@ -114,8 +117,7 @@ public:
         return flags;
     }
 
-private:
-    std::uint8_t m_flags = 0;
+    FlagType m_flags = 0;
 
     static_assert(std::is_same_v<std::underlying_type_t<Flag>, decltype(m_flags)>);
 };
