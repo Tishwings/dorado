@@ -570,11 +570,11 @@ void ModBaseChunkCallerNode::populate_signal(at::Tensor& signal,
         sig.slice(0, 0, padding) = raw_data.slice(0, len - padding, len);
 
         signal = runner.scale_signal(0, sig, int_seq, seq_to_sig_map);
-        return;
+
+    } else {
+        nvtx3::scoped_range range{"pop_sig"};
+        signal = runner.scale_signal(0, raw_data, int_seq, seq_to_sig_map);
     }
-    nvtx3::scoped_range range{"pop_sig"};
-    signal = runner.scale_signal(0, raw_data, int_seq, seq_to_sig_map);
-    return;
 }
 
 // For each caller, get chunk definitions which always contain a context hit.
