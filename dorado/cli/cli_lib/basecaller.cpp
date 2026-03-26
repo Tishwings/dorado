@@ -797,12 +797,27 @@ void update_headers(std::span<std::string_view> args,
                     const Models& models,
                     const BasecallerOptions& options,
                     const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
+                    const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info,
                     Pipeline& pipeline,
                     NodeHandle aligner_idx,
                     NodeHandle hts_writer_idx) {
+    TrimFlags trim_flags;
+    if (barcoding_info && barcoding_info->trim) {
+        trim_flags.set_barcode();
+    }
+    if (adapter_info) {
+        if (adapter_info->trim_primers) {
+            trim_flags.set_primer();
+        }
+        if (adapter_info->trim_adapters) {
+            trim_flags.set_adapter();
+        }
+    }
+
     auto read_groups = file_info::load_read_groups(
             options.pod5_folder_info.files().get(), models.get_simplex_config().stride,
-            models.get_simplex_model_name(), utils::join(models.get_modbase_model_names(), ","));
+            models.get_simplex_model_name(), utils::join(models.get_modbase_model_names(), ","),
+            trim_flags);
 
     std::optional<std::string> barcode_kit;
     const utils::SampleSheet* sample_sheet = nullptr;
@@ -965,7 +980,8 @@ void run(const BasecallerOptions& options,
         throw std::runtime_error("Failed to create pipeline");
     }
 
-    update_headers(args, models, options, barcoding_info, *pipeline, aligner_idx, hts_writer_idx);
+    update_headers(args, models, options, barcoding_info, adapter_info, *pipeline, aligner_idx,
+                   hts_writer_idx);
 
     std::unordered_set<std::string> reads_already_processed =
             process_resume_file(options, models, *pipeline, hts_writer_idx);
