@@ -1,6 +1,7 @@
 #include "hts_utils/HeaderMapper.h"
 
 #include "TestUtils.h"
+#include "hts_utils/KString.h"
 #include "hts_utils/hts_types.h"
 #include "read_pipeline/base/HtsReader.h"
 
@@ -365,6 +366,40 @@ CATCH_TEST_CASE(TEST_GROUP " barcode kit adds barcoded read groups headers", TES
     auto merged_header = mapper.get_shared_merged_header(true);
     int num_read_groups = sam_hdr_count_lines(merged_header.get(), "RG");
     CATCH_CHECK(num_read_groups == 50);  // no fallback
+}
+
+CATCH_TEST_CASE(TEST_GROUP " read group trim flags", TEST_GROUP) {
+    std::unordered_map<std::string, ReadGroup> read_groups;
+
+    ReadGroup rg_one{
+            .sample_id = "sample-1",
+            .trim_flags = 3,
+    };
+    read_groups.emplace("rg-one", rg_one);
+
+    ReadGroup rg_two{
+            .sample_id = "sample-2",
+            .trim_flags = 0,
+    };
+    read_groups.emplace("rg-two", rg_two);
+
+    utils::HeaderMapper mapper(read_groups, std::nullopt, nullptr);
+    const auto merged_headers_map = mapper.get_merged_headers_map();
+    CATCH_REQUIRE(merged_headers_map != nullptr);
+    CATCH_CHECK(merged_headers_map->size() == 3);  // (2 read groups + fallback)
+
+    auto merged_header = mapper.get_shared_merged_header(true);
+    int num_read_groups = sam_hdr_count_lines(merged_header.get(), "RG");
+    CATCH_CHECK(num_read_groups == 2);  // no fallback
+
+    KString tag_wrapper(100000);
+    auto &tag_value = tag_wrapper.get();
+    for (int idx = 0; idx < num_read_groups; ++idx) {
+        CATCH_REQUIRE(sam_hdr_find_tag_pos(merged_header.get(), "RG", idx, "tm", &tag_value) >= 0);
+        std::string tm_str{tag_value.s, tag_value.l};
+        std::string rg_id = sam_hdr_line_name(merged_header.get(), "RG", idx);
+        CATCH_CHECK(tm_str == to_string(read_groups[rg_id].trim_flags));
+    }
 }
 
 };  // namespace dorado::utils::test
