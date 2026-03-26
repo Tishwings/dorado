@@ -604,8 +604,6 @@ build_archive:macos:arm:
 .test_dorado:
   extends:
     - .test_dorado_common
-  variables:
-    PYTHON: python3
   parallel:
     matrix:
       - TEST_SHARD: [0, 1, 2]
@@ -616,7 +614,6 @@ build_archive:macos:arm:
   variables:
     SAMTOOLS_UNAVAILABLE: sadly_yes
     VALIDATE_BAM: 0
-    PYTHON: python
   parallel:
     matrix:
       # Not running shards 1 or 2. See .test_dorado_common
