@@ -31,7 +31,7 @@ mkdir -p ${models_directory}
 
 models_directory_arg="--models-directory ${models_directory}"
 
-ONT_OUTPUT_SPEC_REF="11a7f1001ad04484ce7ef84038168969139a9b15"
+ONT_OUTPUT_SPEC_REF="acce40766c1e7ceb4f7050abd589f3f14fbd91cc"
 SPECIFICATION_URL="${ONT_OUTPUT_SPEC_REPO}-/archive/${ONT_OUTPUT_SPEC_REF}/ont-output-specification-${ONT_OUTPUT_SPEC_REF}.zip"
 SPECIFICATION_FILE="ont_output_spec.zip"
 VALIDATOR_COMMIT="156b6e2ebbe0c832f9f568166797205758b83a73"
