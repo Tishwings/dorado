@@ -367,7 +367,7 @@ int aligner(int argc, char* argv[]) {
         spdlog::info("processing '{}'", file_info.string());
         HtsReader reader(file_info.string(), std::nullopt);
         auto read_initialiser =
-                std::make_shared<ReadInitialiser>(reader.header(), alignment_counts);
+                std::make_shared<ReadInitialiser>(reader.header(), alignment_counts, TrimFlags{});
         reader.add_read_initialiser([read_initialiser](HtsData& data) {
             read_initialiser->update_read_attributes(data);
         });

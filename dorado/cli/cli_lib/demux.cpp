@@ -305,16 +305,39 @@ int demuxer(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
+    TrimFlags trim_flags;
     std::optional<std::string> barcode_kit;
     const utils::SampleSheet* sample_sheet = nullptr;
     if (barcoding_info) {
         barcode_kit = barcoding_info->kit_name;
         sample_sheet = barcoding_info->sample_sheet.get();
+
+        if (barcoding_info->trim) {
+            trim_flags.set_barcode();
+        }
     }
+
     auto header_mapper = utils::HeaderMapper(all_files, barcode_kit, sample_sheet, strip_alignment);
     auto add_pg_hdr = utils::HeaderMapper::Modifier(
             [&args](sam_hdr_t* hdr) { cli::add_pg_hdr(hdr, "demux", args, "cpu"); });
     header_mapper.modify_headers(add_pg_hdr);
+
+    auto update_trim_flags = utils::HeaderMapper::Modifier([&trim_flags](sam_hdr_t* hdr) {
+        int num_rg_lines = sam_hdr_count_lines(hdr, "RG");
+        KString tag_wrapper(100000);
+        auto& tag_value = tag_wrapper.get();
+        TrimFlags updated_trim_flags = trim_flags;
+        for (int i = 0; i < num_rg_lines; ++i) {
+            if (sam_hdr_find_tag_pos(hdr, "RG", i, "tm", &tag_value) == 0) {
+                TrimFlags existing_trim_flags = TrimFlags::from_string({tag_value.s, tag_value.l});
+                updated_trim_flags.merge(existing_trim_flags);
+            }
+            auto rg_id = sam_hdr_line_name(hdr, "RG", i);
+            sam_hdr_update_line(hdr, "RG", "ID", rg_id, "tm", to_string(updated_trim_flags).c_str(),
+                                nullptr);
+        }
+    });
+    header_mapper.modify_headers(update_trim_flags);
 
     // Set the dynamic header map
     pipeline->get_node_ref<WriterNode>(writer_node)
@@ -338,7 +361,7 @@ int demuxer(int argc, char* argv[]) {
     for (const auto& input : all_files) {
         HtsReader reader(input.string(), read_list);
         auto read_initialiser =
-                std::make_shared<ReadInitialiser>(reader.header(), alignment_counts);
+                std::make_shared<ReadInitialiser>(reader.header(), alignment_counts, trim_flags);
         // update read attributes so we pick up any minimum qscore and filter reads into the appropriate folder
         reader.add_read_initialiser([read_initialiser](HtsData& data) {
             read_initialiser->update_read_attributes(data);

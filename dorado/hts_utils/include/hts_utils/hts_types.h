@@ -1,5 +1,7 @@
 #pragma once
 
+#include "utils/string_utils.h"
+
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -65,7 +67,7 @@ class TrimFlags {
     }
 
     constexpr bool has(Flag flag) const noexcept {
-        return (m_flags & static_cast<std::uint8_t>(flag)) != 0;
+        return (m_flags & std::to_underlying(flag)) != 0;
     }
 
 public:
@@ -85,10 +87,37 @@ public:
 
     constexpr bool empty() const noexcept { return m_flags == 0; }
 
+    constexpr void merge(const TrimFlags& other) { m_flags |= other.m_flags; }
+
     auto operator<=>(const TrimFlags&) const = default;
+
+    static TrimFlags from_string(std::string_view trim_str) {
+        TrimFlags flags{};
+        bool found_none = false;
+        auto tokens = utils::split_view(trim_str, ',');
+        for (const auto& token : tokens) {
+            if (token == "adapter") {
+                flags.set_adapter();
+            } else if (token == "primer") {
+                flags.set_primer();
+            } else if (token == "barcode") {
+                flags.set_barcode();
+            } else if (token == "none") {
+                found_none = true;
+            } else {
+                throw std::runtime_error("Unexpected trim type found in trim string.");
+            }
+        }
+        if (found_none && !flags.empty()) {
+            throw std::runtime_error("Trim string cannot contain 'none' and other entries.");
+        }
+        return flags;
+    }
 
 private:
     std::uint8_t m_flags = 0;
+
+    static_assert(std::is_same_v<std::underlying_type_t<Flag>, decltype(m_flags)>);
 };
 
 inline std::string to_string(TrimFlags trim_flags) {
@@ -196,6 +225,7 @@ public:
         int num_alignments{0};
         int num_secondary_alignments{0};
         int num_supplementary_alignments{0};
+        TrimFlags trim_flags{};
 
         auto operator<=>(const ReadAttributes&) const = default;
     };

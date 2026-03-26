@@ -69,7 +69,8 @@ std::string read_group_to_string(const dorado::ReadGroup& read_group) {
                                                 : (" experiment_id=" + read_group.experiment_id))
            << " acquisition_start_time=" << value_or_unknown(read_group.acq_start_time)
            << " model_stride=" << read_group.model_stride << "\t";
-        rg << "LB:" << value_or_unknown(read_group.sample_id);
+        rg << "LB:" << value_or_unknown(read_group.sample_id) << "\t";
+        rg << "tm:" << to_string(read_group.trim_flags);
     }
     return rg.str();
 }
@@ -153,6 +154,13 @@ std::unordered_map<std::string, dorado::ReadGroup> parse_read_groups(sam_hdr_t* 
         for (const auto& [rg_id, key_info] : rg_info) {
             auto& read_group = read_groups[rg_id];
             read_group.sample_id = key_info;
+        }
+    }
+    {
+        auto rg_info = utils::get_read_group_info(hdr, "tm");
+        for (const auto& [rg_id, key_info] : rg_info) {
+            auto& read_group = read_groups[rg_id];
+            read_group.trim_flags = TrimFlags::from_string(key_info);
         }
     }
     {
