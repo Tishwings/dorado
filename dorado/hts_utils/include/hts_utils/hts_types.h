@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 struct bam1_t;
 struct sam_hdr_t;
@@ -46,6 +48,69 @@ struct HtsFileDestructor {
     void operator()(htsFile*);
 };
 using HtsFilePtr = std::unique_ptr<htsFile, HtsFileDestructor>;
+
+class TrimFlags {
+    enum class Flag : std::uint8_t {
+        ADAPTER = 1 << 0,
+        PRIMER = 1 << 1,
+        BARCODE = 1 << 2,
+    };
+
+    constexpr void set(Flag flag, bool enabled) noexcept {
+        if (enabled) {
+            m_flags |= std::to_underlying(flag);
+        } else {
+            m_flags &= ~std::to_underlying(flag);
+        }
+    }
+
+    constexpr bool has(Flag flag) const noexcept {
+        return (m_flags & static_cast<std::uint8_t>(flag)) != 0;
+    }
+
+public:
+    constexpr TrimFlags() = default;
+
+    constexpr void set_adapter() noexcept { set(Flag::ADAPTER, true); }
+    constexpr void set_primer() noexcept { set(Flag::PRIMER, true); }
+    constexpr void set_barcode() noexcept { set(Flag::BARCODE, true); }
+
+    constexpr void clear_adapter() noexcept { set(Flag::ADAPTER, false); }
+    constexpr void clear_primer() noexcept { set(Flag::PRIMER, false); }
+    constexpr void clear_barcode() noexcept { set(Flag::BARCODE, false); }
+
+    constexpr bool has_adapter() const noexcept { return has(Flag::ADAPTER); }
+    constexpr bool has_primer() const noexcept { return has(Flag::PRIMER); }
+    constexpr bool has_barcode() const noexcept { return has(Flag::BARCODE); }
+
+    constexpr bool empty() const noexcept { return m_flags == 0; }
+
+    auto operator<=>(const TrimFlags&) const = default;
+
+private:
+    std::uint8_t m_flags = 0;
+};
+
+inline std::string to_string(TrimFlags trim_flags) {
+    std::string trimming;
+    if (trim_flags.has_adapter()) {
+        trimming = "adapter";
+    }
+    if (trim_flags.has_primer()) {
+        if (!trimming.empty()) {
+            trimming.append(",");
+        }
+        trimming.append("primer");
+    }
+    if (trim_flags.has_barcode()) {
+        if (!trimming.empty()) {
+            trimming.append(",");
+        }
+        trimming.append("barcode");
+    }
+
+    return trimming.empty() ? "none" : trimming;
+}
 
 enum class StrandOrientation : int {
     REVERSE = -1,  ///< "-" orientation
@@ -108,6 +173,7 @@ struct ReadGroup {
     std::string barcode_id{};
     std::string barcode_alias{};
     int model_stride{};
+    TrimFlags trim_flags{};
 };
 
 class HtsData {
