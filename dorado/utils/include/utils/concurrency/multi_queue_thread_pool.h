@@ -64,7 +64,7 @@ public:
 private:
     void send(TaskType task, detail::PriorityTaskQueue::TaskQueue& task_queue);
 
-    std::string m_name{"async_task_exec"};
+    const std::string m_name{"async_task_exec"};
     const std::size_t m_num_threads;
     const std::size_t m_num_expansion_low_prio_threads;
     std::vector<std::thread> m_threads;
