@@ -32,7 +32,7 @@ class AsyncTaskExecutor {
     std::unique_ptr<Latch> m_flushing_counter;
     const std::size_t m_max_tasks_in_flight;
 
-    void send_impl(TaskType task);
+    void send_impl(TaskType&& task);
     void decrement_tasks_in_flight();
     void increment_tasks_in_flight();
     void create_flushing_counter();

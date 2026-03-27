@@ -15,7 +15,7 @@ using TaskType = std::function<void()>;
 
 struct WaitingTask {
     WaitingTask() {}
-    WaitingTask(TaskType task_, TaskPriority priority_)
+    WaitingTask(TaskType&& task_, TaskPriority priority_)
             : task(std::move(task_)), priority(priority_) {}
     TaskType task{};
     TaskPriority priority{TaskPriority::normal};
@@ -54,7 +54,7 @@ public:
 
     public:
         TaskPriority priority() const { return m_priority; }
-        void push(TaskType task);
+        void push(TaskType&& task);
     };
 
 private:
