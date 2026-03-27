@@ -433,6 +433,10 @@ build:linux:x86:noble:no_ccache:
   artifacts: null
 
 build:windows:
+  variables:
+    # Disable fastzip on windows since it causes the slower runners to timeout
+    # when uploading artifacts.
+    FF_USE_FASTZIP: false
   extends:
     - .windows_runner
     - .build_and_test_dorado
