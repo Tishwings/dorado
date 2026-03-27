@@ -274,7 +274,7 @@ if [ $RUN_TESTS_POSTRUN_DEMUX -eq 1 ]; then
     )
     check_structure ${dest} "${expected[@]}"
 }
-{
+if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
     title "Test BAM file without RG lines"
     calls_notrim_no_rg_sam="${postrun_output_dir}/calls.no-trim.no-rg.sam"
     samtools view -h ${calls_notrim_bam} | grep -v '^@RG' > ${calls_notrim_no_rg_sam}
@@ -289,7 +289,7 @@ if [ $RUN_TESTS_POSTRUN_DEMUX -eq 1 ]; then
         "${core}/bam_pass/barcode04/UNKNOWN_pass_barcode04_00000000_00000000_0.bam"
     )
     check_structure ${dest} "${expected[@]}"
-}
+fi # SAMTOOLS_UNAVAILABLE
 fi # RUN_TESTS_POSTRUN_DEMUX
 
 # Testing for post-run demux where we have untrimmed basecalls and run barcode classification
