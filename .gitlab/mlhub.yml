@@ -1,179 +1,54 @@
-# MLHub
+# MLHub - Single read eval
 
-.mlhub:
+.mlhub_setup:
   stage: test
   when: manual
   image: ${TRIGGER_IMAGE}
-  needs: []
-  variables:
-    GIT_STRATEGY: none
-
-# MLHub - Single read eval
-.mlhub_sre:
-  extends:
-    - .mlhub
   needs:
-    - job: build:linux:x86:noble
-      artifacts: false
+  - job: build:linux:x86:noble
+    artifacts: false
+  before_script:
+    - pip install mlhub-api
+
+
+.mlhub_job:
+  extends: .mlhub_setup
   script:
-    - echo ${MODELS}
+    - sed -i "s#COMMIT_SHA_PLACEHOLDER#${CI_COMMIT_SHA}#g" ${SAMPLE_SHEET}
+    - sed -i "s#COMMIT_SHORT_PLACEHOLDER#${CI_COMMIT_SHORT_SHA}#g" ${SAMPLE_SHEET}
+    - sed -i "s#OUTPUT_PLACEHOLDER#${SRE_OUTPUT_ROOT}#g" ${SAMPLE_SHEET}
     - |
-      curl -i --header "Content-Type: application/json" \
-      --request POST \
-      --data "{
-         \"key\": \"${MLHUB_TRIGGER_SRE}\",
-         \"job_name\": \"Dorado ${TITLE} ${CI_COMMIT_REF_NAME} ${CI_COMMIT_SHORT_SHA}\",
-         \"script_parameters\": {
-             \"models\": ${MODELS},
-             \"duplex_models\": ${DUPLEX_MODELS},
-             \"sre_output\": \"${SRE_OUTPUT_ROOT}/${CI_COMMIT_SHA}/\",
-             \"sre_config\": \"\${projectDir}/configs/${SRE_CONFIG}\",
-             \"basecaller_mode\": \"dorado_artifact\",
-             \"basecaller\": \"${CI_COMMIT_SHA}\"
-         }
-      }" \
-      "${MLHUB_TRIGGER_URL}"
+      mlh-sheet ${SAMPLE_SHEET} \
+        --git_ref ${MLH_BRANCH} \
+        --script_id ${SCRIPT_ID} \
+        --csrf_token ${MLH_CRSF_TOKEN} \
+        --session_id ${MLH_SESSION_ID}
 
-mlhub:sre_5k_400bps_v4_3:
-  extends: .mlhub_sre
+
+mlhub:sre_dna_r1041_e82:
+  extends: .mlhub_job
   variables:
-    TITLE: "SRE: 5k 400bps v4.3.0"
-    SRE_CONFIG: "dna_r10.4.1-e8.2-5khz-400bps-prom.json"
-    MODELS: '["dna_r10.4.1_e8.2_400bps_fast@v4.3.0","dna_r10.4.1_e8.2_400bps_hac@v4.3.0","dna_r10.4.1_e8.2_400bps_sup@v4.3.0"]'
-    DUPLEX_MODELS: "[]"
+    MLH_BRANCH: "dorado_regression"
+    SCRIPT_ID: 378
+    SAMPLE_SHEET: ".gitlab/mlhub-configs/dna-r1041-e82.tsv"
 
-mlhub:sre_5k_400bps_v5:
-  extends: .mlhub_sre
+mlhub:sre_rna004:
+  extends: .mlhub_job
   variables:
-    TITLE: "SRE: 5k 400bps v5.0.0"
-    SRE_CONFIG: "dna_r10.4.1-e8.2-5khz-400bps-prom.json"
-    MODELS: '["dna_r10.4.1_e8.2_400bps_fast@v5.0.0","dna_r10.4.1_e8.2_400bps_hac@v5.0.0","dna_r10.4.1_e8.2_400bps_sup@v5.0.0"]'
-    DUPLEX_MODELS: "[]"
+    MLH_BRANCH: "dorado_regression"
+    SCRIPT_ID: 378
+    SAMPLE_SHEET: ".gitlab/mlhub-configs/rna004.tsv"
 
-mlhub:sre_5k_400bps_v52:
-  extends: .mlhub_sre
+mlhub:mre_dna:
+  extends: .mlhub_job
   variables:
-    TITLE: "SRE: 5k 400bps v5.2.0"
-    SRE_CONFIG: "dna_r10.4.1-e8.2-5khz-400bps-prom.json"
-    MODELS: '["dna_r10.4.1_e8.2_400bps_fast@v5.2.0","dna_r10.4.1_e8.2_400bps_hac@v5.2.0","dna_r10.4.1_e8.2_400bps_sup@v5.2.0"]'
-    DUPLEX_MODELS: "[]"
+    MLH_BRANCH: "dorado_regression"
+    SCRIPT_ID: 403
+    SAMPLE_SHEET: ".gitlab/mlhub-configs/mre_dna.tsv"
 
-mlhub:sre_5k_400bps_duplex:
-  extends: .mlhub_sre
+mlhub:mre_rna:
+  extends: .mlhub_job
   variables:
-    TITLE: "DRE: 5k 400bps DUPLEX v5.0.0"
-    SRE_CONFIG: "dna_r10.4.2-e8.2-5khz-400bps-prom.json"
-    MODELS: '["dna_r10.4.1_e8.2_400bps_hac@v5.0.0","dna_r10.4.1_e8.2_400bps_sup@v5.0.0"]'
-    DUPLEX_MODELS: '["dna_r10.4.1_e8.2_5khz_stereo@v1.3"]'
-
-# MLHub - Mods read eval
-.mlhub_mre:
-  extends:
-    - .mlhub
-  needs:
-    - job: build:linux:x86:noble
-      artifacts: false
-  script:
-    - set -x
-    - |
-      curl -i --header "Content-Type: application/json" \
-      --request POST \
-      --data "{
-          \"key\": \"${MLHUB_TRIGGER_KEY_MRE}\",
-          \"job_name\": \"Dorado MRE: ${SIMPLEX_MODEL} ${CI_COMMIT_REF_NAME} ${CI_COMMIT_SHORT_SHA}\",
-          \"script_parameters\": {
-              \"simplex_model\": \"${SIMPLEX_MODEL}\",
-              \"basecaller_mode\": \"dorado_artifact\",
-              \"basecaller\": \"${CI_COMMIT_SHA}\",
-              \"model_4mC_5mC\": \"4mC_5mC\",
-              \"model_5mC_5hmC\": \"5mC_5hmC\",
-              \"model_5mCG_5hmCG\": \"5mCG_5hmCG\",
-              \"model_6mA\": \"6mA\",
-              \"model_m5C\": \"m5C\",
-              \"model_m6A\": \"m6A\",
-              \"model_m6A_DRACH\": \"m6A_DRACH\",
-              \"model_inosine_m6A\": \"inosine_m6A\",
-              \"model_pseU\": \"pseU\"
-          }
-      }" \
-      "${MLHUB_TRIGGER_URL}"
-
-mlhub::mre_dna_hac:
-  extends:
-    - .mlhub_mre
-  variables:
-    SIMPLEX_MODEL: "hac"
-
-mlhub::mre_dna_sup:
-  extends:
-    - .mlhub_mre
-  variables:
-    SIMPLEX_MODEL: "sup"
-
-# MLHub - Remora
-mlhub:remora-validate:
-  extends:
-    - .mlhub
-  script:
-    - |
-      curl --header "Content-Type: application/json" \
-      --request POST \
-      --data '{
-          "key": "'${MLHUB_TRIGGER_KEY_REMORA}'",
-          "job_name": "Dorado Remora: '${CI_COMMIT_REF_NAME}' - '"$CI_COMMIT_TITLE"' ",
-          "script_parameters": {
-            "dorado_branch":"'${CI_COMMIT_SHA}'",
-            "dorado_build_options":"",
-            "dorado_build_threads":"-- -j 8",
-            "dorado_device":"'${DEVICE}'",
-            "dorado_model":"dna_r10.4.1_e8.2_400bps_hac@v4.0.0",
-            "dorado_modbase_model":"dna_r10.4.1_e8.2_400bps_hac@v4.0.0_5mCG_5hmCG@v2",
-            "remora_model":"/media/groups/machine_learning/active/rharris/shared/nf-dorado-remora-analysis_datasets/dna_r10.4.1_e8.2_400bps_hac_v4.0.0_5hmc_5mc_CG_v2.pt"
-          }
-      }' \
-      ${MLHUB_TRIGGER_URL}
-  parallel:
-    matrix:
-      - DEVICE:
-          - "cuda:all"
-          - "cpu"
-
-# MLHub - Dorado integration test
-mlhub:sweeper:
-  extends:
-    - .mlhub
-  script:
-    - |
-      curl --header "Content-Type: application/json" \
-      --request POST \
-      --data '{
-          "key": "'${MLHUB_TRIGGER_KEY_SWEEPER}'",
-          "job_name": "dorado-sweeper : '${CI_COMMIT_REF_NAME}' - '${CI_COMMIT_SHORT_SHA}'",
-          "script_parameters": {
-            "dorado_branch": "'${CI_COMMIT_SHA}'",
-            "dorado_exe": ""
-          }
-      }' \
-      ${MLHUB_TRIGGER_URL}
-
-# MLHub - Dorado integration test
-mlhub:dorado-integration-tests:
-  extends:
-    - .mlhub
-    - .on_nightly_or_manual
-  script:
-    - |
-      curl --header "Content-Type: application/json" \
-      --request POST \
-      --data '{
-          "key": "'${MLHUB_TRIGGER_KEY_DORADO_INTEGRATION_TEST}'",
-          "job_name": "dorado-integration-test : '${CI_COMMIT_REF_NAME}'",
-          "script_parameters": {
-            "dorado_branch":"'${CI_COMMIT_SHA}'",
-            "dorado_build_options":"",
-            "prompt_clean_basecalls": true,
-            "dorado_exe": "",
-            "config": "'${DORADO_INTEGRATION_TEST_MLHUB_CONFIG}'"
-          }
-      }' \
-      ${MLHUB_TRIGGER_URL}
+    MLH_BRANCH: "dorado_regression"
+    SCRIPT_ID: 403
+    SAMPLE_SHEET: ".gitlab/mlhub-configs/mre_rna.tsv"

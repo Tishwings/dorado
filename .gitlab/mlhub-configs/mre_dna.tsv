@@ -1,0 +1,3 @@
+job_name	basecaller_mode	basecaller	simplex_model	model_4mC_5mC 	model_5mC_5hmC 	model_5mCG_5hmCG 	model_6mA 
+MRE-Dorado_COMMIT_SHORT_PLACEHOLDER_dna-hac	dorado_artifact	COMMIT_SHA_PLACEHOLDER	hac	4mC_5mC	5mC_5hmC	5mCG_5hmCG	6mA
+MRE-Dorado_COMMIT_SHORT_PLACEHOLDER_dna-sup	dorado_artifact	COMMIT_SHA_PLACEHOLDER	hac	4mC_5mC	5mC_5hmC	5mCG_5hmCG	6mA
