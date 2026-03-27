@@ -1,6 +1,5 @@
 #pragma once
 
-#include "utils/concurrency/synchronisation.h"
 #include "utils/concurrency/task_priority.h"
 
 #include <cstddef>
@@ -66,11 +65,6 @@ private:
     std::queue<TaskQueueList::iterator> m_high_producer_queue;
     std::size_t m_num_normal_prio{};
     std::size_t m_num_high_prio{};
-
-    using WaitingTaskList = std::list<std::shared_ptr<detail::WaitingTask>>;
-    WaitingTaskList m_task_list;
-    std::queue<WaitingTaskList::iterator> m_low_queue;
-    std::queue<WaitingTaskList::iterator> m_high_queue;
 
     void queue_producer_task(TaskQueue* producer_queue);
 };

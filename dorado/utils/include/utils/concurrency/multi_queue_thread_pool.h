@@ -1,7 +1,6 @@
 #pragma once
 
 #include "detail/priority_task_queue.h"
-#include "synchronisation.h"
 #include "task_priority.h"
 
 #include <atomic>
