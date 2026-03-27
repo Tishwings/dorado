@@ -85,7 +85,7 @@ variables:
 
 .windows_runner:
   tags:
-    - windows-10
+    - windows-11
     - VS2022
     - cuda-${CUDA}
     - on-prem
