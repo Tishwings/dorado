@@ -534,6 +534,8 @@ void print_help_varcall_cli(cliopt_varcall_t &clio) {
     fprintf(stdout, "  --max-gc-seqdiv [opt] Max gap-compressed sequence divergence allowed\n");
     fprintf(stdout, "                  for a read to be considered in phasing & varcall.[%.2f]\n",
             clio.pp.max_gapcompressed_seqdiv);
+    fprintf(stdout, "  --max-clipping INT [opt] Ignore reads with clippings larger than INT\n");
+    fprintf(stdout, "                     on either side.[%d]\n", clio.pp.max_clipping);
 }
 
 int sancheck_cliopt_varcall(cliopt_varcall_t &clio) {
