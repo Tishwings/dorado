@@ -391,8 +391,9 @@ void ModBaseChunkCallerNode::populate_hits_sig(PerBaseSizeTVec& per_base_hits_si
         const auto& hits_seq = per_base_hits_seq.at(base_id);
         auto& hits_sig = per_base_hits_sig.at(base_id);
 
-        hits_sig.resize(hits_seq.size());
-        for (size_t i = 0; i < hits_seq.size(); ++i) {
+        const size_t hits_len = hits_seq.size();
+        hits_sig.resize(hits_len);
+        for (size_t i = 0; i < hits_len; ++i) {
             hits_sig[i] = seq_to_sig_map.at(hits_seq[i]);
         }
     }
