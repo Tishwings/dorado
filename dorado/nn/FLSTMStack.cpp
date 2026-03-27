@@ -86,8 +86,6 @@ void FLSTMStackImpl::forward_cublas(WorkingMemory &wm) {
 
     auto up_bfr = temp_bfr.narrow(0, wm.N * (2 * K_), wm.N * (4 * C_)).view({wm.N, 4 * C_});
 
-    const bool hard_activation = utils::get_dev_opt<bool>("koi_use_hard_act", false);
-
     for (int layer = 0; layer < std::ssize(layers_); ++layer) {
         utils::ScopedProfileRange spr_lstm("flstm_layer", 3);
 
@@ -120,9 +118,8 @@ void FLSTMStackImpl::forward_cublas(WorkingMemory &wm) {
             utils::matmul_f16(dn_bfr, device_up_weights_[layer], up_bfr);
 
             // gate calculation
-            host_lstm_step_f16(stream, wm.N, C_, C_, hard_activation,
-                               device_up_bias_[layer].data_ptr(), up_bfr.data_ptr(),
-                               state_bfr.data_ptr(), inout[t_o].data_ptr());
+            host_lstm_step_f16(stream, wm.N, C_, C_, true, device_up_bias_[layer].data_ptr(),
+                               up_bfr.data_ptr(), state_bfr.data_ptr(), inout[t_o].data_ptr());
         }
 
         wm.is_input_to_rev_lstm = !reverse;  // needed?
