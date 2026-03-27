@@ -65,8 +65,7 @@
 
 .windows_regression_runner_v100:
   tags:
-    - windows-10
-    - VS2019
+    - windows
     - cuda-${CUDA}
     - on-prem
     - gpu-v100
@@ -86,16 +85,16 @@
 
 .windows_benchmark_runner_a6000:
   tags:
-    - windows-10
-    - VS2019
+    - windows
     - cuda-${CUDA}
     - on-prem
     - gpu-a6000
 
 .windows_benchmark_runner_5070_ti:
   tags:
-    - windows-11
+    - windows
     - cuda-${CUDA}
+    - on-prem
     - gpu-5070ti
 
 # We need this to check out the regression_test_data project, which has our test files in git-lfs.
