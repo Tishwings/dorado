@@ -68,7 +68,7 @@ DEFINE_CATCH_SCENARIO("prioritised pushing and popping with 2 high queues and on
         return [&task_id, id] { task_id = id; };
     };
 
-    auto check_task = [&task_id](const WaitingTask& waiting_task, TaskPriority priority,
+    auto check_task = [&task_id](WaitingTask waiting_task, TaskPriority priority,
                                  const std::string& expected_task_id) {
         CATCH_CHECK(waiting_task.priority == priority);
         waiting_task.task();

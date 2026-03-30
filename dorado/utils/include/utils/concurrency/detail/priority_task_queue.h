@@ -1,9 +1,9 @@
 #pragma once
 
+#include "utils/MoveOnlyFunction.h"
 #include "utils/concurrency/task_priority.h"
 
 #include <cstddef>
-#include <functional>
 #include <list>
 #include <memory>
 #include <queue>
@@ -11,7 +11,7 @@
 
 namespace dorado::utils::concurrency::detail {
 
-using TaskType = std::function<void()>;
+using TaskType = utils::MoveOnlyFunction<void()>;
 
 struct WaitingTask {
     WaitingTask() {}
