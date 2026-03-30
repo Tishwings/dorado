@@ -7,6 +7,8 @@
 #include <IOKit/IOKitLib.h>
 #pragma clang diagnostic pop
 
+#include "utils/overloaded.h"
+
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach-o/dyld.h>
 #include <objc/objc-runtime.h>
@@ -26,14 +28,6 @@ using namespace MTL;
 namespace fs = std::filesystem;
 
 namespace {
-
-// Allows less ugliness in use of std::visit.
-template <class... Ts>
-struct overloaded : Ts... {
-    using Ts::operator()...;
-};
-template <class... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;
 
 // Note: NS::String objects created via NS::String::string are placed in the autorelease pool,
 // which means they will be released at a later time dictated by the autorelease pool setup.
@@ -156,16 +150,17 @@ NS::SharedPtr<MTL::ComputePipelineState> make_cps(
     auto constant_vals = NS::TransferPtr(FunctionConstantValues::alloc()->init());
     for (auto &[cname, constant] : named_constants) {
         const auto ns_name = NS::String::string(cname.c_str(), NS::ASCIIStringEncoding);
-        std::visit(overloaded{[&](int val) {
-                                  constant_vals->setConstantValue(&val, DataTypeInt, ns_name);
-                              },
-                              [&](bool val) {
-                                  constant_vals->setConstantValue(&val, DataTypeBool, ns_name);
-                              },
-                              [&](float val) {
-                                  constant_vals->setConstantValue(&val, DataTypeFloat, ns_name);
-                              }},
-                   constant);
+        std::visit(
+                utils::overloaded{[&](int val) {
+                                      constant_vals->setConstantValue(&val, DataTypeInt, ns_name);
+                                  },
+                                  [&](bool val) {
+                                      constant_vals->setConstantValue(&val, DataTypeBool, ns_name);
+                                  },
+                                  [&](float val) {
+                                      constant_vals->setConstantValue(&val, DataTypeFloat, ns_name);
+                                  }},
+                constant);
     }
 
     auto kernel_name = NS::String::string(name.c_str(), NS::ASCIIStringEncoding);

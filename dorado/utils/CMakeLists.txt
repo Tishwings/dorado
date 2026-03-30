@@ -31,6 +31,7 @@ dorado_add_library(
         memory_utils.h
         MoveOnlyFunction.h
         overlap.h
+        overloaded.h
         paf_utils.h
         parameters.h
         PostCondition.h
