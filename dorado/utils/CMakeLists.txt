@@ -29,6 +29,7 @@ dorado_add_library(
         log_utils.h
         math_utils.h
         memory_utils.h
+        MoveOnlyFunction.h
         overlap.h
         paf_utils.h
         parameters.h
@@ -79,6 +80,8 @@ dorado_add_library(
         thread_utils.cpp
         time_utils.cpp
         uuid_utils.cpp
+    SOURCES_TEST
+        test_MoveOnlyFunction.cpp
     DEPENDS_PUBLIC
         date::date
         dorado_version
