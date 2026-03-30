@@ -122,12 +122,12 @@ target_include_directories(dorado_tests_common
 )
 target_link_libraries(dorado_tests_common
     PUBLIC
+        Catch2::Catch2
+    PRIVATE
+        # Note: these are only needed for the setup in main()
+        # TODO: try and remove the torch dependency so that dorado_utils' tests doesn't link to it
         dorado_torch_utils
         dorado_utils
-        dorado_compat
-        dorado_secondary
-        kadayashi::haplotag_lib
-        Catch2::Catch2
 )
 target_compile_definitions(dorado_tests_common
     PUBLIC
@@ -135,6 +135,7 @@ target_compile_definitions(dorado_tests_common
         # Workaround torch defining a CATCH_CHECK() macro that conflicts with catch2
         CATCH_CONFIG_PREFIX_ALL=1
 )
+
 
 # Finish setting up each target and add them as tests.
 foreach(TEST_BIN dorado_tests dorado_smoke_tests)
@@ -158,6 +159,7 @@ foreach(TEST_BIN dorado_tests dorado_smoke_tests)
             dorado_secondary
             dorado_tests_common
             intervaltree
+            kadayashi::haplotag_lib
             minimap2
             toml11::toml11
             ${ZLIB_LIBRARIES}
