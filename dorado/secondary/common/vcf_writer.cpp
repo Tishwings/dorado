@@ -12,24 +12,6 @@
 
 namespace dorado::secondary {
 
-// RAII for the BCF header.
-void BcfHdrDestructor::operator()(bcf_hdr_t* p) {
-    if (p) {
-        bcf_hdr_destroy(p);
-    }
-}
-
-// RAII for a single BCF record.
-struct BcfRecordDestructor {
-    void operator()(bcf1_t*);
-};
-void BcfRecordDestructor::operator()(bcf1_t* p) {
-    if (p) {
-        bcf_destroy(p);
-    }
-}
-using BcfRecordPtr = std::unique_ptr<bcf1_t, BcfRecordDestructor>;
-
 namespace {
 
 void ensure_shared_buffer_initialized(bcf1_t& record) {
@@ -105,7 +87,7 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
 }
 
 void VCFWriter::write_variant(const Variant& variant) {
-    BcfRecordPtr record{bcf_init(), BcfRecordDestructor()};
+    BcfRecordPtr record{bcf_init(), BcfRecordDestructor{}};
 
     if (!record) {
         throw std::runtime_error("Failed to create VCF record.");

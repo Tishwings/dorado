@@ -10,6 +10,8 @@
 #include <utility>
 
 struct bam1_t;
+struct bcf1_t;
+struct bcf_hdr_t;
 struct sam_hdr_t;
 struct htsFile;
 
@@ -26,6 +28,16 @@ struct SamHdrDestructor {
     void operator()(sam_hdr_t*);
 };
 using SamHdrPtr = std::unique_ptr<sam_hdr_t, SamHdrDestructor>;
+
+struct BcfHdrDestructor {
+    void operator()(bcf_hdr_t*);
+};
+using BcfHdrPtr = std::unique_ptr<bcf_hdr_t, BcfHdrDestructor>;
+
+struct BcfRecordDestructor {
+    void operator()(bcf1_t*);
+};
+using BcfRecordPtr = std::unique_ptr<bcf1_t, BcfRecordDestructor>;
 
 class SamHdrSharedPtr {
 public:
