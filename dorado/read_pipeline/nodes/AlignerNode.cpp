@@ -83,7 +83,9 @@ AlignerNode::AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_
                   load_and_get_index(*index_file_access, index_file, options, threads)),
           m_index_file_access(std::move(index_file_access)),
           m_bed_file_access(std::move(bed_file_access)),
-          m_task_executor(*m_thread_pool, m_pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {
+          m_task_executor(*m_thread_pool,
+                          utils::concurrency::TaskPriority::normal,
+                          MAX_PROCESSING_QUEUE_SIZE) {
     if (!bed_file.empty()) {
         if (!m_bed_file_access) {
             throw std::runtime_error(
@@ -107,10 +109,9 @@ AlignerNode::AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_
                          utils::concurrency::TaskPriority pipeline_priority)
         : MessageSink(MAX_INPUT_QUEUE_SIZE, 1),
           m_thread_pool(std::move(thread_pool)),
-          m_pipeline_priority(pipeline_priority),
           m_index_file_access(std::move(index_file_access)),
           m_bed_file_access(std::move(bed_file_access)),
-          m_task_executor(*m_thread_pool, m_pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
+          m_task_executor(*m_thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
 
 AlignerNode::~AlignerNode() { stop_input_processing(utils::AsyncQueueTerminateFast::Yes); }
 

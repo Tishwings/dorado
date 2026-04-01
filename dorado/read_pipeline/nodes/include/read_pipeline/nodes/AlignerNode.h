@@ -7,7 +7,6 @@
 #include "read_pipeline/base/ClientInfo.h"
 #include "read_pipeline/base/MessageSink.h"
 #include "utils/concurrency/async_task_executor.h"
-#include "utils/concurrency/task_priority.h"
 
 #include <memory>
 #include <string>
@@ -61,7 +60,6 @@ private:
     void add_bed_hits_to_record(const std::string& genome, bam1_t* record);
 
     std::shared_ptr<utils::concurrency::MultiQueueThreadPool> m_thread_pool{};
-    utils::concurrency::TaskPriority m_pipeline_priority{utils::concurrency::TaskPriority::normal};
     std::shared_ptr<const alignment::Minimap2Index> m_index_for_bam_messages{};
     std::shared_ptr<const alignment::BedFile> m_bedfile_for_bam_messages{};
     std::vector<std::string> m_header_sequence_names{};
