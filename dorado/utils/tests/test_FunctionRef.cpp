@@ -100,7 +100,7 @@ DEFINE_TEST("Constructible from function pointer") {
 }
 
 DEFINE_TEST("Invocable with refs") {
-    auto lambda = +[](int &x) { x++; };
+    auto lambda = [](int &x) { x++; };
     FunctionRef<void(int &)> functor = lambda;
 
     int counter = 0;
