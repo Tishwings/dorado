@@ -13,7 +13,7 @@ namespace detail {
 
 // Arbitrarily chosen small functor size.
 static inline constexpr std::size_t kSmallFunctorAlignment = alignof(std::size_t);
-static inline constexpr std::size_t kSmallFunctorSize = 2 * sizeof(std::size_t);
+static inline constexpr std::size_t kSmallFunctorSize = 3 * sizeof(std::size_t);
 
 template <typename Func>
 struct is_small {
