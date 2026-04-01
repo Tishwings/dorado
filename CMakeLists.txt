@@ -115,7 +115,6 @@ if (GENERATE_TEST_COVERAGE)
             DEPENDENCIES
                 dorado_smoke_tests
                 dorado_tests
-                test_dorado_benchmarks
             BASE_DIRECTORY "${PROJECT_SOURCE_DIR}"
             EXCLUDE
                 "${DORADO_3RD_PARTY_SOURCE}/.*"

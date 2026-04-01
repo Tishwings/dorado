@@ -23,13 +23,16 @@ dorado_add_library(
         dev_utils.h
         FixedSizeQueue.h
         fs_utils.h
+        FunctionRef.h
         io_utils.h
         jthread.h
         locale_utils.h
         log_utils.h
         math_utils.h
         memory_utils.h
+        MoveOnlyFunction.h
         overlap.h
+        overloaded.h
         paf_utils.h
         parameters.h
         PostCondition.h
@@ -79,6 +82,9 @@ dorado_add_library(
         thread_utils.cpp
         time_utils.cpp
         uuid_utils.cpp
+    SOURCES_TEST
+        test_FunctionRef.cpp
+        test_MoveOnlyFunction.cpp
     DEPENDS_PUBLIC
         date::date
         dorado_version

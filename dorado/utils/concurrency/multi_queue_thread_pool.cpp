@@ -53,7 +53,7 @@ void MultiQueueThreadPool::join() {
     }
 }
 
-void MultiQueueThreadPool::send(TaskType task, detail::PriorityTaskQueue::TaskQueue& task_queue) {
+void MultiQueueThreadPool::send(TaskType&& task, detail::PriorityTaskQueue::TaskQueue& task_queue) {
     {
         std::lock_guard lock(m_mutex);
         task_queue.push(std::move(task));

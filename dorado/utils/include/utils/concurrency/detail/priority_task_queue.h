@@ -1,10 +1,9 @@
 #pragma once
 
-#include "utils/concurrency/synchronisation.h"
+#include "utils/MoveOnlyFunction.h"
 #include "utils/concurrency/task_priority.h"
 
 #include <cstddef>
-#include <functional>
 #include <list>
 #include <memory>
 #include <queue>
@@ -12,11 +11,11 @@
 
 namespace dorado::utils::concurrency::detail {
 
-using TaskType = std::function<void()>;
+using TaskType = utils::MoveOnlyFunction<void()>;
 
 struct WaitingTask {
     WaitingTask() {}
-    WaitingTask(TaskType task_, TaskPriority priority_)
+    WaitingTask(TaskType&& task_, TaskPriority priority_)
             : task(std::move(task_)), priority(priority_) {}
     TaskType task{};
     TaskPriority priority{TaskPriority::normal};
@@ -55,7 +54,7 @@ public:
 
     public:
         TaskPriority priority() const { return m_priority; }
-        void push(TaskType task);
+        void push(TaskType&& task);
     };
 
 private:
@@ -66,11 +65,6 @@ private:
     std::queue<TaskQueueList::iterator> m_high_producer_queue;
     std::size_t m_num_normal_prio{};
     std::size_t m_num_high_prio{};
-
-    using WaitingTaskList = std::list<std::shared_ptr<detail::WaitingTask>>;
-    WaitingTaskList m_task_list;
-    std::queue<WaitingTaskList::iterator> m_low_queue;
-    std::queue<WaitingTaskList::iterator> m_high_queue;
 
     void queue_producer_task(TaskQueue* producer_queue);
 };

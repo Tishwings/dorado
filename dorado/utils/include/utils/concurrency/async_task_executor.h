@@ -32,7 +32,6 @@ class AsyncTaskExecutor {
     std::unique_ptr<Latch> m_flushing_counter;
     const std::size_t m_max_tasks_in_flight;
 
-    void send_impl(TaskType task);
     void decrement_tasks_in_flight();
     void increment_tasks_in_flight();
     void create_flushing_counter();
@@ -43,20 +42,7 @@ public:
                       std::size_t max_queue_size);
     ~AsyncTaskExecutor();
 
-    template <typename T,
-              typename std::enable_if<std::is_copy_constructible<T>{}, bool>::type = true>
-    void send(T&& task) {
-        send_impl(std::forward<T>(task));
-    }
-
-    template <typename T,
-              typename std::enable_if<!std::is_copy_constructible<T>{}, bool>::type = true>
-    void send(T&& task) {
-        // The task contains a non-copyable such as a SimplexReadPtr so wrap it in a
-        // shared_ptr so it can be assigned to a std::function
-        send_impl([task_wrapper = std::make_shared<std::decay_t<T>>(std::forward<T>(
-                           task))]() -> decltype(auto) { return (*task_wrapper)(); });
-    }
+    void send(TaskType&& task);
 
     std::size_t num_tasks_in_flight() const {
         std::lock_guard lock(m_mutex);

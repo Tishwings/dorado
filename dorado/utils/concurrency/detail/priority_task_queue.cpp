@@ -52,7 +52,7 @@ bool PriorityTaskQueue::empty(TaskPriority priority) const { return size(priorit
 PriorityTaskQueue::TaskQueue::TaskQueue(PriorityTaskQueue* parent, TaskPriority priority)
         : m_parent(parent), m_priority(priority) {}
 
-void PriorityTaskQueue::TaskQueue::push(TaskType task) {
+void PriorityTaskQueue::TaskQueue::push(TaskType&& task) {
     m_producer_queue.push(std::move(task));
     if (m_priority == TaskPriority::normal) {
         ++m_parent->m_num_normal_prio;

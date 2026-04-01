@@ -48,6 +48,23 @@ function(dorado_add_library)
         target_link_libraries(${test_name} PRIVATE ${arg_NAME} dorado_tests_common)
         dorado_add_test(${test_name})
         list(APPEND targets ${test_name})
+
+        # Include this test in the coverage report.
+        if (GENERATE_TEST_COVERAGE)
+            add_dependencies(dorado_test_coverage ${test_name})
+        endif()
+    endif()
+
+    # Validate that this target really doesn't link to torch.
+    # We defer this so that links not using this helper function aren't missed.
+    # Note that we don't check the tests since dorado_test_common links to torch.
+    if (arg_NO_TORCH)
+        cmake_language(EVAL CODE "
+            cmake_language(DEFER
+                DIRECTORY ${CMAKE_SOURCE_DIR}
+                CALL check_no_dependency_on_torch [[${arg_NAME}]]
+            )
+        ")
     endif()
 
     foreach (target IN LISTS targets)
@@ -67,16 +84,7 @@ function(dorado_add_library)
         enable_warnings_as_errors(${target})
 
         # Reuse the PCH if it makes use of torch.
-        if (arg_NO_TORCH)
-            # Validate that this target really doesn't link to torch.
-            # We defer this so that links not using this helper function aren't missed.
-            cmake_language(EVAL CODE "
-                cmake_language(DEFER
-                    DIRECTORY ${CMAKE_SOURCE_DIR}
-                    CALL check_no_dependency_on_torch [[${target}]]
-                )
-            ")
-        elseif (DORADO_ENABLE_PCH)
+        if (DORADO_ENABLE_PCH AND NOT arg_NO_TORCH)
             get_target_property(type ${target} TYPE)
             if (type STREQUAL "EXECUTABLE")
                 target_precompile_headers(${target} REUSE_FROM dorado_pch_exe)
