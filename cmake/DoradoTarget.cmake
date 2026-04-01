@@ -48,6 +48,11 @@ function(dorado_add_library)
         target_link_libraries(${test_name} PRIVATE ${arg_NAME} dorado_tests_common)
         dorado_add_test(${test_name})
         list(APPEND targets ${test_name})
+
+        # Include this test in the coverage report.
+        if (GENERATE_TEST_COVERAGE)
+            add_dependencies(dorado_test_coverage ${test_name})
+        endif()
     endif()
 
     # Validate that this target really doesn't link to torch.
