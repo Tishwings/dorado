@@ -27,6 +27,9 @@ class Minimap2Index;
 
 class AlignerNode : public MessageSink {
 public:
+    static inline constexpr std::size_t MAX_INPUT_QUEUE_SIZE{10000};
+    static inline constexpr std::size_t MAX_PROCESSING_QUEUE_SIZE{MAX_INPUT_QUEUE_SIZE / 2};
+
     AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_access,
                 std::shared_ptr<alignment::BedFileAccess> bed_file_access,
                 const std::string& index_file,

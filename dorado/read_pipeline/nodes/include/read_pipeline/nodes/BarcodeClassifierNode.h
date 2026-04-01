@@ -21,6 +21,9 @@ class MultiQueueThreadPool;
 
 class BarcodeClassifierNode : public MessageSink {
 public:
+    static inline constexpr std::size_t MAX_INPUT_QUEUE_SIZE{10000};
+    static inline constexpr std::size_t MAX_PROCESSING_QUEUE_SIZE{MAX_INPUT_QUEUE_SIZE / 2};
+
     BarcodeClassifierNode(std::shared_ptr<utils::concurrency::MultiQueueThreadPool> thread_pool,
                           utils::concurrency::TaskPriority pipeline_priority);
     BarcodeClassifierNode(int threads);

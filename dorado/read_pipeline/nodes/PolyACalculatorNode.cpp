@@ -8,11 +8,6 @@
 
 #include <spdlog/spdlog.h>
 
-namespace {
-constexpr std::size_t MAX_INPUT_QUEUE_SIZE{10000};
-constexpr std::size_t MAX_PROCESSING_QUEUE_SIZE{MAX_INPUT_QUEUE_SIZE / 2};
-}  // namespace
-
 namespace dorado {
 
 void PolyACalculatorNode::input_thread_fn() {

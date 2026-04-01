@@ -22,9 +22,6 @@
 
 namespace {
 
-constexpr std::size_t MAX_INPUT_QUEUE_SIZE{10000};
-constexpr std::size_t MAX_PROCESSING_QUEUE_SIZE{MAX_INPUT_QUEUE_SIZE / 2};
-
 std::shared_ptr<const dorado::alignment::Minimap2Index> load_and_get_index(
         dorado::alignment::IndexFileAccess& index_file_access,
         const std::string& index_file,

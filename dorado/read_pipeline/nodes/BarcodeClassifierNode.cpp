@@ -20,9 +20,6 @@
 
 namespace {
 
-constexpr std::size_t MAX_INPUT_QUEUE_SIZE{10000};
-constexpr std::size_t MAX_PROCESSING_QUEUE_SIZE{MAX_INPUT_QUEUE_SIZE / 2};
-
 const std::string UNCLASSIFIED_BARCODE = "unclassified";
 
 std::string generate_barcode_string(const dorado::BarcodeScoreResult& bc_res) {
