@@ -68,9 +68,9 @@ struct ModBaseChunkCallerNode::ModBaseData {
     // Padded encoded kmers.
     std::vector<int8_t> encoded_kmers;
     // Sequence indices for hits for each base (i.e. one per model)
-    PerBaseIntVec per_base_hits_seq;
+    PerBaseSizeTVec per_base_hits_seq;
     // Signal indices for hits for each base (i.e. one per model)
-    PerBaseIntVec per_base_hits_sig;
+    PerBaseSizeTVec per_base_hits_sig;
     // The location in the target sequence where the realigned sequence starts - duplex only
     int64_t target_start{0};
 };
@@ -135,10 +135,10 @@ ModBaseChunkCallerNode::ModBaseChunkCallerNode(std::vector<modbase::RunnerPtr> m
         : MessageSink(max_reads, static_cast<int>(modbase_threads)),
           m_runners(std::move(model_runners)),
           m_canonical_stride(canonical_stride),
-          m_sequence_stride_ratio(m_runners.at(0)->model_params(0).general.stride_ratio()),
-          m_batch_size(m_runners.at(0)->batch_size()),
-          m_kmer_len(m_runners.at(0)->model_params(0).context.kmer_len),
-          m_is_rna_model(m_runners.at(0)->model_params(0).context.reverse),
+          m_sequence_stride_ratio(m_runners.front()->model_params(0).general.stride_ratio()),
+          m_batch_size(m_runners.front()->batch_size()),
+          m_kmer_len(m_runners.front()->model_params(0).context.kmer_len),
+          m_is_rna_model(m_runners.front()->model_params(0).context.reverse),
           m_processed_chunks(m_runners.size() * 8 * m_batch_size),
           m_pad_end_align(utils::get_dev_opt<bool>("modbase_pad_end_align", 0)),
           m_minimal_encode(activate_minimal_cg_encoding(m_runners)) {
@@ -146,7 +146,8 @@ ModBaseChunkCallerNode::ModBaseChunkCallerNode(std::vector<modbase::RunnerPtr> m
     validate_runners();
 
     m_processed_chunks.set_name("processed_chunks");
-    for (size_t i = 0; i < m_runners.at(0)->num_models(); ++i) {
+    const size_t num_models = m_runners.front()->num_models();
+    for (size_t i = 0; i < num_models; ++i) {
         auto& queue = m_chunk_queues.emplace_back(
                 std::make_unique<utils::AsyncQueue<std::unique_ptr<ModBaseChunk>>>(m_batch_size *
                                                                                    10));
@@ -162,7 +163,8 @@ void ModBaseChunkCallerNode::start_threads() {
     m_output_workers.emplace_back([this] { output_thread_fn(); });
 
     for (size_t worker_id = 0; worker_id < m_runners.size(); ++worker_id) {
-        for (size_t model_id = 0; model_id < m_runners[worker_id]->num_models(); ++model_id) {
+        const size_t num_models = m_runners[worker_id]->num_models();
+        for (size_t model_id = 0; model_id < num_models; ++model_id) {
             m_runner_workers.emplace_back(
                     [this, worker_id, model_id] { chunk_caller_thread_fn(worker_id, model_id); });
         }
@@ -237,14 +239,15 @@ void ModBaseChunkCallerNode::restart() {
 
 void ModBaseChunkCallerNode::init_modbase_info() {
     std::vector<std::reference_wrapper<const config::ModBaseModelConfig>> base_mod_params;
-    auto& runner = m_runners.at(0);
+    const auto& runner = *m_runners.front();
     modbase::ModBaseContext context_handler;
-    for (size_t model_id = 0; model_id < runner->num_models(); ++model_id) {
-        const auto& params = runner->model_params(model_id).mods;
+    const size_t num_models = runner.num_models();
+    for (size_t model_id = 0; model_id < num_models; ++model_id) {
+        const auto& params = runner.model_params(model_id).mods;
         if (!params.motif.empty()) {
             context_handler.set_context(params.motif, size_t(params.motif_offset));
         }
-        base_mod_params.push_back(runner->model_params(model_id));
+        base_mod_params.push_back(runner.model_params(model_id));
         m_num_states += params.count;
     }
 
@@ -262,8 +265,10 @@ void ModBaseChunkCallerNode::validate_runners() const {
         }
     }
 
-    for (size_t model_id = 0; model_id < m_runners.at(0)->num_models(); ++model_id) {
-        const auto& config = m_runners.at(0)->model_params(model_id);
+    const auto& runner = *m_runners.front();
+    const size_t num_models = runner.num_models();
+    for (size_t model_id = 0; model_id < num_models; ++model_id) {
+        const auto& config = runner.model_params(model_id);
 
         std::string name = "Modbase '";
         name.push_back(config.mods.base);
@@ -327,8 +332,8 @@ void ModBaseChunkCallerNode::initialise_base_mod_probs(ReadCommon& read) const {
 
 // Get the index of the next context hit in `hit_sig_idxs` with a signal index
 // greater than or equal to `chunk_signal_start`.
-std::optional<int64_t> ModBaseChunkCallerNode::next_hit(const std::vector<int64_t>& hit_sig_idxs,
-                                                        const int64_t chunk_signal_start) {
+std::optional<int64_t> ModBaseChunkCallerNode::next_hit(const std::vector<size_t>& hit_sig_idxs,
+                                                        const size_t chunk_signal_start) {
     // Check for the first element explicitly
     if (!hit_sig_idxs.empty() && hit_sig_idxs.front() >= chunk_signal_start) {
         return 0;
@@ -359,38 +364,36 @@ std::vector<uint64_t> ModBaseChunkCallerNode::get_seq_to_sig_map(const std::vect
 }
 
 // Populate the hits for each canonical base if it's needed by a caller.
-bool ModBaseChunkCallerNode::populate_hits_seq(PerBaseIntVec& per_base_hits_seq,
+bool ModBaseChunkCallerNode::populate_hits_seq(PerBaseSizeTVec& per_base_hits_seq,
                                                const std::string& seq,
-                                               const modbase::RunnerPtr& runner) const {
+                                               const modbase::ModBaseRunner& runner) const {
     nvtx3::scoped_range range{"pop_hits_seq"};
     bool has_hits = false;
-    for (size_t model_id = 0; model_id < runner->num_models(); ++model_id) {
-        const std::vector<size_t> motif_hits = runner->get_motif_hits(model_id, seq);
-        auto& hits_seq = per_base_hits_seq.at(runner->model_params(model_id).mods.base_id);
-        hits_seq.resize(motif_hits.size());
-
-        for (size_t i = 0; i < motif_hits.size(); ++i) {
-            hits_seq[i] = static_cast<int64_t>(motif_hits[i]);
-        }
-
+    const size_t num_models = runner.num_models();
+    for (size_t model_id = 0; model_id < num_models; ++model_id) {
+        const auto base_id = runner.model_params(model_id).mods.base_id;
+        auto& hits_seq = per_base_hits_seq.at(base_id);
+        hits_seq = runner.get_motif_hits(model_id, seq);
         has_hits |= !hits_seq.empty();
     }
     return has_hits;
 }
 
 // Translate the sequence-space hits into signal-space
-void ModBaseChunkCallerNode::populate_hits_sig(PerBaseIntVec& per_base_hits_sig,
-                                               const PerBaseIntVec& per_base_hits_seq,
-                                               const std::vector<uint64_t>& seq_to_sig_map) const {
+void ModBaseChunkCallerNode::populate_hits_sig(PerBaseSizeTVec& per_base_hits_sig,
+                                               const PerBaseSizeTVec& per_base_hits_seq,
+                                               const std::vector<uint64_t>& seq_to_sig_map,
+                                               const modbase::ModBaseRunner& runner) const {
     nvtx3::scoped_range range{"pop_hits_sig"};
-    const auto& runner = m_runners.at(0);
-    for (size_t model_id = 0; model_id < runner->num_models(); ++model_id) {
-        const int base_id = runner->model_params(model_id).mods.base_id;
+    const size_t num_models = runner.num_models();
+    for (size_t model_id = 0; model_id < num_models; ++model_id) {
+        const int base_id = runner.model_params(model_id).mods.base_id;
         const auto& hits_seq = per_base_hits_seq.at(base_id);
         auto& hits_sig = per_base_hits_sig.at(base_id);
 
-        hits_sig.resize(hits_seq.size());
-        for (size_t i = 0; i < hits_seq.size(); ++i) {
+        const size_t hits_len = hits_seq.size();
+        hits_sig.resize(hits_len);
+        for (size_t i = 0; i < hits_len; ++i) {
             hits_sig[i] = seq_to_sig_map.at(hits_seq[i]);
         }
     }
@@ -420,7 +423,7 @@ void ModBaseChunkCallerNode::populate_encoded_kmer(std::vector<int8_t>& encoded_
 }
 
 std::vector<bool> ModBaseChunkCallerNode::get_minimal_encoding_skips(
-        const modbase::RunnerPtr& runner,
+        const modbase::ModBaseRunner& runner,
         const std::vector<ModBaseChunks>& chunks_by_caller,
         const EncodingData& encoding_data) const {
     if (!m_minimal_encode) {
@@ -429,10 +432,11 @@ std::vector<bool> ModBaseChunkCallerNode::get_minimal_encoding_skips(
 
     nvtx3::scoped_range range{"min_encode"};
     std::vector<uint64_t> chunk_sizes;
-    chunk_sizes.reserve(runner->num_models());
-    for (size_t model_id = 0; model_id < runner->num_models(); model_id++) {
+    const size_t num_models = runner.num_models();
+    chunk_sizes.reserve(num_models);
+    for (size_t model_id = 0; model_id < num_models; model_id++) {
         chunk_sizes.push_back(
-                static_cast<uint64_t>(runner->model_params(model_id).context.chunk_size));
+                static_cast<uint64_t>(runner.model_params(model_id).context.chunk_size));
     }
 
     // Get contiguous intervals from all models and chunks.
@@ -551,7 +555,7 @@ void ModBaseChunkCallerNode::populate_signal(at::Tensor& signal,
                                              std::vector<uint64_t>& seq_to_sig_map,
                                              const at::Tensor& raw_data,
                                              const std::vector<int>& int_seq,
-                                             const modbase::RunnerPtr& runner) const {
+                                             const modbase::ModBaseRunner& runner) const {
     if (m_is_rna_model) {
         nvtx3::scoped_range range{"pop_sig_rna"};
 
@@ -566,21 +570,23 @@ void ModBaseChunkCallerNode::populate_signal(at::Tensor& signal,
 
         sig.slice(0, 0, padding) = raw_data.slice(0, len - padding, len);
 
-        signal = runner->scale_signal(0, sig, int_seq, seq_to_sig_map);
-        return;
+        signal = runner.scale_signal(0, sig, int_seq, seq_to_sig_map);
+
+    } else {
+        nvtx3::scoped_range range{"pop_sig"};
+        signal = runner.scale_signal(0, raw_data, int_seq, seq_to_sig_map);
     }
-    nvtx3::scoped_range range{"pop_sig"};
-    signal = runner->scale_signal(0, raw_data, int_seq, seq_to_sig_map);
-    return;
 }
 
 // For each caller, get chunk definitions which always contain a context hit.
 std::vector<ModBaseChunkCallerNode::ModBaseChunks> ModBaseChunkCallerNode::get_chunks(
-        const modbase::RunnerPtr& runner,
+        const modbase::ModBaseRunner& runner,
         const std::shared_ptr<WorkingRead>& working_read,
         const bool is_template) const {
     nvtx3::scoped_range range{"mbc_get_chunks"};
-    std::vector<ModBaseChunks> chunks_to_enqueue_by_model(runner->num_models());
+
+    const size_t num_models = runner.num_models();
+    std::vector<ModBaseChunks> chunks_to_enqueue_by_model(num_models);
 
     // Complement modbase data is stored in the template direction so there's no need for
     // any indexing gymnastics in chunk creation
@@ -589,10 +595,10 @@ std::vector<ModBaseChunkCallerNode::ModBaseChunks> ModBaseChunkCallerNode::get_c
 
     const int64_t signal_len = modbase_data.signal.size(0);
 
-    for (size_t model_id = 0; model_id < runner->num_models(); ++model_id) {
+    for (size_t model_id = 0; model_id < num_models; ++model_id) {
         auto& chunks_to_enqueue = chunks_to_enqueue_by_model.at(model_id);
 
-        const auto& config = runner->model_params(model_id);
+        const auto& config = runner.model_params(model_id);
         const auto base_id = config.mods.base_id;
 
         const auto& hits_to_sig = modbase_data.per_base_hits_sig[base_id];
@@ -615,7 +621,7 @@ std::vector<ModBaseChunkCallerNode::ModBaseChunks> ModBaseChunkCallerNode::get_c
 
 std::vector<std::pair<int64_t, int64_t>> ModBaseChunkCallerNode::get_chunk_starts(
         const int64_t signal_len,
-        const std::vector<int64_t>& hits_to_sig,
+        const std::vector<size_t>& hits_to_sig,
         const int64_t chunk_size,
         const int64_t context_samples_before,
         const int64_t context_samples_after,
@@ -631,7 +637,7 @@ std::vector<std::pair<int64_t, int64_t>> ModBaseChunkCallerNode::get_chunk_start
         }
 
         const int64_t hit_idx = next_hit.value();
-        const int64_t hit_sig = hits_to_sig.at(hit_idx);
+        const int64_t hit_sig = static_cast<int64_t>(hits_to_sig.at(hit_idx));
 
         // Add context samples as a lead-in
         chunk_st = hit_sig - context_samples_before;
@@ -648,7 +654,7 @@ std::vector<std::pair<int64_t, int64_t>> ModBaseChunkCallerNode::get_chunk_start
     }
 
     if (chunks.size() > 1 && end_align_last_chunk) {
-        const int64_t last_hit = hits_to_sig.back();
+        const int64_t last_hit = static_cast<int64_t>(hits_to_sig.back());
         const int64_t aligned_chunk_st = last_hit + context_samples_after - chunk_size;
         if (aligned_chunk_st > 0) {
             chunks.back().first = aligned_chunk_st;
@@ -678,7 +684,7 @@ void ModBaseChunkCallerNode::add_read_to_working_set(std::unique_ptr<ReadType> r
 
 std::optional<ModBaseChunkCallerNode::EncodingData> ModBaseChunkCallerNode::populate_modbase_data(
         ModBaseData& mbd,
-        const modbase::RunnerPtr& runner,
+        const modbase::ModBaseRunner& runner,
         const std::string& seq,
         const at::Tensor& signal,
         const std::vector<uint8_t>& moves,
@@ -696,7 +702,7 @@ std::optional<ModBaseChunkCallerNode::EncodingData> ModBaseChunkCallerNode::popu
     std::vector<uint64_t> seq_to_sig_map = get_seq_to_sig_map(moves, signal_len, seq.size() + 1);
     std::vector<int> int_seq = utils::sequence_to_ints(seq);
 
-    populate_hits_sig(mbd.per_base_hits_sig, mbd.per_base_hits_seq, seq_to_sig_map);
+    populate_hits_sig(mbd.per_base_hits_sig, mbd.per_base_hits_seq, seq_to_sig_map, runner);
     populate_signal(mbd.signal, seq_to_sig_map, signal, int_seq, runner);
 
     if (signal_len != static_cast<size_t>(mbd.signal.size(0))) {
@@ -710,7 +716,7 @@ std::optional<ModBaseChunkCallerNode::EncodingData> ModBaseChunkCallerNode::popu
 
 void ModBaseChunkCallerNode::simplex_mod_call(Message&& message) {
     // The callers of each runner are all the same, so just take the first one.
-    auto& runner = m_runners.at(0);
+    modbase::ModBaseRunner& runner = *m_runners.front();
 
     // Get ownership of the read
     auto read_ptr = message.take<SimplexReadPtr>();
@@ -761,7 +767,8 @@ void ModBaseChunkCallerNode::simplex_mod_call(Message&& message) {
     // Push the chunks to the chunk queues.
     // Needs to be done after working_read->read is set as chunks could be processed
     // before we set that value otherwise.
-    for (size_t model_id = 0; model_id < runner->num_models(); ++model_id) {
+    const size_t num_models = runner.num_models();
+    for (size_t model_id = 0; model_id < num_models; ++model_id) {
         auto& chunk_queue = m_chunk_queues.at(model_id);
         auto& chunks_to_enqueue = chunks_by_caller.at(model_id);
         for (auto& chunk : chunks_to_enqueue) {
@@ -772,7 +779,7 @@ void ModBaseChunkCallerNode::simplex_mod_call(Message&& message) {
 
 void ModBaseChunkCallerNode::duplex_mod_call(Message&& message) {
     // The callers of each runner are all the same, so just take the first one.
-    auto& runner = m_runners.at(0);
+    modbase::ModBaseRunner& runner = *m_runners.front();
 
     // Get ownership of the read
     auto read_ptr = message.take<DuplexReadPtr>();
@@ -862,7 +869,8 @@ void ModBaseChunkCallerNode::duplex_mod_call(Message&& message) {
     // Push the chunks to the chunk queues.
     // Needs to be done after working_read->read is set as chunks could be processed
     // before we set that value otherwise.
-    for (size_t model_id = 0; model_id < runner->num_models(); ++model_id) {
+    const size_t num_models = runner.num_models();
+    for (size_t model_id = 0; model_id < num_models; ++model_id) {
         auto& chunk_queue = m_chunk_queues.at(model_id);
         if (!chunks_by_caller_template.empty()) {
             for (auto& template_chunk : chunks_by_caller_template.at(model_id)) {
@@ -878,11 +886,11 @@ void ModBaseChunkCallerNode::duplex_mod_call(Message&& message) {
 }
 
 void ModBaseChunkCallerNode::create_and_submit_chunks(
-        modbase::RunnerPtr& runner,
+        modbase::ModBaseRunner& runner,
         const size_t model_id,
         const int64_t previous_chunk_count,
         std::vector<std::unique_ptr<ModBaseChunk>>& batched_chunks) const {
-    const auto& cfg = runner->model_params(model_id);
+    const auto& cfg = runner.model_params(model_id);
     const int64_t chunk_size = cfg.context.chunk_size;
     const int kmer_size_per_sample = cfg.context.kmer_len * utils::BaseInfo::NUM_BASES;
 
@@ -940,15 +948,15 @@ void ModBaseChunkCallerNode::create_and_submit_chunks(
             }
         }
 
-        runner->accept_chunk(static_cast<int>(model_id), static_cast<int>(chunk_idx), signal_chunk,
-                             encoded_kmers_chunk);
+        runner.accept_chunk(static_cast<int>(model_id), static_cast<int>(chunk_idx), signal_chunk,
+                            encoded_kmers_chunk);
     }
 }
 void ModBaseChunkCallerNode::chunk_caller_thread_fn(const size_t worker_id, const size_t model_id) {
     utils::set_thread_name("mbc_chunk_caller");
     at::InferenceMode inference_mode_guard;
 
-    auto& runner = m_runners.at(worker_id);
+    auto& runner = *m_runners.at(worker_id);
     auto& chunk_queue = m_chunk_queues.at(model_id);
 
     using Clock = std::remove_reference_t<decltype(chunk_queue)>::element_type::Clock;
@@ -987,7 +995,7 @@ void ModBaseChunkCallerNode::chunk_caller_thread_fn(const size_t worker_id, cons
             }
             stats::Timer timer;
             // Input tensor is full, let's get scores.
-            call_batch(worker_id, model_id, batched_chunks);
+            call_batch(runner, model_id, batched_chunks);
             m_model_ms += timer.GetElapsedMS();
             m_num_chunks += batched_chunks.size();
         }
@@ -996,21 +1004,21 @@ void ModBaseChunkCallerNode::chunk_caller_thread_fn(const size_t worker_id, cons
     // Basecall any remaining chunks.
     if (!batched_chunks.empty()) {
         stats::Timer timer;
-        call_batch(worker_id, model_id, batched_chunks);
+        call_batch(runner, model_id, batched_chunks);
         m_model_ms += timer.GetElapsedMS();
         m_num_chunks += batched_chunks.size();
     }
 }
 
 void ModBaseChunkCallerNode::call_batch(
-        const size_t worker_id,
+        modbase::ModBaseRunner& runner,
         const size_t model_id,
         std::vector<std::unique_ptr<ModBaseChunk>>& batched_chunks) {
     nvtx3::scoped_range loop{"call_batch"};
 
     // Results shape (N, strides*preds)
-    auto results = m_runners.at(worker_id)->call_chunks(static_cast<int>(model_id),
-                                                        static_cast<int>(batched_chunks.size()));
+    auto results =
+            runner.call_chunks(static_cast<int>(model_id), static_cast<int>(batched_chunks.size()));
 
     // Convert results to float32 with one call and address via a raw pointer,
     // to avoid huge libtorch indexing overhead.
@@ -1092,7 +1100,7 @@ int64_t ModBaseChunkCallerNode::resolve_duplex_sequence_index(const int64_t hit,
 void ModBaseChunkCallerNode::output_thread_fn() {
     at::InferenceMode inference_mode_guard;
     utils::set_thread_name("mbc_output");
-    const auto& runner = m_runners.at(0);
+    const auto& runner = *m_runners.front();
 
     std::unique_ptr<ModBaseChunk> chunk;
     while (m_processed_chunks.try_pop(chunk) == utils::AsyncQueueStatus::Success) {
@@ -1100,7 +1108,7 @@ void ModBaseChunkCallerNode::output_thread_fn() {
         auto& read = get_read_common_data(working_read->read);
 
         // Extract useful modbase model parameters
-        const auto& cfg = runner->model_params(chunk->model_id);
+        const auto& cfg = runner.model_params(chunk->model_id);
         const char modbase_model_base = cfg.mods.base;
         const int64_t modbase_stride = cfg.general.stride;
         const int64_t chunk_size = cfg.context.chunk_size;
@@ -1122,23 +1130,24 @@ void ModBaseChunkCallerNode::output_thread_fn() {
         const ModBaseData& modbase_data =
                 is_template_direction ? working_read->template_data : working_read->complement_data;
 
-        const std::vector<int64_t>& hits_seq = modbase_data.per_base_hits_seq.at(chunk->base_id);
-        const std::vector<int64_t>& hits_sig = modbase_data.per_base_hits_sig.at(chunk->base_id);
+        const std::vector<size_t>& hits_seq = modbase_data.per_base_hits_seq.at(chunk->base_id);
+        const std::vector<size_t>& hits_sig = modbase_data.per_base_hits_sig.at(chunk->base_id);
 
         // The offset into the mod probs for the canonical base
         const int64_t base_offset = static_cast<int64_t>(m_base_prob_offsets.at(cfg.mods.base_id));
 
-        for (size_t hit = chunk->hit_start; hit < hits_sig.size(); ++hit) {
+        const auto hit_max = hits_sig.size();
+        for (size_t hit = chunk->hit_start; hit < hit_max; ++hit) {
             // Context hit sequence index in the chunk sequence
-            const int64_t hit_seq = !working_read->is_duplex
-                                            ? hits_seq.at(hit)
-                                            : resolve_duplex_sequence_index(
-                                                      hits_seq.at(hit), modbase_data.target_start,
-                                                      read.seq.size(), is_template_direction);
+            const size_t hit_seq = !working_read->is_duplex
+                                           ? hits_seq.at(hit)
+                                           : resolve_duplex_sequence_index(
+                                                     hits_seq.at(hit), modbase_data.target_start,
+                                                     read.seq.size(), is_template_direction);
 
-            const auto& seq = is_template_direction
-                                      ? read.seq[hit_seq]
-                                      : dorado::utils::complement_table[read.seq[hit_seq]];
+            const char seq = is_template_direction
+                                     ? read.seq[hit_seq]
+                                     : dorado::utils::complement_table[read.seq[hit_seq]];
 
             // The canonical base should be constant for a single model
             if (seq != modbase_model_base) {
@@ -1149,7 +1158,7 @@ void ModBaseChunkCallerNode::output_thread_fn() {
                 throw std::runtime_error("Modbase hit base is not correct.");
             }
 
-            int64_t hit_score_idx = resolve_score_index(
+            const int64_t hit_score_idx = resolve_score_index(
                     hits_sig.at(hit), chunk->signal_start, scores_states, chunk_size,
                     context_samples_before, context_samples_after, modbase_stride);
 
@@ -1176,7 +1185,7 @@ void ModBaseChunkCallerNode::output_thread_fn() {
                 // Index into the probabilities is calculated by
                 // sequence_index * num_states := canonical "A" base probs index
                 // offset then by the canonical base modification offsets
-                const int64_t prob_idx = hit_seq * m_num_states + base_offset + mod_offset;
+                const size_t prob_idx = hit_seq * m_num_states + base_offset + mod_offset;
                 read.base_mod_probs.at(prob_idx) = score;
             }
         }

@@ -38,8 +38,8 @@ public:
     void terminate(const TerminateOptions&) override;
     void restart() override;
 
-    static std::optional<int64_t> next_hit(const std::vector<int64_t>& ctx_hit_signal_idxs,
-                                           const int64_t chunk_signal_start);
+    static std::optional<int64_t> next_hit(const std::vector<size_t>& ctx_hit_signal_idxs,
+                                           const size_t chunk_signal_start);
 
     static int64_t resolve_score_index(const int64_t hit_sig_abs,
                                        const int64_t chunk_signal_start,
@@ -56,7 +56,7 @@ public:
 
     static std::vector<std::pair<int64_t, int64_t>> get_chunk_starts(
             const int64_t signal_len,
-            const std::vector<int64_t>& hits_to_sig,
+            const std::vector<size_t>& hits_to_sig,
             const int64_t chunk_size,
             const int64_t context_samples_before,
             const int64_t context_samples_after,
@@ -68,7 +68,7 @@ public:
 
 private:
     using ModBaseChunks = std::vector<std::unique_ptr<ModBaseChunkCallerNode::ModBaseChunk>>;
-    using PerBaseIntVec = std::array<std::vector<int64_t>, 4>;
+    using PerBaseSizeTVec = std::array<std::vector<size_t>, 4>;
 
     void start_threads();
     void terminate_impl(utils::AsyncQueueTerminateFast fast);
@@ -78,7 +78,7 @@ private:
 
     void input_thread_fn();
 
-    void create_and_submit_chunks(modbase::RunnerPtr& runner,
+    void create_and_submit_chunks(modbase::ModBaseRunner& runner,
                                   const size_t model_id,
                                   const int64_t previous_chunk_count,
                                   std::vector<std::unique_ptr<ModBaseChunk>>& batched_chunks) const;
@@ -90,9 +90,9 @@ private:
     void duplex_mod_call(Message&& message);
 
     // Called by chunk_caller_thread_fn, calls the model and enqueues the results
-    void call_batch(size_t worker_id, size_t model_id, ModBaseChunks& batched_chunks);
+    void call_batch(modbase::ModBaseRunner& runner, size_t model_id, ModBaseChunks& batched_chunks);
 
-    std::vector<modbase::RunnerPtr> m_runners;
+    const std::vector<modbase::RunnerPtr> m_runners;
     const int64_t m_canonical_stride;
     const uint64_t m_sequence_stride_ratio;
     const int64_t m_batch_size;
@@ -133,24 +133,25 @@ private:
     void initialise_base_mod_probs(ReadCommon& read) const;
 
     std::optional<EncodingData> populate_modbase_data(ModBaseData& modbase_data,
-                                                      const modbase::RunnerPtr& runner,
+                                                      const modbase::ModBaseRunner& runner,
                                                       const std::string& seq,
                                                       const at::Tensor& signal,
                                                       const std::vector<uint8_t>& moves,
                                                       const std::string& read_id) const;
 
-    bool populate_hits_seq(PerBaseIntVec& context_hits_seq,
+    bool populate_hits_seq(PerBaseSizeTVec& context_hits_seq,
                            const std::string& seq,
-                           const modbase::RunnerPtr& runner) const;
-    void populate_hits_sig(PerBaseIntVec& context_hits_sig,
-                           const PerBaseIntVec& context_hits_seq,
-                           const std::vector<uint64_t>& seq_to_sig_map) const;
+                           const modbase::ModBaseRunner& runner) const;
+    void populate_hits_sig(PerBaseSizeTVec& context_hits_sig,
+                           const PerBaseSizeTVec& context_hits_seq,
+                           const std::vector<uint64_t>& seq_to_sig_map,
+                           const modbase::ModBaseRunner& runner) const;
 
     void populate_signal(at::Tensor& signal,
                          std::vector<uint64_t>& seq_to_sig_map,
                          const at::Tensor& raw_data,
                          const std::vector<int>& int_seq,
-                         const modbase::RunnerPtr& runner) const;
+                         const modbase::ModBaseRunner& runner) const;
 
     void populate_encoded_kmer(std::vector<int8_t>& encoded_kmer,
                                const size_t raw_samples,
@@ -158,7 +159,7 @@ private:
                                const std::vector<uint64_t>& seq_to_sig_map,
                                const std::vector<bool>& base_skips) const;
 
-    std::vector<bool> get_minimal_encoding_skips(const modbase::RunnerPtr& runner,
+    std::vector<bool> get_minimal_encoding_skips(const modbase::ModBaseRunner& runner,
                                                  const std::vector<ModBaseChunks>& chunks_by_caller,
                                                  const EncodingData& encoding_data) const;
 
@@ -170,7 +171,7 @@ private:
                                              const size_t raw_samples,
                                              const size_t reserve) const;
 
-    std::vector<ModBaseChunks> get_chunks(const modbase::RunnerPtr& runner,
+    std::vector<ModBaseChunks> get_chunks(const modbase::ModBaseRunner& runner,
                                           const std::shared_ptr<WorkingRead>& working_read,
                                           const bool is_template) const;
 
