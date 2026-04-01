@@ -3,9 +3,11 @@
 #include "cli/utils/cli_utils.h"
 #include "demux/adapter_info.h"
 #include "dorado_version.h"
+#include "hts_utils/KString.h"
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/ReadInitialiser.h"
 #include "read_pipeline/base/ReadPipeline.h"
 #include "read_pipeline/nodes/AdapterDetectorNode.h"
 #include "read_pipeline/nodes/HtsWriterNode.h"
@@ -145,12 +147,6 @@ int trim(int argc, char* argv[]) {
     }
 
     utils::HtsFile hts_file("-", output_mode, trim_writer_threads, false);
-    hts_file.set_header(header.get());
-
-    PipelineDescriptor pipeline_desc;
-    auto hts_writer = pipeline_desc.add_node<HtsWriterNode>({}, hts_file, "");
-
-    auto trimmer = pipeline_desc.add_node<TrimmerNode>({hts_writer}, 1, parser.get<bool>("--rna"));
 
     auto adapter_info = std::make_shared<demux::AdapterInfo>();
     adapter_info->trim_adapters = true;
@@ -167,6 +163,36 @@ int trim(int argc, char* argv[]) {
     client_info->contexts().register_context<const demux::AdapterInfo>(adapter_info);
     reader.set_client_info(client_info);
 
+    TrimFlags trim_flags;
+    trim_flags.set_adapter();
+    if (adapter_info->trim_primers) {
+        trim_flags.set_primer();
+    }
+    ReadInitialiser read_initialiser(reader.header(), AlignmentCounts{}, trim_flags);
+    reader.add_read_initialiser(
+            [&read_initialiser](HtsData& data) { read_initialiser.update_read_attributes(data); });
+
+    auto update_trim_flags = utils::HeaderMapper::Modifier([&trim_flags](sam_hdr_t* hdr) {
+        int num_rg_lines = sam_hdr_count_lines(hdr, "RG");
+        KString tag_wrapper(100000);
+        auto& tag_value = tag_wrapper.get();
+        TrimFlags updated_trim_flags = trim_flags;
+        for (int i = 0; i < num_rg_lines; ++i) {
+            if (sam_hdr_find_tag_pos(hdr, "RG", i, "tm", &tag_value) == 0) {
+                TrimFlags existing_trim_flags = TrimFlags::from_string({tag_value.s, tag_value.l});
+                updated_trim_flags.merge(existing_trim_flags);
+            }
+            auto rg_id = sam_hdr_line_name(hdr, "RG", i);
+            sam_hdr_update_line(hdr, "RG", "ID", rg_id, "tm", to_string(updated_trim_flags).c_str(),
+                                nullptr);
+        }
+    });
+    update_trim_flags(header.get());
+    hts_file.set_header(header.get());
+
+    PipelineDescriptor pipeline_desc;
+    auto hts_writer = pipeline_desc.add_node<HtsWriterNode>({}, hts_file, "");
+    auto trimmer = pipeline_desc.add_node<TrimmerNode>({hts_writer}, 1, parser.get<bool>("--rna"));
     pipeline_desc.add_node<AdapterDetectorNode>({trimmer}, trim_threads);
 
     // Create the Pipeline from our description.

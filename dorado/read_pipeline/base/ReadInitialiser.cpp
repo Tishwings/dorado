@@ -35,13 +35,21 @@ int get_min_qscore(sam_hdr_t* header) {
 
 }  // namespace
 
-ReadInitialiser::ReadInitialiser(sam_hdr_t* hdr, AlignmentCounts aln_counts)
+ReadInitialiser::ReadInitialiser(sam_hdr_t* hdr, AlignmentCounts aln_counts, TrimFlags trim_flags)
         : m_header(hdr),
           m_alignment_counts(std::move(aln_counts)),
           m_read_groups(utils::parse_read_groups(m_header)),
-          m_minimum_qscore(get_min_qscore(m_header)) {}
+          m_minimum_qscore(get_min_qscore(m_header)),
+          m_trim_flags(trim_flags) {}
 
 void ReadInitialiser::update_read_attributes(HtsData& data) const {
+    if (const auto tm_tag = bam_aux_get(data.bam_ptr.get(), "tm"); tm_tag != nullptr) {
+        // update trim flags from the record itself
+        std::string_view tm_str = bam_aux2Z(tm_tag);
+        data.read_attrs.trim_flags = TrimFlags::from_string(tm_str);
+        data.read_attrs.trim_flags.merge(m_trim_flags);
+    }
+
     if (const auto rg_tag = bam_aux_get(data.bam_ptr.get(), "RG"); rg_tag != nullptr) {
         const std::string rg_tag_value = bam_aux2Z(rg_tag);
         const auto read_group_it = m_read_groups.find(rg_tag_value);
@@ -54,6 +62,10 @@ void ReadInitialiser::update_read_attributes(HtsData& data) const {
         assign_not_empty(data.read_attrs.experiment_id, read_group.experiment_id);
         assign_not_empty(data.read_attrs.sample_id, read_group.sample_id);
         assign_not_empty(data.read_attrs.protocol_run_id, read_group.run_id);
+
+        data.read_attrs.trim_flags = read_group.trim_flags;
+        data.read_attrs.trim_flags.merge(m_trim_flags);
+
         // position_id is not currently stored in the output files
         // assign_not_empty(data.read_attrs.position_id, read_group.position_id);
         data.read_attrs.protocol_start_time_ms =

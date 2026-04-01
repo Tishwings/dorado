@@ -497,9 +497,10 @@ int duplex(int argc, char* argv[]) {
             // TODO: supply modbase model names once duplex modbase is complete
             auto read_groups = file_info::load_read_groups(input_pod5_files.get(),
                                                            models.get_simplex_config().stride,
-                                                           models.get_simplex_model_name(), "");
-            read_groups.merge(file_info::load_read_groups(
-                    input_pod5_files.get(), models.get_stereo_config().stride, duplex_rg_name, ""));
+                                                           models.get_simplex_model_name(), "", {});
+            read_groups.merge(file_info::load_read_groups(input_pod5_files.get(),
+                                                          models.get_stereo_config().stride,
+                                                          duplex_rg_name, "", {}));
 
             utils::add_rg_headers(hdr.get(), read_groups);
 

@@ -35,25 +35,28 @@ void ReadToBamTypeNode::input_thread_fn() {
                                                        is_duplex_parent);
 
         const HtsData::ReadAttributes read_attrs{
-                std::move(read_common_data.sequencing_kit),
-                std::move(read_common_data.experiment_id),
-                read_common_data.sample_id.empty() ? std::string{"no_sample"}
-                                                   : std::move(read_common_data.sample_id),
-                std::move(read_common_data.position_id),
-                std::move(read_common_data.flowcell_id),
-                std::move(read_common_data.run_id),
-                std::move(read_common_data.acquisition_id),
-                read_common_data.barcoding_result
-                        ? barcode_kits::normalize_barcode_name(
-                                  read_common_data.barcoding_result->barcode_name)
-                        : std::string(),
-                read_common_data.barcoding_result ? read_common_data.barcoding_result->alias
-                                                  : std::string(),
-                read_common_data.protocol_start_time_ms,
-                read_common_data.subread_id,
-                is_status_pass,
-                read_common_data.start_time_ms,
-                read_common_data.attributes.model_stride,
+                .sequencing_kit = std::move(read_common_data.sequencing_kit),
+                .experiment_id = std::move(read_common_data.experiment_id),
+                .sample_id = read_common_data.sample_id.empty()
+                                     ? std::string{"no_sample"}
+                                     : std::move(read_common_data.sample_id),
+                .position_id = std::move(read_common_data.position_id),
+                .flowcell_id = std::move(read_common_data.flowcell_id),
+                .protocol_run_id = std::move(read_common_data.run_id),
+                .acquisition_id = std::move(read_common_data.acquisition_id),
+                .barcode_id = read_common_data.barcoding_result
+                                      ? barcode_kits::normalize_barcode_name(
+                                                read_common_data.barcoding_result->barcode_name)
+                                      : std::string(),
+                .barcode_alias = read_common_data.barcoding_result
+                                         ? read_common_data.barcoding_result->alias
+                                         : std::string(),
+                .protocol_start_time_ms = read_common_data.protocol_start_time_ms,
+                .subread_id = read_common_data.subread_id,
+                .is_status_pass = is_status_pass,
+                .start_time_ms = read_common_data.start_time_ms,
+                .model_stride = read_common_data.attributes.model_stride,
+                .trim_flags = read_common_data.trim_flags,
         };
 
         for (auto& aln : alns) {

@@ -152,6 +152,8 @@ public:
     float model_q_bias{0.0f};
     float model_q_scale{0.0f};
 
+    TrimFlags trim_flags{};
+
 private:
     void generate_duplex_read_tags(bam1_t*) const;
     void generate_read_tags(bam1_t* aln, bool emit_moves, bool is_duplex_parent) const;

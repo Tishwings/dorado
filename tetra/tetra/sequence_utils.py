@@ -224,7 +224,7 @@ def _sort_rg_lines(lines: typing.List[typing.Dict]) -> typing.List[typing.Dict]:
             lines_by_id[line["ID"]] = line
         else:
             lines_with_no_id.append(line)
-    sorted_ids = list(lines_by_id.keys()).sort()
+    sorted_ids = sorted(list(lines_by_id.keys()))
     if sorted_ids is None:
         return lines_with_no_id
     new_lines = [lines_by_id[id] for id in sorted_ids]

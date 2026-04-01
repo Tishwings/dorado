@@ -51,6 +51,15 @@ void HtsFileWriter::prepare_item(HtsData &hts_data) const {
             bam_aux_update_str(hts_data.bam_ptr.get(), "al", static_cast<int>(alias.length() + 1),
                                alias.data());
         }
+
+        std::string trim_flags_str = to_string(hts_data.read_attrs.trim_flags);
+        bam_aux_update_str(hts_data.bam_ptr.get(), "tm",
+                           static_cast<int>(trim_flags_str.length() + 1), trim_flags_str.c_str());
+    } else {
+        // remove tags that should be in the read group header instead of the record itself
+        if (auto tm_tag = bam_aux_get(hts_data.bam_ptr.get(), "tm"); tm_tag != nullptr) {
+            bam_aux_del(hts_data.bam_ptr.get(), tm_tag);
+        }
     }
 
     // Verify that the MN tag, if it exists, and the sequence length are in sync.

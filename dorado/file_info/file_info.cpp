@@ -1,6 +1,5 @@
 #include "file_info/file_info.h"
 
-#include "hts_utils/hts_types.h"
 #include "utils/PostCondition.h"
 #include "utils/fs_utils.h"
 #include "utils/time_utils.h"
@@ -19,7 +18,8 @@ std::unordered_map<std::string, ReadGroup> load_read_groups(
         const std::vector<std::filesystem::directory_entry>& dir_files,
         int model_stride,
         const std::string& model_name,
-        const std::string& modbase_model_names) {
+        const std::string& modbase_model_names,
+        TrimFlags trim_flags) {
     if (pod5_init() != POD5_OK) {
         throw std::runtime_error(
                 fmt::format("Failed to initialise POD5: {}", pod5_get_error_string()));
@@ -88,6 +88,7 @@ std::unordered_map<std::string, ReadGroup> load_read_groups(
                     .barcode_id = {},
                     .barcode_alias = {},
                     .model_stride = model_stride,
+                    .trim_flags = trim_flags,
             };
         }
     }

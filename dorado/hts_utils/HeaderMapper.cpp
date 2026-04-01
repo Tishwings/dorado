@@ -129,6 +129,7 @@ void HeaderMapper::process(const std::unordered_map<std::string, ReadGroup>& rea
         assign_not_empty(attrs.sample_id, read_group.sample_id);
         assign_not_empty(attrs.protocol_run_id, read_group.run_id);
         assign_not_empty(attrs.experiment_id, read_group.experiment_id);
+        attrs.trim_flags = read_group.trim_flags;
 
         if (m_kit_name) {
             read_group.barcode_id = "unclassified";
@@ -215,6 +216,7 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
         assign_not_empty(attrs.experiment_id, rg_data.data.experiment_id);
         assign_not_empty(attrs.barcode_id, rg_data.data.barcode_id);
         assign_not_empty(attrs.barcode_alias, rg_data.data.barcode_alias);
+        attrs.trim_flags = rg_data.data.trim_flags;
 
         if (attrs.barcode_alias == attrs.barcode_id) {
             // File headers may have both the barcode and alias set to the same value
@@ -431,6 +433,7 @@ std::unordered_map<std::string, HtsData::ReadAttributes> HeaderMapper::get_read_
             // But when we classify we leave the alias blank if it is unused, so clear it here to match
             attrs.barcode_alias.clear();
         }
+        attrs.trim_flags = TrimFlags::from_string(get_tag("tm", tags));
 
         // TODO: position_id is not in the specification yet
 

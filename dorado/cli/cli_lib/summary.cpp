@@ -101,7 +101,7 @@ int summary(int argc, char *argv[]) {
     using namespace hts_writer;
     for (const auto &input_file : all_files) {
         HtsReader reader(input_file.string(), std::nullopt);
-        ReadInitialiser read_initialiser(reader.header(), alignment_counts);
+        ReadInitialiser read_initialiser(reader.header(), alignment_counts, TrimFlags{});
         reader.add_read_initialiser([&read_initialiser](HtsData &data) {
             read_initialiser.update_read_attributes(data);
         });

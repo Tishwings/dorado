@@ -16,7 +16,7 @@ using AlignmentCounts = std::unordered_map<std::string, std::array<int, 3>>;
 
 class ReadInitialiser {
 public:
-    ReadInitialiser(sam_hdr_t* hdr, AlignmentCounts aln_counts);
+    ReadInitialiser(sam_hdr_t* hdr, AlignmentCounts aln_counts, TrimFlags trim_flags);
     void update_read_attributes(HtsData& data) const;
     void update_barcoding_fields(HtsData& data) const;
     void update_alignment_fields(HtsData& data) const;
@@ -26,6 +26,7 @@ private:
     AlignmentCounts m_alignment_counts;
     std::unordered_map<std::string, dorado::ReadGroup> m_read_groups;
     int m_minimum_qscore;
+    TrimFlags m_trim_flags;
 };
 
 void update_alignment_counts(const std::filesystem::path& path, AlignmentCounts& alignment_counts);
