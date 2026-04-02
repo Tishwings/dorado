@@ -13,6 +13,7 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/stats.h
         ${PUBLIC_BASE}/variant.h
         ${PUBLIC_BASE}/vcf_writer.h
+        ${PUBLIC_BASE}/window.h
         ${PUBLIC_BASE}/worker_return_status.h
     PRIVATE
         alignment.cpp
@@ -22,6 +23,7 @@ target_sources(dorado_secondary
         region.cpp
         variant.cpp
         vcf_writer.cpp
+        window.cpp
 )
 
 target_include_directories(dorado_secondary

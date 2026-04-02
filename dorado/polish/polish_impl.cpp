@@ -6,6 +6,7 @@
 #include "secondary/common/region.h"
 #include "secondary/consensus/sample_collate_utils.h"
 #include "secondary/consensus/variant_calling.h"
+#include "secondary/consensus/window_utils.h"
 #include "torch_utils/gpu_profiling.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"

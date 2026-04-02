@@ -1,4 +1,5 @@
-#include "secondary/consensus/window.h"
+#include "secondary/common/window.h"
+#include "secondary/consensus/window_utils.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
