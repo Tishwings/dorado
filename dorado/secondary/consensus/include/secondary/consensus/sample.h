@@ -1,5 +1,8 @@
 #pragma once
 
+#include "secondary/common/interval.h"
+#include "secondary/common/interval_tree_types.h"
+
 #include <ATen/core/TensorBody.h>
 
 #include <cstdint>
@@ -58,5 +61,53 @@ void debug_print_sample(std::ostream& os,
 std::ostream& operator<<(std::ostream& os, const Sample& sample);
 
 std::string sample_to_string(const Sample& sample);
+
+/**
+ * \brief Takes an input sample and splits it bluntly into overlapping windows.
+ *          Splitting is implemented to match Medaka, where a simple sliding window is used to create smaller samples.
+ *          In case of a short trailing portion (shorter than chunk_len), a potentially large overlap is produced to
+ *          cover this region instead of just outputing the small chunk.
+ */
+std::vector<secondary::Sample> split_samples(std::vector<Sample> samples,
+                                             const int64_t chunk_len,
+                                             const int64_t chunk_overlap);
+
+std::vector<Sample> split_samples_around_positions(
+        std::vector<Sample> samples,
+        const secondary::IntervalTreesInt64Map& candidate_trees,
+        const int64_t chunk_len,
+        const int64_t flanking_bases);
+
+std::vector<secondary::Sample> split_samples_tiled_with_candidates(
+        std::vector<secondary::Sample> samples,
+        const secondary::IntervalTreesInt64Map& candidate_trees,
+        const int64_t chunk_len,
+        const int64_t chunk_overlap,
+        const bool ext_flanks,          // Control extension heuristic.
+        const int64_t ext_major_bases,  // Check this many major positions to trigger.
+        const int64_t ext_min_cov,      // Minimum absolute coverage to trigger the heuristic.
+        const double ext_cov_frac       // Minimum coverage fraction to trigger the heuristic.
+);
+
+/**
+ * \brief Finds contiguous intervals of sample columns which should be kept for processing.
+ *          Low-coverage columns are excluded and coordinate gaps split adjacent intervals.
+ */
+std::vector<secondary::Interval64> find_sample_intervals(const secondary::Sample& sample,
+                                                         const bool split_on_gaps,
+                                                         const int64_t min_depth);
+
+std::vector<secondary::Sample> split_sample_on_intervals(
+        const secondary::Sample& sample,
+        const std::vector<secondary::Interval64>& intervals);
+
+/**
+ * \brief If the input sample coordinates (positions_major) have gaps,
+ *          this function splits the sample on those gaps and produces
+ *          one or more samples in the output.
+ *          When possible, input data is moved to the output, and that is
+ *          why the inpunt is not const.
+ */
+std::vector<secondary::Sample> split_sample_on_discontinuities(const secondary::Sample& sample);
 
 }  // namespace dorado::secondary
