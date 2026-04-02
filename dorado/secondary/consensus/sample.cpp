@@ -178,6 +178,9 @@ void merge_adjacent_samples_in_place(Sample& lh, const Sample& rh) {
 std::vector<secondary::Sample> split_samples(std::vector<Sample> samples,
                                              const int64_t chunk_len,
                                              const int64_t chunk_overlap) {
+    if (chunk_len <= 0) {
+        throw std::runtime_error("Wrong chunk_len. chunk_len = " + std::to_string(chunk_len));
+    }
     if ((chunk_overlap < 0) || (chunk_overlap > chunk_len)) {
         throw std::runtime_error(
                 "Wrong chunk_overlap length. chunk_len = " + std::to_string(chunk_len) +
@@ -222,6 +225,9 @@ std::vector<Sample> split_samples_around_positions(
         const int64_t flanking_bases) {
     constexpr int64_t MIN_FLANKING_BASES = 3;
 
+    if (chunk_len <= 0) {
+        throw std::runtime_error("Wrong chunk_len. chunk_len = " + std::to_string(chunk_len));
+    }
     if ((flanking_bases < 0) || (flanking_bases > chunk_len)) {
         throw std::runtime_error(
                 "Wrong flanking_bases length. chunk_len = " + std::to_string(chunk_len) +
@@ -364,6 +370,9 @@ std::vector<secondary::Sample> split_samples_tiled_with_candidates(
         const int64_t ext_min_cov,      // Minimum absolute coverage to trigger the heuristic.
         const double ext_cov_frac       // Minimum coverage fraction to trigger the heuristic.
 ) {
+    if (chunk_len <= 0) {
+        throw std::runtime_error("Wrong chunk_len. chunk_len = " + std::to_string(chunk_len));
+    }
     if ((chunk_overlap < 0) || (chunk_overlap > chunk_len)) {
         throw std::runtime_error(
                 "Wrong chunk_overlap length. chunk_len = " + std::to_string(chunk_len) +
