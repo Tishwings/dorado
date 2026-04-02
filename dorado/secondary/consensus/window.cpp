@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include <ostream>
+#include <sstream>
 
 namespace dorado::secondary {
 
@@ -17,6 +18,12 @@ bool operator==(const Window& lhs, const Window& rhs) {
     return std::tie(lhs.seq_id, lhs.seq_length, lhs.start, lhs.end, lhs.start_no_overlap,
                     lhs.end_no_overlap) == std::tie(rhs.seq_id, rhs.seq_length, rhs.start, rhs.end,
                                                     rhs.start_no_overlap, rhs.end_no_overlap);
+}
+
+std::string window_to_string(const Window& w) {
+    std::ostringstream oss;
+    oss << w;
+    return oss.str();
 }
 
 std::vector<Window> create_windows(const int32_t seq_id,

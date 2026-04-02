@@ -1,4 +1,4 @@
-Provide candidate variant sites to seed inference windows (the --candidates feature).
+Internally call simple variants and run inference only on computed candidate regions.
   $ rm -rf out; mkdir -p out
   > in_dir_1=${TEST_DATA_DIR}/variant/test-02-supertiny
   > in_dir_2=${TEST_DATA_DIR}/variant/test-03-kadayashi-varcall

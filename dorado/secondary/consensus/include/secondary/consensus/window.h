@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <iosfwd>
+#include <string>
 #include <vector>
 
 namespace dorado::secondary {
@@ -19,6 +20,8 @@ struct Window {
 // clang-format on
 
 std::ostream& operator<<(std::ostream& os, const Window& w);
+
+std::string window_to_string(const Window& w);
 
 bool operator==(const Window& lhs, const Window& rhs);
 

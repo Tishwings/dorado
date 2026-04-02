@@ -10,15 +10,7 @@
 #include <tuple>
 #include <vector>
 
-struct bcf_hdr_t;
-
 namespace dorado::secondary {
-
-// RAII for the BCF header.
-struct BcfHdrDestructor {
-    void operator()(bcf_hdr_t*);
-};
-using BcfHdrPtr = std::unique_ptr<bcf_hdr_t, BcfHdrDestructor>;
 
 class VCFWriter {
 public:

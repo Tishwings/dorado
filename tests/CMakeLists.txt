@@ -94,6 +94,7 @@ add_executable(dorado_tests
     TensorUtilsTest.cpp
     TimeUtilsTest.cpp
     TrimTest.cpp
+    VCFWriterTest.cpp
     WriterNodeTest.cpp
 )
 

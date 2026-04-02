@@ -4,11 +4,20 @@
 
 namespace dorado::secondary {
 
-struct Interval {
-    int32_t start = 0;
-    int32_t end = 0;
+template <typename T>
+struct IntervalGeneric {
+    T start{};
+    T end{};
 
-    int32_t length() const { return end - start; }
+    T length() const { return end - start; }
 };
+
+template <typename T>
+bool operator==(const IntervalGeneric<T>& a, const IntervalGeneric<T>& b) {
+    return (a.start == b.start) && (a.end == b.end);
+}
+
+using Interval = IntervalGeneric<int32_t>;
+using Interval64 = IntervalGeneric<int64_t>;
 
 }  // namespace dorado::secondary

@@ -3,6 +3,7 @@
 #include "dorado_version.h"
 #include "utils/container_utils.h"
 
+#include <htslib/hts.h>
 #include <htslib/vcf.h>
 
 #include <sstream>
@@ -11,23 +12,25 @@
 
 namespace dorado::secondary {
 
-// RAII for the BCF header.
-void BcfHdrDestructor::operator()(bcf_hdr_t* p) {
-    if (p) {
-        bcf_hdr_destroy(p);
+namespace {
+
+void ensure_shared_buffer_initialized(bcf1_t& record) {
+    if (record.shared.s != nullptr) {
+        return;
     }
+
+    // Workaround for a Htslib ASAN/UBSAN bug.
+    // Htslib's allele update path computes rlen via pointer arithmetic on shared.s even for a
+    // freshly initialized record. Under ASAN/UBSAN, a null shared buffer trips that path before
+    // any record data has been synced into the shared block. Use Htslib's resize helper so the
+    // buffer is allocated and later freed on the same side of the library boundary.
+    if (hts_resize(char, 1, &record.shared.m, &record.shared.s, HTS_RESIZE_CLEAR) < 0) {
+        throw std::runtime_error("Failed to allocate the BCF shared buffer.");
+    }
+    record.shared.l = 0;
 }
 
-// RAII for a single BCF record.
-struct BcfRecordDestructor {
-    void operator()(bcf1_t*);
-};
-void BcfRecordDestructor::operator()(bcf1_t* p) {
-    if (p) {
-        bcf_destroy(p);
-    }
-}
-using BcfRecordPtr = std::unique_ptr<bcf1_t, BcfRecordDestructor>;
+}  // namespace
 
 VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
                      const std::vector<std::pair<std::string, std::string>>& filters,
@@ -84,11 +87,13 @@ VCFWriter::VCFWriter(const std::filesystem::path& in_fn,
 }
 
 void VCFWriter::write_variant(const Variant& variant) {
-    BcfRecordPtr record{bcf_init(), BcfRecordDestructor()};
+    BcfRecordPtr record{bcf_init(), BcfRecordDestructor{}};
 
     if (!record) {
         throw std::runtime_error("Failed to create VCF record.");
     }
+
+    ensure_shared_buffer_initialized(*record);
 
     // Format the alleles for Bcftools.
     std::ostringstream os_alleles;

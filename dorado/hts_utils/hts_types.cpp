@@ -1,6 +1,7 @@
 #include "hts_utils/hts_types.h"
 
 #include <htslib/sam.h>
+#include <htslib/vcf.h>
 #include <spdlog/spdlog.h>
 
 #include <memory>
@@ -9,6 +10,18 @@
 namespace dorado {
 
 void BamDestructor::operator()(bam1_t* bam) { bam_destroy1(bam); }
+
+void BcfHdrDestructor::operator()(bcf_hdr_t* header) {
+    if (header) {
+        bcf_hdr_destroy(header);
+    }
+}
+
+void BcfRecordDestructor::operator()(bcf1_t* record) {
+    if (record) {
+        bcf_destroy(record);
+    }
+}
 
 void SamHdrDestructor::operator()(sam_hdr_t* bam) { sam_hdr_destroy(bam); }
 
