@@ -12,6 +12,7 @@
 #include "secondary/common/stats.h"
 #include "secondary/common/vcf_writer.h"
 #include "secondary/consensus/variant_calling.h"
+#include "secondary/consensus/window_utils.h"
 #include "secondary/features/haplotag_source.h"
 #include "secondary/features/variant_candidate_source.h"
 #include "torch_utils/auto_detect_device.h"
@@ -1157,8 +1158,8 @@ void run_variant_calling(const Options& opt,
                 // NOTE: the window.seq_id is the _absolute_ sequence ID of the input draft sequences.
                 spdlog::debug("Creating BAM windows.");
                 const std::vector<secondary::Window> bam_regions =
-                        polisher::create_windows_from_regions(region_batch, draft_lookup,
-                                                              opt.bam_chunk, opt.window_overlap);
+                        secondary::create_windows_from_regions(region_batch, draft_lookup,
+                                                               opt.bam_chunk, opt.window_overlap);
 
                 spdlog::debug(
                         "[run_variant_calling] Starting to produce consensus for regions: {}-{}/{} "

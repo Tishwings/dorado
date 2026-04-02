@@ -123,16 +123,6 @@ std::vector<std::vector<secondary::ConsensusResult>> stitch_sequence(
         const std::optional<char>& fill_char);
 
 /**
- * \brief Creates windows from given input draft sequences or regions. If regions vector is empty, it will split all
- *          input draft sequences into windows.
- */
-std::vector<secondary::Window> create_windows_from_regions(
-        const std::vector<secondary::Region>& regions,
-        const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& draft_lookup,
-        int32_t bam_chunk_len,
-        int32_t window_overlap);
-
-/**
  * \brief Fetches the decode data from an async queue, decodes the consensus and collects
  *          the consensus results. It also returns a vector of the decode data taken off of the queue
  *          (i.e. the input used for decoding). This will be needed downstream for variant calling.

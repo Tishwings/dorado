@@ -10,6 +10,7 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/variant_calling_sample.h
         ${PUBLIC_BASE}/variant_calling.h
         ${PUBLIC_BASE}/window.h
+        ${PUBLIC_BASE}/window_utils.h
     PRIVATE
         consensus_utils.cpp
         sample.cpp
@@ -18,6 +19,7 @@ target_sources(dorado_secondary
         variant_calling_sample.cpp
         variant_calling.cpp
         window.cpp
+        window_utils.cpp
 )
 
 target_include_directories(dorado_secondary
