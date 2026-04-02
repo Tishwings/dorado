@@ -7,6 +7,7 @@
 #include "secondary/architectures/model_config.h"
 #include "secondary/architectures/model_torch_base.h"
 #include "secondary/common/interval.h"
+#include "secondary/common/interval_tree_types.h"
 #include "secondary/common/stats.h"
 #include "secondary/common/variant.h"
 #include "secondary/consensus/consensus_result.h"
@@ -18,8 +19,6 @@
 #include "secondary/features/encoder_factory.h"
 #include "secondary/features/kadayashi_options.h"
 #include "utils/AsyncQueue.h"
-
-#include <IntervalTree.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -36,9 +35,6 @@ class FastxRandomReader;
 }  // namespace dorado::hts_io
 
 namespace dorado::polisher {
-
-using IntervalTreeInt64 = interval_tree::IntervalTree<int64_t, int64_t>;
-using IntervalTreesInt64Map = std::unordered_map<int32_t, IntervalTreeInt64>;
 
 struct WorkerReturnStatus {
     bool exception_thrown{false};
@@ -150,7 +146,7 @@ void sample_producer(
         const std::vector<secondary::Window>& bam_regions,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
         const std::vector<std::unordered_map<std::string, int32_t>>& bam_region_haplotags,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
+        const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees,
         int32_t num_threads,
         int32_t batch_size,
         int32_t encoding_batch_size,

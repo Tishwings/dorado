@@ -869,11 +869,11 @@ std::unordered_map<std::string, std::vector<int64_t>> load_candidate_sites(
     return ret;
 }
 
-std::optional<std::unordered_map<int32_t, polisher::IntervalTreeInt64>>
+std::optional<std::unordered_map<int32_t, secondary::IntervalTreeInt64>>
 create_candidate_interval_trees(
         const std::unordered_map<std::string, std::vector<int64_t>>& candidate_sites,
         const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& draft_lookup) {
-    std::unordered_map<int32_t, polisher::IntervalTreeInt64> trees;
+    std::unordered_map<int32_t, secondary::IntervalTreeInt64> trees;
     for (const auto& [ref_name, positions] : candidate_sites) {
         const auto it = draft_lookup.find(ref_name);
         if (it == std::cend(draft_lookup)) {
@@ -884,20 +884,20 @@ create_candidate_interval_trees(
             continue;
         }
         const int32_t seq_id = static_cast<int32_t>(it->second.first);
-        std::vector<interval_tree::Interval<int64_t, int64_t>> intervals;
+        std::vector<secondary::IntervalInt64> intervals;
         for (const int64_t pos : positions) {
             intervals.emplace_back(pos, pos + 1, 0);
         }
-        trees[seq_id] = polisher::IntervalTreeInt64(std::move(intervals));
+        trees[seq_id] = secondary::IntervalTreeInt64(std::move(intervals));
     }
-    return std::optional<std::unordered_map<int32_t, polisher::IntervalTreeInt64>>(
+    return std::optional<std::unordered_map<int32_t, secondary::IntervalTreeInt64>>(
             std::move(trees));
 }
 
-std::unordered_map<int32_t, polisher::IntervalTreeInt64> create_sample_interval_trees(
+std::unordered_map<int32_t, secondary::IntervalTreeInt64> create_sample_interval_trees(
         const std::vector<secondary::VariantCallingSample>& vc_input_data,
         const int64_t trim_len) {
-    using IntervalInt64 = interval_tree::Interval<int64_t, int64_t>;
+    using IntervalInt64 = secondary::IntervalInt64;
 
     // Collect all the intervals.
     std::unordered_map<int32_t, std::vector<IntervalInt64>> all_intervals;
@@ -912,9 +912,9 @@ std::unordered_map<int32_t, polisher::IntervalTreeInt64> create_sample_interval_
     }
 
     // Construct the trees from the intervals.
-    std::unordered_map<int32_t, polisher::IntervalTreeInt64> trees;
+    std::unordered_map<int32_t, secondary::IntervalTreeInt64> trees;
     for (auto& [key, intervals] : all_intervals) {
-        trees[key] = polisher::IntervalTreeInt64(std::move(intervals));
+        trees[key] = secondary::IntervalTreeInt64(std::move(intervals));
     }
 
     return trees;
@@ -923,7 +923,7 @@ std::unordered_map<int32_t, polisher::IntervalTreeInt64> create_sample_interval_
 std::vector<secondary::Variant> merge_variants(
         const std::vector<secondary::Variant>& inference_variants,
         const std::vector<secondary::Variant>& simple_variants,
-        const std::unordered_map<int32_t, polisher::IntervalTreeInt64>& processed_regions) {
+        const std::unordered_map<int32_t, secondary::IntervalTreeInt64>& processed_regions) {
     std::vector<secondary::Variant> new_variants;
     new_variants.reserve(std::size(inference_variants) + std::size(simple_variants));
 
@@ -1001,7 +1001,7 @@ void run_variant_calling(const Options& opt,
 
     // Create interval trees from candidate variant locations.
     // The opt.variant_candidate_source can be NONE, which means no candidate filtering is applied.
-    const std::optional<polisher::IntervalTreesInt64Map> candidate_trees_from_file =
+    const std::optional<secondary::IntervalTreesInt64Map> candidate_trees_from_file =
             (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE)
                     ? create_candidate_interval_trees(candidate_sites, draft_lookup)
                     : std::nullopt;
@@ -1181,7 +1181,7 @@ void run_variant_calling(const Options& opt,
                         opt.pass_min_qual);
 
                 // Candidate variants, if needed.
-                std::optional<polisher::IntervalTreesInt64Map> candidate_trees;
+                std::optional<secondary::IntervalTreesInt64Map> candidate_trees;
                 if (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE) {
                     // There are no simple variants to merge in this case, merging should be handled outside.
                     spdlog::debug("Using candidate sites from an input file.");
@@ -1305,7 +1305,7 @@ void run_variant_calling(const Options& opt,
                                 ? 0
                                 : opt.flank_trim_len;
 
-                const std::unordered_map<int32_t, polisher::IntervalTreeInt64> processed_regions =
+                const std::unordered_map<int32_t, secondary::IntervalTreeInt64> processed_regions =
                         create_sample_interval_trees(vc_input_data, flank_trim_len);
 
                 variants = merge_variants(variants, haplotag_results.merged_pass_variants,

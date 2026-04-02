@@ -480,7 +480,7 @@ std::vector<secondary::Sample> split_samples(std::vector<secondary::Sample> samp
 
 std::vector<secondary::Sample> split_samples_around_positions(
         std::vector<secondary::Sample> samples,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
+        const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees,
         const int64_t chunk_len,
         const int64_t flanking_bases) {
     constexpr int64_t MIN_FLANKING_BASES = 3;
@@ -619,7 +619,7 @@ std::vector<secondary::Sample> split_samples_around_positions(
 
 std::vector<secondary::Sample> split_samples_tiled_with_candidates(
         std::vector<secondary::Sample> samples,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
+        const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees,
         const int64_t chunk_len,
         const int64_t chunk_overlap,
         const bool ext_flanks,          // Control extension heuristic.
@@ -633,7 +633,7 @@ std::vector<secondary::Sample> split_samples_tiled_with_candidates(
                 ", chunk_overlap = " + std::to_string(chunk_overlap));
     }
 
-    const auto has_candidates = [](const dorado::polisher::IntervalTreeInt64& tree,
+    const auto has_candidates = [](const secondary::IntervalTreeInt64& tree,
                                    const secondary::Sample& sample, const int64_t start_idx,
                                    const int64_t end_idx) {
         if ((start_idx < 0) || (end_idx <= 0) || (start_idx >= end_idx) ||
@@ -842,7 +842,7 @@ merge_and_split_bam_regions_in_parallel(
         const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
         const std::span<const secondary::Window> bam_regions,
         const std::span<const secondary::Interval> bam_region_intervals,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
+        const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees,
         const int32_t num_threads,
         const int32_t window_len,
         const int32_t window_overlap,
@@ -1407,7 +1407,7 @@ void sample_producer(
         const std::vector<secondary::Window>& bam_regions,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
         const std::vector<std::unordered_map<std::string, int32_t>>& bam_region_haplotags,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
+        const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees,
         const int32_t num_threads,
         const int32_t batch_size,
         const int32_t encoding_batch_size,
