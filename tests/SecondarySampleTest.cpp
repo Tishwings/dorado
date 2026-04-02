@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <ostream>
+#include <utility>
 #include <vector>
 
 namespace dorado::secondary {
@@ -17,7 +18,66 @@ std::ostream& operator<<(std::ostream& os, const IntervalGeneric<T>& interval) {
 
 namespace dorado::secondary::sample::tests {
 
-#define TEST_GROUP "[SecondaryConsensus]"
+#define TEST_GROUP "[SecondarySample]"
+
+namespace {
+
+Sample make_linear_sample(const int32_t seq_id,
+                          std::vector<int64_t> positions_major,
+                          std::vector<int64_t> positions_minor,
+                          at::Tensor depth) {
+    const int64_t num_positions = std::ssize(positions_major);
+
+    Sample sample;
+    sample.seq_id = seq_id;
+    sample.features = torch::arange(0, num_positions * 5, torch::kInt64).view({num_positions, 5});
+    sample.positions_major = std::move(positions_major);
+    sample.positions_minor = std::move(positions_minor);
+    sample.depth = std::move(depth);
+    sample.read_ids_left = {"left_0", "left_1"};
+    sample.read_ids_right = {"right_0", "right_1"};
+    return sample;
+}
+
+Sample make_linear_sample(const int32_t seq_id, std::vector<int64_t> positions_major) {
+    const int64_t num_positions = std::ssize(positions_major);
+    return make_linear_sample(seq_id, std::move(positions_major),
+                              std::vector<int64_t>(static_cast<size_t>(num_positions), 0),
+                              torch::ones({num_positions}, torch::kInt64));
+}
+
+Sample make_pileup_sample(const int32_t seq_id,
+                          std::vector<int64_t> positions_major,
+                          std::vector<int64_t> positions_minor,
+                          const at::Tensor& depth) {
+    const int64_t num_positions = std::ssize(positions_major);
+
+    Sample sample;
+    sample.seq_id = seq_id;
+    sample.features = torch::zeros({num_positions, 3, 1}, torch::kInt64);
+    sample.positions_major = std::move(positions_major);
+    sample.positions_minor = std::move(positions_minor);
+    sample.depth = depth.clone();
+    sample.read_ids_left = {"left_0", "left_1"};
+    sample.read_ids_right = {"right_0", "right_1"};
+    return sample;
+}
+
+IntervalTreesInt64Map make_candidate_trees(
+        const std::vector<std::pair<int32_t, std::vector<int64_t>>>& candidates_by_seq) {
+    IntervalTreesInt64Map trees;
+    for (const auto& [seq_id, positions] : candidates_by_seq) {
+        std::vector<IntervalInt64> intervals;
+        intervals.reserve(std::size(positions));
+        for (const int64_t pos : positions) {
+            intervals.emplace_back(pos, pos, 0);
+        }
+        trees.emplace(seq_id, IntervalTreeInt64(std::move(intervals)));
+    }
+    return trees;
+}
+
+}  // namespace
 
 CATCH_TEST_CASE("slice_sample: Basic slicing", TEST_GROUP) {
     Sample sample;
@@ -263,6 +323,226 @@ CATCH_TEST_CASE("find_max_depth", TEST_GROUP) {
     }
 }
 
+CATCH_TEST_CASE("split_samples: overlapping windows and edge cases", TEST_GROUP) {
+    CATCH_SECTION("Empty input returns no samples") {
+        const std::vector<Sample> result = split_samples({}, 4, 1);
+
+        CATCH_CHECK(std::empty(result));
+    }
+
+    CATCH_SECTION("Long samples are split with overlap and a full-length trailing chunk") {
+        const Sample sample = make_linear_sample(21, {0, 1, 2, 3, 4, 5, 6, 7, 8});
+
+        const std::vector<Sample> result = split_samples({sample}, 4, 1);
+
+        CATCH_REQUIRE(std::size(result) == 3);
+        CATCH_CHECK(result[0].positions_major == std::vector<int64_t>{0, 1, 2, 3});
+        CATCH_CHECK(result[1].positions_major == std::vector<int64_t>{3, 4, 5, 6});
+        CATCH_CHECK(result[2].positions_major == std::vector<int64_t>{5, 6, 7, 8});
+        CATCH_CHECK(result[0].features.equal(torch::tensor(
+                {{0, 1, 2, 3, 4}, {5, 6, 7, 8, 9}, {10, 11, 12, 13, 14}, {15, 16, 17, 18, 19}},
+                torch::kInt64)));
+        CATCH_CHECK(result[1].features.equal(torch::tensor({{15, 16, 17, 18, 19},
+                                                            {20, 21, 22, 23, 24},
+                                                            {25, 26, 27, 28, 29},
+                                                            {30, 31, 32, 33, 34}},
+                                                           torch::kInt64)));
+        CATCH_CHECK(result[1].depth.equal(torch::ones({4}, torch::kInt64)));
+        CATCH_CHECK(result[2].features.equal(torch::tensor({{25, 26, 27, 28, 29},
+                                                            {30, 31, 32, 33, 34},
+                                                            {35, 36, 37, 38, 39},
+                                                            {40, 41, 42, 43, 44}},
+                                                           torch::kInt64)));
+    }
+
+    CATCH_SECTION("Samples at or below chunk length are preserved") {
+        const Sample sample = make_linear_sample(22, {10, 11, 12, 13});
+
+        const std::vector<Sample> result = split_samples({sample}, 4, 1);
+
+        CATCH_REQUIRE(std::size(result) == 1);
+        CATCH_CHECK(result[0].positions_major == sample.positions_major);
+        CATCH_CHECK(result[0].positions_minor == sample.positions_minor);
+        CATCH_CHECK(result[0].features.equal(sample.features));
+        CATCH_CHECK(result[0].depth.equal(sample.depth));
+    }
+
+    CATCH_SECTION("Invalid overlap throws") {
+        const Sample sample = make_linear_sample(23, {0, 1, 2, 3, 4});
+
+        CATCH_CHECK_THROWS_AS(split_samples({sample}, 4, -1), std::runtime_error);
+        CATCH_CHECK_THROWS_AS(split_samples({sample}, 4, 5), std::runtime_error);
+    }
+
+    CATCH_SECTION("Invalid chunk length throws") {
+        const Sample sample = make_linear_sample(24, {0, 1, 2, 3, 4});
+
+        CATCH_CHECK_THROWS_AS(split_samples({sample}, 0, 0), std::runtime_error);
+        CATCH_CHECK_THROWS_AS(split_samples({sample}, -1, 0), std::runtime_error);
+    }
+}
+
+CATCH_TEST_CASE("split_samples_around_positions: candidate-driven chunking and edge cases",
+                TEST_GROUP) {
+    const Sample sample = make_linear_sample(31, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+    CATCH_SECTION("Empty sample input returns no chunks") {
+        const IntervalTreesInt64Map candidate_trees = make_candidate_trees({{31, {4}}});
+
+        const std::vector<Sample> result =
+                split_samples_around_positions({}, candidate_trees, 7, 3);
+
+        CATCH_CHECK(std::empty(result));
+    }
+
+    CATCH_SECTION("Empty candidate trees return no chunks") {
+        const std::vector<Sample> result = split_samples_around_positions({sample}, {}, 7, 3);
+
+        CATCH_CHECK(std::empty(result));
+    }
+
+    CATCH_SECTION(
+            "Chunks are created around candidate positions, duplicates are skipped, and "
+            "late overhangs stop chunking") {
+        const Sample skipped_sample = make_linear_sample(32, {20, 21, 22, 23, 24, 25, 26, 27});
+        const IntervalTreesInt64Map candidate_trees =
+                make_candidate_trees({{31, {4, 4, 8}}, {999, {100}}});
+
+        const std::vector<Sample> result =
+                split_samples_around_positions({sample, skipped_sample}, candidate_trees, 7, 3);
+
+        CATCH_REQUIRE(std::size(result) == 1);
+        CATCH_CHECK(result[0].seq_id == 31);
+        CATCH_CHECK(result[0].positions_major == std::vector<int64_t>{1, 2, 3, 4, 5, 6, 7});
+        CATCH_CHECK(result[0].positions_minor == std::vector<int64_t>{0, 0, 0, 0, 0, 0, 0});
+        CATCH_CHECK(result[0].features.equal(torch::tensor({{5, 6, 7, 8, 9},
+                                                            {10, 11, 12, 13, 14},
+                                                            {15, 16, 17, 18, 19},
+                                                            {20, 21, 22, 23, 24},
+                                                            {25, 26, 27, 28, 29},
+                                                            {30, 31, 32, 33, 34},
+                                                            {35, 36, 37, 38, 39}},
+                                                           torch::kInt64)));
+        CATCH_CHECK(result[0].depth.equal(torch::ones({7}, torch::kInt64)));
+        CATCH_CHECK(std::empty(result[0].read_ids_left));
+        CATCH_CHECK(std::empty(result[0].read_ids_right));
+    }
+
+    CATCH_SECTION("Invalid flanking_bases throws") {
+        const IntervalTreesInt64Map candidate_trees = make_candidate_trees({{31, {4}}});
+
+        CATCH_CHECK_THROWS_AS(split_samples_around_positions({sample}, candidate_trees, 7, -1),
+                              std::runtime_error);
+        CATCH_CHECK_THROWS_AS(split_samples_around_positions({sample}, candidate_trees, 7, 8),
+                              std::runtime_error);
+    }
+
+    CATCH_SECTION("Invalid chunk length throws") {
+        const IntervalTreesInt64Map candidate_trees = make_candidate_trees({{31, {4}}});
+
+        CATCH_CHECK_THROWS_AS(split_samples_around_positions({sample}, candidate_trees, 0, 0),
+                              std::runtime_error);
+        CATCH_CHECK_THROWS_AS(split_samples_around_positions({sample}, candidate_trees, -1, 0),
+                              std::runtime_error);
+    }
+}
+
+CATCH_TEST_CASE("split_samples_tiled_with_candidates: candidate filtering and flank extension",
+                TEST_GROUP) {
+    CATCH_SECTION("Empty sample input returns no chunks") {
+        const IntervalTreesInt64Map candidate_trees = make_candidate_trees({{41, {11}}});
+
+        const std::vector<Sample> result =
+                split_samples_tiled_with_candidates({}, candidate_trees, 4, 1, false, 1, 1, 0.5);
+
+        CATCH_CHECK(std::empty(result));
+    }
+
+    CATCH_SECTION("Empty candidate trees return no chunks") {
+        const Sample sample = make_linear_sample(40, {10, 11, 12, 13});
+
+        const std::vector<Sample> result =
+                split_samples_tiled_with_candidates({sample}, {}, 4, 1, false, 1, 1, 0.5);
+
+        CATCH_CHECK(std::empty(result));
+    }
+
+    CATCH_SECTION("Short samples are kept only when they overlap a candidate") {
+        const Sample sample = make_linear_sample(41, {10, 11, 12});
+        const IntervalTreesInt64Map hit_trees = make_candidate_trees({{41, {11}}});
+        const IntervalTreesInt64Map miss_trees = make_candidate_trees({{41, {20}}});
+
+        const std::vector<Sample> hit =
+                split_samples_tiled_with_candidates({sample}, hit_trees, 4, 1, false, 1, 1, 0.5);
+        const std::vector<Sample> miss =
+                split_samples_tiled_with_candidates({sample}, miss_trees, 4, 1, false, 1, 1, 0.5);
+
+        CATCH_REQUIRE(std::size(hit) == 1);
+        CATCH_CHECK(hit[0].positions_major == sample.positions_major);
+        CATCH_CHECK(hit[0].features.equal(sample.features));
+        CATCH_CHECK(std::empty(miss));
+    }
+
+    CATCH_SECTION("Only tiled windows with candidates are returned") {
+        const Sample sample = make_linear_sample(42, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+        const IntervalTreesInt64Map candidate_trees = make_candidate_trees({{42, {1, 8}}});
+
+        const std::vector<Sample> result = split_samples_tiled_with_candidates(
+                {sample}, candidate_trees, 4, 1, false, 1, 1, 0.5);
+
+        CATCH_REQUIRE(std::size(result) == 2);
+        CATCH_CHECK(result[0].positions_major == std::vector<int64_t>{0, 1, 2, 3});
+        CATCH_CHECK(result[1].positions_major == std::vector<int64_t>{6, 7, 8, 9});
+    }
+
+    CATCH_SECTION("Deletion-heavy minor flanks extend selection to neighboring windows") {
+        Sample sample = make_pileup_sample(43, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9},
+                                           {0, 0, 0, 1, 0, 0, 1, 0, 0, 0},
+                                           torch::full({10}, 3, torch::kInt64));
+        sample.features.index_put_({4, torch::indexing::Slice(), 0}, 5);
+        sample.features.index_put_({5, torch::indexing::Slice(), 0}, 5);
+
+        const IntervalTreesInt64Map candidate_trees = make_candidate_trees({{43, {5}}});
+
+        const std::vector<Sample> baseline = split_samples_tiled_with_candidates(
+                {sample}, candidate_trees, 4, 1, false, 2, 2, 0.5);
+        const std::vector<Sample> extended = split_samples_tiled_with_candidates(
+                {sample}, candidate_trees, 4, 1, true, 2, 2, 0.5);
+
+        CATCH_REQUIRE(std::size(baseline) == 1);
+        CATCH_CHECK(baseline[0].positions_major == std::vector<int64_t>{3, 4, 5, 6});
+
+        CATCH_REQUIRE(std::size(extended) == 3);
+        CATCH_CHECK(extended[0].positions_major == std::vector<int64_t>{0, 1, 2, 3});
+        CATCH_CHECK(extended[1].positions_major == std::vector<int64_t>{3, 4, 5, 6});
+        CATCH_CHECK(extended[2].positions_major == std::vector<int64_t>{6, 7, 8, 9});
+    }
+
+    CATCH_SECTION("Invalid overlap throws") {
+        const Sample sample = make_linear_sample(44, {0, 1, 2, 3, 4, 5});
+        const IntervalTreesInt64Map candidate_trees = make_candidate_trees({{44, {2}}});
+
+        CATCH_CHECK_THROWS_AS(split_samples_tiled_with_candidates({sample}, candidate_trees, 4, -1,
+                                                                  false, 1, 1, 0.5),
+                              std::runtime_error);
+        CATCH_CHECK_THROWS_AS(split_samples_tiled_with_candidates({sample}, candidate_trees, 4, 5,
+                                                                  false, 1, 1, 0.5),
+                              std::runtime_error);
+    }
+
+    CATCH_SECTION("Invalid chunk length throws") {
+        const Sample sample = make_linear_sample(45, {0, 1, 2, 3, 4, 5});
+        const IntervalTreesInt64Map candidate_trees = make_candidate_trees({{45, {2}}});
+
+        CATCH_CHECK_THROWS_AS(split_samples_tiled_with_candidates({sample}, candidate_trees, 0, 0,
+                                                                  false, 1, 1, 0.5),
+                              std::runtime_error);
+        CATCH_CHECK_THROWS_AS(split_samples_tiled_with_candidates({sample}, candidate_trees, -1, 0,
+                                                                  false, 1, 1, 0.5),
+                              std::runtime_error);
+    }
+}
+
 CATCH_TEST_CASE("find_sample_intervals: splits on true gaps and excludes low-depth runs",
                 TEST_GROUP) {
     Sample sample;
@@ -307,7 +587,7 @@ CATCH_TEST_CASE("find_sample_intervals: edge cases", TEST_GROUP) {
 
         const std::vector<Interval64> result = find_sample_intervals(sample, true, 3);
 
-        CATCH_CHECK(result.empty());
+        CATCH_CHECK(std::empty(result));
     }
 
     CATCH_SECTION("Dense input without gaps returns one full interval") {
@@ -320,7 +600,7 @@ CATCH_TEST_CASE("find_sample_intervals: edge cases", TEST_GROUP) {
 
         const std::vector<Interval64> result = find_sample_intervals(sample, true, 3);
 
-        CATCH_REQUIRE(result.size() == 1);
+        CATCH_REQUIRE(std::size(result) == 1);
         CATCH_CHECK(result[0].start == 0);
         CATCH_CHECK(result[0].end == 6);
     }
@@ -335,7 +615,7 @@ CATCH_TEST_CASE("find_sample_intervals: edge cases", TEST_GROUP) {
 
         const std::vector<Interval64> result = find_sample_intervals(sample, true, 3);
 
-        CATCH_CHECK(result.empty());
+        CATCH_CHECK(std::empty(result));
     }
 
     CATCH_SECTION("Coordinate gaps are ignored when splitting is disabled") {
@@ -348,7 +628,7 @@ CATCH_TEST_CASE("find_sample_intervals: edge cases", TEST_GROUP) {
 
         const std::vector<Interval64> result = find_sample_intervals(sample, false, 1);
 
-        CATCH_REQUIRE(result.size() == 1);
+        CATCH_REQUIRE(std::size(result) == 1);
         CATCH_CHECK(result[0].start == 0);
         CATCH_CHECK(result[0].end == 4);
     }
@@ -373,7 +653,7 @@ CATCH_TEST_CASE("split_sample_on_intervals: preserves flanking read IDs and slic
 
     const std::vector<Sample> result = split_sample_on_intervals(sample, intervals);
 
-    CATCH_REQUIRE(result.size() == 3);
+    CATCH_REQUIRE(std::size(result) == 3);
 
     CATCH_CHECK(result[0].features.equal(
             torch::tensor({{0, 1, 2, 3, 4}, {5, 6, 7, 8, 9}}, torch::kInt64)));
@@ -410,13 +690,13 @@ CATCH_TEST_CASE("split_sample_on_intervals: edge cases", TEST_GROUP) {
     CATCH_SECTION("Empty interval list returns no samples") {
         const std::vector<Sample> result = split_sample_on_intervals(sample, {});
 
-        CATCH_CHECK(result.empty());
+        CATCH_CHECK(std::empty(result));
     }
 
     CATCH_SECTION("Full interval returns one sample with original boundary read IDs") {
         const std::vector<Sample> result = split_sample_on_intervals(sample, {{0, 4}});
 
-        CATCH_REQUIRE(result.size() == 1);
+        CATCH_REQUIRE(std::size(result) == 1);
         CATCH_CHECK(result[0].features.equal(sample.features));
         CATCH_CHECK(result[0].positions_major == sample.positions_major);
         CATCH_CHECK(result[0].positions_minor == sample.positions_minor);
@@ -451,7 +731,7 @@ CATCH_TEST_CASE("split_sample_on_discontinuities: splits features and preserves 
 
     const std::vector<Sample> result = split_sample_on_discontinuities(sample);
 
-    CATCH_REQUIRE(result.size() == 2);
+    CATCH_REQUIRE(std::size(result) == 2);
 
     CATCH_CHECK(result[0].features.equal(torch::tensor(
             {{0, 1, 2, 3, 4}, {5, 6, 7, 8, 9}, {10, 11, 12, 13, 14}, {15, 16, 17, 18, 19}},
@@ -486,7 +766,7 @@ CATCH_TEST_CASE("split_sample_on_discontinuities: edge cases", TEST_GROUP) {
 
         const std::vector<Sample> result = split_sample_on_discontinuities(sample);
 
-        CATCH_REQUIRE(result.size() == 1);
+        CATCH_REQUIRE(std::size(result) == 1);
         CATCH_CHECK(result[0].features.equal(sample.features));
         CATCH_CHECK(result[0].positions_major == sample.positions_major);
         CATCH_CHECK(result[0].positions_minor == sample.positions_minor);
@@ -505,7 +785,7 @@ CATCH_TEST_CASE("split_sample_on_discontinuities: edge cases", TEST_GROUP) {
 
         const std::vector<Sample> result = split_sample_on_discontinuities(sample);
 
-        CATCH_CHECK(result.empty());
+        CATCH_CHECK(std::empty(result));
     }
 }
 
