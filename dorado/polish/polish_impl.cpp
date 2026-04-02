@@ -874,7 +874,7 @@ merge_and_split_bam_regions_in_parallel(
     const auto worker = [&](const int32_t tid, const int32_t start, const int32_t end,
                             std::vector<std::vector<secondary::Sample>>& results_samples,
                             std::vector<std::vector<secondary::TrimInfo>>& results_trims,
-                            WorkerReturnStatus& ret_val) {
+                            secondary::WorkerReturnStatus& ret_val) {
         utils::ScopedProfileRange spr2("merge_and_split_bam_regions_in_parallel-worker", 4);
 
         for (int32_t bam_region_id = start; bam_region_id < end; ++bam_region_id) {
@@ -1003,7 +1003,7 @@ merge_and_split_bam_regions_in_parallel(
     cxxpool::thread_pool pool{std::size(thread_chunks)};
     std::vector<std::future<void>> futures;
     futures.reserve(std::size(thread_chunks));
-    std::vector<WorkerReturnStatus> worker_return_vals(std::size(thread_chunks));
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(std::size(thread_chunks));
     for (size_t tid = 0; tid < std::size(thread_chunks); ++tid) {
         const auto [chunk_start, chunk_end] = thread_chunks[tid];
         futures.emplace_back(pool.push(worker, tid, chunk_start, chunk_end,
@@ -1016,7 +1016,7 @@ merge_and_split_bam_regions_in_parallel(
     }
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }
@@ -1092,7 +1092,8 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
 
     // Worker function, each thread computes tensors for a set of windows assigned to it.
     const auto worker = [&](const int32_t thread_id, utils::AsyncQueue<std::size_t>& window_queue,
-                            std::vector<secondary::Sample>& results, WorkerReturnStatus& ret_val) {
+                            std::vector<secondary::Sample>& results,
+                            secondary::WorkerReturnStatus& ret_val) {
         utils::ScopedProfileRange spr2("encode_windows_in_parallel-worker", 4);
 
         const std::size_t n_windows = std::size(windows);
@@ -1150,7 +1151,7 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
     std::vector<std::future<void>> futures;
     futures.reserve(actual_threads);
     std::vector<secondary::Sample> results(std::size(windows));
-    std::vector<WorkerReturnStatus> worker_return_vals(actual_threads);
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(actual_threads);
 
     spdlog::debug("Starting to encode regions for {} windows using {} threads.", std::size(windows),
                   actual_threads);
@@ -1166,7 +1167,7 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
     }
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }
@@ -1424,7 +1425,7 @@ void sample_producer(
         const float tiled_ext_cov_fract,
         utils::AsyncQueue<InferenceData>& infer_data,
         std::atomic<bool>& worker_terminate,
-        WorkerReturnStatus& ret_status) {
+        secondary::WorkerReturnStatus& ret_status) {
     utils::ScopedProfileRange spr1("sample_producer", 2);
 
     spdlog::debug("[producer] Input: {} BAM windows.", std::size(bam_regions));
@@ -1807,7 +1808,7 @@ void infer_samples_in_parallel(
 
     const auto worker = [&](const int32_t tid, secondary::ModelTorchBase& model,
                             [[maybe_unused]] const c10::optional<c10::Stream>& stream,
-                            WorkerReturnStatus& ret_val) {
+                            secondary::WorkerReturnStatus& ret_val) {
         utils::ScopedProfileRange spr2("infer_samples_in_parallel-worker", 3);
 
 #if DORADO_CUDA_BUILD
@@ -1880,7 +1881,7 @@ void infer_samples_in_parallel(
     const size_t num_threads = std::min(std::size(models), std::size(encoders));
     cxxpool::thread_pool pool{num_threads};
 
-    std::vector<WorkerReturnStatus> worker_return_vals(num_threads);
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(num_threads);
 
     std::vector<std::future<void>> futures;
     futures.reserve(num_threads);
@@ -1897,7 +1898,7 @@ void infer_samples_in_parallel(
     decode_queue.terminate(utils::AsyncQueueTerminateFast::No);
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }
@@ -1916,7 +1917,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
                                 utils::AsyncQueue<DecodeData>& decode_queue,
                                 secondary::Stats& stats,
                                 std::atomic<bool>& worker_terminate,
-                                polisher::WorkerReturnStatus& ret_status,
+                                secondary::WorkerReturnStatus& ret_status,
                                 const secondary::DecoderBase& decoder,
                                 const int32_t num_threads,
                                 const int32_t min_depth,
@@ -2058,7 +2059,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
     const auto worker = [&](const int32_t tid,
                             std::vector<std::vector<secondary::ConsensusResult>>& thread_results,
                             std::vector<secondary::VariantCallingSample>& thread_vc_data,
-                            WorkerReturnStatus& ret_val) {
+                            secondary::WorkerReturnStatus& ret_val) {
         utils::ScopedProfileRange spr2("decode_samples_in_parallel-worker", 3);
         at::InferenceMode infer_guard;
 
@@ -2144,7 +2145,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
 
     cxxpool::thread_pool pool{static_cast<size_t>(num_threads)};
 
-    std::vector<WorkerReturnStatus> worker_return_vals(num_threads);
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(num_threads);
 
     std::vector<std::future<void>> futures;
     futures.reserve(num_threads);
@@ -2160,7 +2161,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
     }
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }
@@ -2310,7 +2311,7 @@ std::vector<secondary::Variant> call_variants(
     // Worker for parallel processing.
     const auto worker = [&](const int32_t tid, const int32_t start, const int32_t end,
                             std::vector<std::vector<secondary::Variant>>& results,
-                            secondary::Stats& ps, WorkerReturnStatus& ret_val) {
+                            secondary::Stats& ps, secondary::WorkerReturnStatus& ret_val) {
         if ((start < 0) || (start >= end) || (end > std::ssize(results))) {
             throw std::runtime_error("Worker group_id is out of bounds! start = " +
                                      std::to_string(start) + ", end = " + std::to_string(end) +
@@ -2392,7 +2393,7 @@ std::vector<secondary::Variant> call_variants(
     // Reserve the space for results for each individual group.
     std::vector<std::vector<secondary::Variant>> thread_results(std::size(groups));
 
-    std::vector<WorkerReturnStatus> worker_return_vals(std::size(thread_chunks));
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(std::size(thread_chunks));
 
 #ifdef DEBUG_VC_DATA
     {
@@ -2452,7 +2453,7 @@ std::vector<secondary::Variant> call_variants(
     }
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }

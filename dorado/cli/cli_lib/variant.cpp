@@ -1198,7 +1198,7 @@ void run_variant_calling(const Options& opt,
                 utils::AsyncQueue<polisher::DecodeData> decode_queue(opt.queue_size);
 
                 // Create a thread for the sample producer.
-                polisher::WorkerReturnStatus wrs_sample_producer;
+                secondary::WorkerReturnStatus wrs_sample_producer;
                 auto thread_sample_producer = utils::jthread(
                         [&resources, &bam_regions, &draft_lens, &candidate_trees, &opt, &usable_mem,
                          &batch_queue, &worker_terminate, &wrs_sample_producer, &haplotag_results] {
@@ -1215,7 +1215,7 @@ void run_variant_calling(const Options& opt,
                         });
 
                 // Create a thread for the sample decoder.
-                polisher::WorkerReturnStatus wrs_decoder;
+                secondary::WorkerReturnStatus wrs_decoder;
                 auto thread_sample_decoder =
                         utils::jthread([&all_results_cons, &vc_input_data, &decode_queue, &stats,
                                         &resources, &opt, &worker_terminate, &wrs_decoder] {

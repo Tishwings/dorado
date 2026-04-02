@@ -10,6 +10,7 @@
 #include "secondary/common/interval_tree_types.h"
 #include "secondary/common/stats.h"
 #include "secondary/common/variant.h"
+#include "secondary/common/worker_return_status.h"
 #include "secondary/consensus/consensus_result.h"
 #include "secondary/consensus/sample.h"
 #include "secondary/consensus/sample_trimming.h"
@@ -35,11 +36,6 @@ class FastxRandomReader;
 }  // namespace dorado::hts_io
 
 namespace dorado::polisher {
-
-struct WorkerReturnStatus {
-    bool exception_thrown{false};
-    std::string message;
-};
 
 /**
  * \brief Creates all resources required to run polishing.
@@ -102,7 +98,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
                                 utils::AsyncQueue<DecodeData>& decode_queue,
                                 secondary::Stats& stats,
                                 std::atomic<bool>& worker_terminate,
-                                WorkerReturnStatus& ret_status,
+                                secondary::WorkerReturnStatus& ret_status,
                                 const secondary::DecoderBase& decoder,
                                 int32_t num_threads,
                                 int32_t min_depth,
@@ -163,7 +159,7 @@ void sample_producer(
         float tiled_ext_cov_fract,
         utils::AsyncQueue<InferenceData>& infer_data,
         std::atomic<bool>& worker_terminate,
-        WorkerReturnStatus& ret_status);
+        secondary::WorkerReturnStatus& ret_status);
 
 /// \brief Dimensions: [draft_id x part_id x haplotype_id]
 std::vector<std::vector<std::vector<secondary::ConsensusResult>>> construct_consensus_seqs(
