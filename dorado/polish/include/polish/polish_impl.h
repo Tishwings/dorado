@@ -1,6 +1,9 @@
 #pragma once
 
 #include "local_haplotagging.h"
+#include "polish/decode_data.h"
+#include "polish/inference_data.h"
+#include "polish/polisher_resources.h"
 #include "secondary/architectures/model_config.h"
 #include "secondary/architectures/model_torch_base.h"
 #include "secondary/common/interval.h"
@@ -36,42 +39,6 @@ namespace dorado::polisher {
 
 using IntervalTreeInt64 = interval_tree::IntervalTree<int64_t, int64_t>;
 using IntervalTreesInt64Map = std::unordered_map<int32_t, IntervalTreeInt64>;
-
-enum class DeviceType { CPU, CUDA, METAL, UNKNOWN };
-
-struct DeviceInfo {
-    std::string name;
-    DeviceType type;
-    torch::Device device;
-    double available_memory_GB = 0.0;
-};
-
-struct PolisherResources {
-    std::vector<std::unique_ptr<secondary::EncoderBase>> encoders;
-    std::unique_ptr<secondary::DecoderBase> decoder;
-    std::vector<DeviceInfo> devices;
-    std::vector<std::shared_ptr<secondary::ModelTorchBase>> models;
-    std::vector<c10::optional<c10::Stream>> streams;
-};
-
-/**
- * \brief Struct which holds data prepared for inference. In practice,
- *          vectors here hold one batch for inference. Both vectors should
- *          have identical length.
- */
-struct InferenceData {
-    std::vector<secondary::Sample> samples;
-    std::vector<secondary::TrimInfo> trims;
-};
-
-/**
- * \brief Struct which holds output of inference, passed into the decoding thread.
- */
-struct DecodeData {
-    std::vector<secondary::Sample> samples;
-    torch::Tensor logits;
-    std::vector<secondary::TrimInfo> trims;
-};
 
 struct WorkerReturnStatus {
     bool exception_thrown{false};

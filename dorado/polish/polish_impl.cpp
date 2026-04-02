@@ -46,15 +46,16 @@ namespace dorado::polisher {
 
 namespace {
 
-std::vector<DeviceInfo> init_devices(const std::string& devices_str) {
-    std::vector<DeviceInfo> devices;
+std::vector<secondary::DeviceInfo> init_devices(const std::string& devices_str) {
+    std::vector<secondary::DeviceInfo> devices;
 
     if (devices_str == "cpu") {
         torch::Device torch_device = torch::Device(devices_str);
-        devices.emplace_back(DeviceInfo{.name = devices_str,
-                                        .type = DeviceType::CPU,
-                                        .device = std::move(torch_device),
-                                        .available_memory_GB = utils::available_host_memory_GB()});
+        devices.emplace_back(
+                secondary::DeviceInfo{.name = devices_str,
+                                      .type = secondary::DeviceType::CPU,
+                                      .device = std::move(torch_device),
+                                      .available_memory_GB = utils::available_host_memory_GB()});
     }
 #if DORADO_CUDA_BUILD
     else if (utils::starts_with(devices_str, "cuda")) {
@@ -68,10 +69,10 @@ std::vector<DeviceInfo> init_devices(const std::string& devices_str) {
             torch::Device torch_device = torch::Device(val);
             const double available_memory_GB =
                     utils::available_memory(torch_device) / dorado::utils::BYTES_PER_GB;
-            devices.emplace_back(DeviceInfo{.name = val,
-                                            .type = DeviceType::CUDA,
-                                            .device = std::move(torch_device),
-                                            .available_memory_GB = available_memory_GB});
+            devices.emplace_back(secondary::DeviceInfo{.name = val,
+                                                       .type = secondary::DeviceType::CUDA,
+                                                       .device = std::move(torch_device),
+                                                       .available_memory_GB = available_memory_GB});
         }
     }
 #endif
@@ -110,7 +111,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
 
     spdlog::debug("Initialized devices:");
     for (std::size_t device_id = 0; device_id < std::size(resources.devices); ++device_id) {
-        const DeviceInfo& dev_info = resources.devices[device_id];
+        const secondary::DeviceInfo& dev_info = resources.devices[device_id];
         spdlog::debug("    - [device_id = {}] name = {}, available_memory = {:.2f} GB", device_id,
                       dev_info.name, dev_info.available_memory_GB);
     }
@@ -141,7 +142,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
                 model->to_device(device_info.device);
 
                 // Half-precision if needed.
-                if ((device_info.type == DeviceType::CUDA) && !full_precision) {
+                if ((device_info.type == secondary::DeviceType::CUDA) && !full_precision) {
                     spdlog::debug("[create_resources] Converting the model to half precision.");
                     model->to_half();
                 } else {

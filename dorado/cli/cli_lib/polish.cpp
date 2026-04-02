@@ -971,7 +971,7 @@ void run_polishing(const Options& opt,
             return 0.0;
         }
         double ret = resources.devices.front().available_memory_GB;
-        for (const polisher::DeviceInfo& device_info : resources.devices) {
+        for (const secondary::DeviceInfo& device_info : resources.devices) {
             ret = std::min(ret, device_info.available_memory_GB);
         }
         return ret;
