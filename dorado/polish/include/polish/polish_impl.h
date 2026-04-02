@@ -112,7 +112,8 @@ void infer_samples_in_parallel(utils::AsyncQueue<InferenceData>& batch_queue,
                                const std::vector<c10::optional<c10::Stream>>& streams,
                                const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
                                const std::vector<std::pair<std::string, int64_t>>& draft_lens,
-                               bool continue_on_exception);
+                               bool continue_on_exception,
+                               secondary::WorkerReturnStatus& ret_status);
 
 std::vector<secondary::Variant> convert_variants(
         const std::vector<kadayashi::variant_dorado_style_t>& kadayashi_variants,

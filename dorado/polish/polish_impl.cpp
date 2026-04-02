@@ -1216,7 +1216,8 @@ void infer_samples_in_parallel(
         const std::vector<c10::optional<c10::Stream>>& streams,
         const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
         [[maybe_unused]] const std::vector<std::pair<std::string, int64_t>>& draft_lens,
-        const bool continue_on_exception) {
+        const bool continue_on_exception,
+        secondary::WorkerReturnStatus& ret_status) {
     utils::ScopedProfileRange spr1("infer_samples_in_parallel", 2);
 
     if (std::empty(models)) {
@@ -1443,7 +1444,11 @@ void infer_samples_in_parallel(
             continue;
         }
         if (!continue_on_exception) {
-            throw std::runtime_error{"(infer-samples) " + rv.message};
+            // Cannot throw because this is a worker function intended to run on a separate thread.
+            // Instead, communicate the error and return.
+            ret_status = rv;
+            worker_terminate = true;
+            return;
         } else {
             spdlog::warn("(infer-samples) " + rv.message);
         }

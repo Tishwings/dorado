@@ -1228,9 +1228,11 @@ void run_variant_calling(const Options& opt,
                         });
 
                 // Run the inference worker on the main thread.
-                polisher::infer_samples_in_parallel(
-                        batch_queue, decode_queue, resources.models, worker_terminate,
-                        resources.streams, resources.encoders, draft_lens, opt.continue_on_error);
+                secondary::WorkerReturnStatus wrs_infer;
+                polisher::infer_samples_in_parallel(batch_queue, decode_queue, resources.models,
+                                                    worker_terminate, resources.streams,
+                                                    resources.encoders, draft_lens,
+                                                    opt.continue_on_error, wrs_infer);
 
                 // Join the workers.
                 thread_sample_producer.join();
@@ -1242,6 +1244,9 @@ void run_variant_calling(const Options& opt,
                 }
                 if (wrs_decoder.exception_thrown) {
                     throw std::runtime_error{wrs_decoder.message};
+                }
+                if (wrs_infer.exception_thrown) {
+                    throw std::runtime_error{wrs_infer.message};
                 }
             }
 
