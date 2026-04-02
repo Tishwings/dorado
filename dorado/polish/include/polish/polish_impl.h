@@ -115,29 +115,6 @@ void infer_samples_in_parallel(utils::AsyncQueue<InferenceData>& batch_queue,
                                bool continue_on_exception,
                                secondary::WorkerReturnStatus& ret_status);
 
-std::vector<secondary::Variant> convert_variants(
-        const std::vector<kadayashi::variant_dorado_style_t>& kadayashi_variants,
-        int32_t seq_id,
-        int32_t ploidy,
-        float pass_min_qual);
-
-struct HaplotagResults {
-    /**
-     * \brief Struct holding the global haplotagging results, merged for all regions.
-     */
-    std::vector<std::unordered_map<std::string, int32_t>> region_haplotags;
-    std::unordered_map<std::string, std::vector<int64_t>> candidate_sites;
-    std::vector<secondary::Variant> merged_pass_variants;
-};
-
-HaplotagResults haplotag_regions_in_parallel(
-        std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
-        const std::vector<secondary::Window>& regions,
-        const std::vector<std::pair<std::string, int64_t>>& draft_lens,
-        const int32_t num_threads,
-        const int32_t ploidy,
-        const float pass_min_qual);
-
 void sample_producer(
         PolisherResources& resources,
         const std::vector<secondary::Window>& bam_regions,

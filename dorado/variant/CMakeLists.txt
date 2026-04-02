@@ -1,0 +1,24 @@
+dorado_add_library(
+    NAME
+        dorado_variant
+    PUBLIC_DIR
+        variant
+    SOURCES_PUBLIC
+        decode_data.h
+        inference_data.h
+        variant_impl.h
+        variant_resources.h
+    SOURCES_PRIVATE
+        variant_impl.cpp
+    DEPENDS_PUBLIC
+        dorado_secondary
+        dorado_utils
+    DEPENDS_PRIVATE
+        cxxpool
+        dorado_hts_utils
+        dorado_torch_utils
+        intervaltree
+        htslib
+        spdlog::spdlog
+        kadayashi::haplotag_lib
+)

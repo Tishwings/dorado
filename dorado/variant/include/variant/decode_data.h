@@ -1,13 +1,12 @@
 #pragma once
 
 #include "secondary/consensus/sample.h"
-#include "secondary/consensus/sample_trimming.h"
 
 #include <ATen/core/TensorBody.h>
 
 #include <vector>
 
-namespace dorado::polisher {
+namespace dorado::variant {
 
 /**
  * \brief Struct which holds output of inference, passed into the decoding thread.
@@ -15,7 +14,6 @@ namespace dorado::polisher {
 struct DecodeData {
     std::vector<secondary::Sample> samples;
     at::Tensor logits;
-    std::vector<secondary::TrimInfo> trims;
 };
 
-}  // namespace dorado::polisher
+}  // namespace dorado::variant
