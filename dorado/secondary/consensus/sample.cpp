@@ -239,8 +239,8 @@ std::vector<Sample> split_samples_around_positions(
     }
 
     const auto searchsorted_left = [](const std::vector<int64_t>& vec, const int64_t x) -> int64_t {
-        const auto it = std::lower_bound(std::begin(vec), std::end(vec), x);
-        return static_cast<std::int64_t>(std::distance(std::begin(vec), it));
+        const auto it = std::lower_bound(std::cbegin(vec), std::cend(vec), x);
+        return static_cast<std::int64_t>(std::distance(std::cbegin(vec), it));
     };
 
     std::vector<secondary::Sample> all_results;
