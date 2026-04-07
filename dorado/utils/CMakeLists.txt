@@ -82,6 +82,15 @@ dorado_add_library(
         thread_utils.cpp
         time_utils.cpp
         uuid_utils.cpp
+
+        # TODO
+        concurrency/AsyncExecutor.cpp
+        concurrency/AsyncExecutor.h
+        concurrency/Task.h
+        concurrency/TaskPool.cpp
+        concurrency/TaskPool.h
+        concurrency/WorkerPool.cpp
+        concurrency/WorkerPool.h
     SOURCES_TEST
         test_FunctionRef.cpp
         test_MoveOnlyFunction.cpp
