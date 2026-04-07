@@ -1,30 +1,14 @@
-#include "secondary/consensus/window.h"
+#include "secondary/consensus/window_utils.h"
 
 #include <spdlog/spdlog.h>
 
-#include <ostream>
-#include <sstream>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <iterator>
+#include <stdexcept>
 
 namespace dorado::secondary {
-
-std::ostream& operator<<(std::ostream& os, const Window& w) {
-    os << "seq_id = " << w.seq_id << ", seq_length = " << w.seq_length << ", start = " << w.start
-       << ", end = " << w.end << ", start_no_overlap = " << w.start_no_overlap
-       << ", end_no_overlap = " << w.end_no_overlap;
-    return os;
-}
-
-bool operator==(const Window& lhs, const Window& rhs) {
-    return std::tie(lhs.seq_id, lhs.seq_length, lhs.start, lhs.end, lhs.start_no_overlap,
-                    lhs.end_no_overlap) == std::tie(rhs.seq_id, rhs.seq_length, rhs.start, rhs.end,
-                                                    rhs.start_no_overlap, rhs.end_no_overlap);
-}
-
-std::string window_to_string(const Window& w) {
-    std::ostringstream oss;
-    oss << w;
-    return oss.str();
-}
 
 std::vector<Window> create_windows(const int32_t seq_id,
                                    const int64_t seq_start,
@@ -100,6 +84,49 @@ std::vector<Window> create_windows(const int32_t seq_id,
     }
 
     return ret;
+}
+
+std::vector<Window> create_windows_from_regions(
+        const std::vector<Region>& regions,
+        const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& draft_lookup,
+        const int32_t bam_chunk_len,
+        const int32_t window_overlap) {
+    std::vector<Window> windows;
+
+    for (int64_t i = 0; i < std::ssize(regions); ++i) {
+        Region region = regions[i];
+
+        spdlog::debug("Creating windows for region: '{}'.", region_to_string(region));
+
+        const auto it = draft_lookup.find(region.name);
+        if (it == std::end(draft_lookup)) {
+            throw std::runtime_error(
+                    "Sequence specified by custom region not found in input! Sequence name: " +
+                    region.name);
+        }
+        const auto [seq_id, seq_length] = it->second;
+
+        region.start = std::max<int64_t>(0, region.start);
+        region.end = (region.end < 0) ? seq_length : std::min(seq_length, region.end);
+
+        if (region.start >= region.end) {
+            throw std::runtime_error{"Region coordinates not valid. Given: region.name = '" +
+                                     region.name +
+                                     "', region.start = " + std::to_string(region.start) +
+                                     ", region.end = " + std::to_string(region.end)};
+        }
+
+        std::vector<Window> new_windows =
+                create_windows(static_cast<int32_t>(seq_id), region.start, region.end, seq_length,
+                               bam_chunk_len, window_overlap, static_cast<int32_t>(i));
+
+        spdlog::debug("Generated {} windows for region: '{}'.", std::size(new_windows),
+                      region_to_string(region));
+        windows.reserve(std::size(windows) + std::size(new_windows));
+        windows.insert(std::end(windows), std::begin(new_windows), std::end(new_windows));
+    }
+
+    return windows;
 }
 
 }  // namespace dorado::secondary

@@ -1,22 +1,25 @@
 #pragma once
 
 #include "local_haplotagging.h"
+#include "polish/decode_data.h"
+#include "polish/inference_data.h"
+#include "polish/polisher_resources.h"
 #include "secondary/architectures/model_config.h"
 #include "secondary/architectures/model_torch_base.h"
 #include "secondary/common/interval.h"
+#include "secondary/common/interval_tree_types.h"
 #include "secondary/common/stats.h"
 #include "secondary/common/variant.h"
+#include "secondary/common/window.h"
+#include "secondary/common/worker_return_status.h"
 #include "secondary/consensus/consensus_result.h"
 #include "secondary/consensus/sample.h"
 #include "secondary/consensus/sample_trimming.h"
 #include "secondary/consensus/variant_calling_sample.h"
-#include "secondary/consensus/window.h"
 #include "secondary/features/decoder_factory.h"
 #include "secondary/features/encoder_factory.h"
 #include "secondary/features/kadayashi_options.h"
 #include "utils/AsyncQueue.h"
-
-#include <IntervalTree.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -33,50 +36,6 @@ class FastxRandomReader;
 }  // namespace dorado::hts_io
 
 namespace dorado::polisher {
-
-using IntervalTreeInt64 = interval_tree::IntervalTree<int64_t, int64_t>;
-using IntervalTreesInt64Map = std::unordered_map<int32_t, IntervalTreeInt64>;
-
-enum class DeviceType { CPU, CUDA, METAL, UNKNOWN };
-
-struct DeviceInfo {
-    std::string name;
-    DeviceType type;
-    torch::Device device;
-    double available_memory_GB = 0.0;
-};
-
-struct PolisherResources {
-    std::vector<std::unique_ptr<secondary::EncoderBase>> encoders;
-    std::unique_ptr<secondary::DecoderBase> decoder;
-    std::vector<DeviceInfo> devices;
-    std::vector<std::shared_ptr<secondary::ModelTorchBase>> models;
-    std::vector<c10::optional<c10::Stream>> streams;
-};
-
-/**
- * \brief Struct which holds data prepared for inference. In practice,
- *          vectors here hold one batch for inference. Both vectors should
- *          have identical length.
- */
-struct InferenceData {
-    std::vector<secondary::Sample> samples;
-    std::vector<secondary::TrimInfo> trims;
-};
-
-/**
- * \brief Struct which holds output of inference, passed into the decoding thread.
- */
-struct DecodeData {
-    std::vector<secondary::Sample> samples;
-    torch::Tensor logits;
-    std::vector<secondary::TrimInfo> trims;
-};
-
-struct WorkerReturnStatus {
-    bool exception_thrown{false};
-    std::string message;
-};
 
 /**
  * \brief Creates all resources required to run polishing.
@@ -123,16 +82,6 @@ std::vector<std::vector<secondary::ConsensusResult>> stitch_sequence(
         const std::optional<char>& fill_char);
 
 /**
- * \brief Creates windows from given input draft sequences or regions. If regions vector is empty, it will split all
- *          input draft sequences into windows.
- */
-std::vector<secondary::Window> create_windows_from_regions(
-        const std::vector<secondary::Region>& regions,
-        const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& draft_lookup,
-        int32_t bam_chunk_len,
-        int32_t window_overlap);
-
-/**
  * \brief Fetches the decode data from an async queue, decodes the consensus and collects
  *          the consensus results. It also returns a vector of the decode data taken off of the queue
  *          (i.e. the input used for decoding). This will be needed downstream for variant calling.
@@ -149,7 +98,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
                                 utils::AsyncQueue<DecodeData>& decode_queue,
                                 secondary::Stats& stats,
                                 std::atomic<bool>& worker_terminate,
-                                WorkerReturnStatus& ret_status,
+                                secondary::WorkerReturnStatus& ret_status,
                                 const secondary::DecoderBase& decoder,
                                 int32_t num_threads,
                                 int32_t min_depth,
@@ -163,7 +112,8 @@ void infer_samples_in_parallel(utils::AsyncQueue<InferenceData>& batch_queue,
                                const std::vector<c10::optional<c10::Stream>>& streams,
                                const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
                                const std::vector<std::pair<std::string, int64_t>>& draft_lens,
-                               bool continue_on_exception);
+                               bool continue_on_exception,
+                               secondary::WorkerReturnStatus& ret_status);
 
 std::vector<secondary::Variant> convert_variants(
         const std::vector<kadayashi::variant_dorado_style_t>& kadayashi_variants,
@@ -193,7 +143,7 @@ void sample_producer(
         const std::vector<secondary::Window>& bam_regions,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
         const std::vector<std::unordered_map<std::string, int32_t>>& bam_region_haplotags,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
+        const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees,
         int32_t num_threads,
         int32_t batch_size,
         int32_t encoding_batch_size,
@@ -210,7 +160,7 @@ void sample_producer(
         float tiled_ext_cov_fract,
         utils::AsyncQueue<InferenceData>& infer_data,
         std::atomic<bool>& worker_terminate,
-        WorkerReturnStatus& ret_status);
+        secondary::WorkerReturnStatus& ret_status);
 
 /// \brief Dimensions: [draft_id x part_id x haplotype_id]
 std::vector<std::vector<std::vector<secondary::ConsensusResult>>> construct_consensus_seqs(

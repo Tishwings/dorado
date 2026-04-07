@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <iosfwd>
 #include <string>
-#include <vector>
 
 namespace dorado::secondary {
 
@@ -24,17 +23,5 @@ std::ostream& operator<<(std::ostream& os, const Window& w);
 std::string window_to_string(const Window& w);
 
 bool operator==(const Window& lhs, const Window& rhs);
-
-/**
- * \brief Linearly splits sequence lengths into windows. It also returns the backward mapping of which
- *          windows correspond to which sequences, needed for stitching.
- */
-std::vector<Window> create_windows(const int32_t seq_id,
-                                   const int64_t seq_start,
-                                   const int64_t seq_end,
-                                   const int64_t seq_len,
-                                   const int32_t window_len,
-                                   const int32_t window_overlap,
-                                   const int32_t source_region_id);
 
 }  // namespace dorado::secondary

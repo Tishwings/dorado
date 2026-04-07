@@ -14,6 +14,7 @@
 #include "secondary/common/stats.h"
 #include "secondary/common/vcf_writer.h"
 #include "secondary/consensus/variant_calling.h"
+#include "secondary/consensus/window_utils.h"
 #include "torch_utils/auto_detect_device.h"
 #include "torch_utils/gpu_profiling.h"
 #include "torch_utils/torch_utils.h"
@@ -970,7 +971,7 @@ void run_polishing(const Options& opt,
             return 0.0;
         }
         double ret = resources.devices.front().available_memory_GB;
-        for (const polisher::DeviceInfo& device_info : resources.devices) {
+        for (const secondary::DeviceInfo& device_info : resources.devices) {
             ret = std::min(ret, device_info.available_memory_GB);
         }
         return ret;
@@ -1024,8 +1025,8 @@ void run_polishing(const Options& opt,
                 // NOTE: the window.seq_id is the _absolute_ sequence ID of the input draft sequences.
                 spdlog::debug("Creating BAM windows.");
                 const std::vector<secondary::Window> bam_regions =
-                        polisher::create_windows_from_regions(region_batch, draft_lookup,
-                                                              opt.bam_chunk, opt.window_overlap);
+                        secondary::create_windows_from_regions(region_batch, draft_lookup,
+                                                               opt.bam_chunk, opt.window_overlap);
 
                 spdlog::debug(
                         "[run_polishing] Starting to produce consensus for regions: {}-{}/{} "
@@ -1047,7 +1048,7 @@ void run_polishing(const Options& opt,
                 utils::AsyncQueue<polisher::DecodeData> decode_queue(opt.queue_size);
 
                 // Create a thread for the sample producer.
-                polisher::WorkerReturnStatus wrs_sample_producer;
+                secondary::WorkerReturnStatus wrs_sample_producer;
                 auto thread_sample_producer =
                         utils::jthread([&resources, &bam_regions, &draft_lens, &opt, &usable_mem,
                                         &batch_queue, &worker_terminate, &wrs_sample_producer] {
@@ -1061,7 +1062,7 @@ void run_polishing(const Options& opt,
                         });
 
                 // Create a thread for the sample decoder.
-                polisher::WorkerReturnStatus wrs_decoder;
+                secondary::WorkerReturnStatus wrs_decoder;
                 auto thread_sample_decoder =
                         utils::jthread([&all_results_cons, &vc_input_data, &decode_queue, &stats,
                                         &resources, &opt, &worker_terminate, &wrs_decoder] {
@@ -1073,9 +1074,11 @@ void run_polishing(const Options& opt,
                         });
 
                 // Run the inference worker on the main thread.
-                polisher::infer_samples_in_parallel(
-                        batch_queue, decode_queue, resources.models, worker_terminate,
-                        resources.streams, resources.encoders, draft_lens, opt.continue_on_error);
+                secondary::WorkerReturnStatus wrs_infer;
+                polisher::infer_samples_in_parallel(batch_queue, decode_queue, resources.models,
+                                                    worker_terminate, resources.streams,
+                                                    resources.encoders, draft_lens,
+                                                    opt.continue_on_error, wrs_infer);
 
                 // Join the workers.
                 thread_sample_producer.join();
@@ -1087,6 +1090,9 @@ void run_polishing(const Options& opt,
                 }
                 if (wrs_decoder.exception_thrown) {
                     throw std::runtime_error{wrs_decoder.message};
+                }
+                if (wrs_infer.exception_thrown) {
+                    throw std::runtime_error{wrs_infer.message};
                 }
             }
 

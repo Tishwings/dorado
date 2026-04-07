@@ -6,6 +6,7 @@
 #include "secondary/common/region.h"
 #include "secondary/consensus/sample_collate_utils.h"
 #include "secondary/consensus/variant_calling.h"
+#include "secondary/consensus/window_utils.h"
 #include "torch_utils/gpu_profiling.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
@@ -46,15 +47,16 @@ namespace dorado::polisher {
 
 namespace {
 
-std::vector<DeviceInfo> init_devices(const std::string& devices_str) {
-    std::vector<DeviceInfo> devices;
+std::vector<secondary::DeviceInfo> init_devices(const std::string& devices_str) {
+    std::vector<secondary::DeviceInfo> devices;
 
     if (devices_str == "cpu") {
         torch::Device torch_device = torch::Device(devices_str);
-        devices.emplace_back(DeviceInfo{.name = devices_str,
-                                        .type = DeviceType::CPU,
-                                        .device = std::move(torch_device),
-                                        .available_memory_GB = utils::available_host_memory_GB()});
+        devices.emplace_back(
+                secondary::DeviceInfo{.name = devices_str,
+                                      .type = secondary::DeviceType::CPU,
+                                      .device = std::move(torch_device),
+                                      .available_memory_GB = utils::available_host_memory_GB()});
     }
 #if DORADO_CUDA_BUILD
     else if (utils::starts_with(devices_str, "cuda")) {
@@ -68,10 +70,10 @@ std::vector<DeviceInfo> init_devices(const std::string& devices_str) {
             torch::Device torch_device = torch::Device(val);
             const double available_memory_GB =
                     utils::available_memory(torch_device) / dorado::utils::BYTES_PER_GB;
-            devices.emplace_back(DeviceInfo{.name = val,
-                                            .type = DeviceType::CUDA,
-                                            .device = std::move(torch_device),
-                                            .available_memory_GB = available_memory_GB});
+            devices.emplace_back(secondary::DeviceInfo{.name = val,
+                                                       .type = secondary::DeviceType::CUDA,
+                                                       .device = std::move(torch_device),
+                                                       .available_memory_GB = available_memory_GB});
         }
     }
 #endif
@@ -110,7 +112,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
 
     spdlog::debug("Initialized devices:");
     for (std::size_t device_id = 0; device_id < std::size(resources.devices); ++device_id) {
-        const DeviceInfo& dev_info = resources.devices[device_id];
+        const secondary::DeviceInfo& dev_info = resources.devices[device_id];
         spdlog::debug("    - [device_id = {}] name = {}, available_memory = {:.2f} GB", device_id,
                       dev_info.name, dev_info.available_memory_GB);
     }
@@ -141,7 +143,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
                 model->to_device(device_info.device);
 
                 // Half-precision if needed.
-                if ((device_info.type == DeviceType::CUDA) && !full_precision) {
+                if ((device_info.type == secondary::DeviceType::CUDA) && !full_precision) {
                     spdlog::debug("[create_resources] Converting the model to half precision.");
                     model->to_half();
                 } else {
@@ -354,470 +356,6 @@ std::vector<std::vector<secondary::ConsensusResult>> stitch_sequence(
 }
 
 namespace {
-
-/**
- * \brief If the input sample coordinates (positions_major) have gaps,
- *          this function splits the sample on those gaps and produces
- *          one or more samples in the output.
- *          When possible, input data is moved to the output, and that is
- *          why the inpunt is not const.
- */
-std::vector<secondary::Sample> split_sample_on_discontinuities(secondary::Sample& sample) {
-    std::vector<secondary::Sample> results;
-
-    const auto find_gaps = [](const std::vector<int64_t>& positions,
-                              int64_t threshold) -> std::vector<int64_t> {
-        std::vector<int64_t> ret;
-        for (size_t i = 1; i < std::size(positions); ++i) {
-            if ((positions[i] - positions[i - 1]) > threshold) {
-                ret.emplace_back(i);
-            }
-        }
-        return ret;
-    };
-
-    // Helper function to generate placeholder read IDs for read level models.
-    const auto placeholder_read_ids = [](const int64_t n) {
-        std::vector<std::string> placeholder_ids(n);
-        for (int64_t i = 0; i < n; ++i) {
-            placeholder_ids[i] = "__placeholder_" + std::to_string(i);
-        }
-        return placeholder_ids;
-    };
-
-    // Find gaps in data.
-    const std::vector<int64_t> gaps = find_gaps(sample.positions_major, 1);
-
-    // Reusable.
-    const std::vector<std::string> placeholder_ids =
-            placeholder_read_ids(std::ssize(sample.read_ids_left));
-
-    if (std::empty(gaps)) {
-        return {sample};
-
-    } else {
-        const int64_t num_positions = std::ssize(sample.positions_major);
-
-        int64_t start = 0;
-        for (size_t n = 0; n < std::size(gaps); ++n) {
-            const int64_t end = gaps[n];
-            std::vector<int64_t> new_major_pos(std::begin(sample.positions_major) + start,
-                                               std::begin(sample.positions_major) + end);
-            std::vector<int64_t> new_minor_pos(std::begin(sample.positions_minor) + start,
-                                               std::begin(sample.positions_minor) + end);
-
-            std::vector<std::string> read_ids_left =
-                    (n == 0) ? sample.read_ids_left : placeholder_ids;
-
-            results.emplace_back(secondary::Sample{
-                    sample.seq_id, sample.features.slice(0, start, end), std::move(new_major_pos),
-                    std::move(new_minor_pos), sample.depth.slice(0, start, end),
-                    std::move(read_ids_left), placeholder_ids});
-            start = end;
-        }
-
-        if (start < num_positions) {
-            std::vector<int64_t> new_major_pos(std::begin(sample.positions_major) + start,
-                                               std::end(sample.positions_major));
-            std::vector<int64_t> new_minor_pos(std::begin(sample.positions_minor) + start,
-                                               std::end(sample.positions_minor));
-            results.emplace_back(secondary::Sample{
-                    sample.seq_id, sample.features.slice(0, start), std::move(new_major_pos),
-                    std::move(new_minor_pos), sample.depth.slice(0, start), placeholder_ids,
-                    sample.read_ids_right});
-        }
-    }
-
-    return results;
-}
-
-/**
- * \brief Takes an input sample and splits it bluntly into overlapping windows.
- *          Splitting is implemented to match Medaka, where a simple sliding window is used to create smaller samples.
- *          In case of a short trailing portion (shorter than chunk_len), a potentially large overlap is produced to
- *          cover this region instead of just outputing the small chunk.
- */
-std::vector<secondary::Sample> split_samples(std::vector<secondary::Sample> samples,
-                                             const int64_t chunk_len,
-                                             const int64_t chunk_overlap) {
-    if ((chunk_overlap < 0) || (chunk_overlap > chunk_len)) {
-        throw std::runtime_error(
-                "Wrong chunk_overlap length. chunk_len = " + std::to_string(chunk_len) +
-                ", chunk_overlap = " + std::to_string(chunk_overlap));
-    }
-
-    std::vector<secondary::Sample> results;
-    results.reserve(std::size(samples));
-
-    for (auto& sample : samples) {
-        const int64_t sample_len = static_cast<int64_t>(std::size(sample.positions_major));
-
-        if (sample_len <= chunk_len) {
-            results.emplace_back(std::move(sample));
-            continue;
-        }
-
-        const int64_t step = chunk_len - chunk_overlap;
-
-        // Slice out all but the last chunk unless perfectly sized.
-        int64_t end = 0;
-        for (int64_t start = 0; start < (sample_len - chunk_len + 1); start += step) {
-            end = start + chunk_len;
-            results.emplace_back(slice_sample(sample, start, end, false));
-        }
-
-        // Last chunk will have a large overlap with previous, to maintain equal length.
-        if (end < sample_len) {
-            const int64_t start = sample_len - chunk_len;
-            end = sample_len;
-            results.emplace_back(slice_sample(sample, start, end, false));
-        }
-    }
-
-    return results;
-}
-
-std::vector<secondary::Sample> split_samples_around_positions(
-        std::vector<secondary::Sample> samples,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
-        const int64_t chunk_len,
-        const int64_t flanking_bases) {
-    constexpr int64_t MIN_FLANKING_BASES = 3;
-
-    if ((flanking_bases < 0) || (flanking_bases > chunk_len)) {
-        throw std::runtime_error(
-                "Wrong flanking_bases length. chunk_len = " + std::to_string(chunk_len) +
-                ", flanking_bases = " + std::to_string(flanking_bases));
-    }
-
-    if (!candidate_trees) {
-        return {};
-    }
-
-    const auto searchsorted_left = [](const std::vector<int64_t>& vec, const int64_t x) -> int64_t {
-        const auto it = std::lower_bound(std::begin(vec), std::end(vec), x);
-        return static_cast<std::int64_t>(std::distance(std::begin(vec), it));
-    };
-
-    std::vector<secondary::Sample> all_results;
-    all_results.reserve(std::size(samples));
-
-    for (auto& sample : samples) {
-        const auto it_seq_id = candidate_trees->find(sample.seq_id);
-
-        // No candidate positions for this sequence.
-        if (it_seq_id == std::cend(*candidate_trees)) {
-            continue;
-        }
-        const auto& tree = it_seq_id->second;
-
-        // Get all candidate positions for this region.
-        // Note: this interval tree lib uses inclusive end coordinate.
-        std::vector<interval_tree::Interval<int64_t, int64_t>> positions =
-                tree.findOverlapping(sample.start(), sample.end() - 1);
-
-        // Sort the positions in ascending order.
-        std::sort(std::begin(positions), std::end(positions),
-                  [](const auto& a, const auto& b) { return a.start < b.start; });
-
-        std::vector<secondary::Sample> results;
-        std::vector<int64_t> last_flanking_bases;
-
-#ifdef DEBUG_POLISH_SPLIT_SAMPLES_AROUND_POSITIONS
-        spdlog::debug("[split_samples_around_positions] Input sample: {}",
-                      secondary::sample_to_string(sample));
-        for (int64_t i = 0; i < std::ssize(positions); ++i) {
-            spdlog::debug("[split_samples_around_positions]     [candidate i = {}] position = {}",
-                          i, positions[i].start);
-        }
-#endif
-
-        bool stop_chunking = false;
-        for (const auto itvl : positions) {
-            // Intervals are single-base width here.
-            const int64_t position = itvl.start;
-
-            // Skip candidates which are already covered by the previous chunk.
-            assert(std::size(last_flanking_bases) == std::size(results));
-            if (!std::empty(results) && !std::empty(last_flanking_bases) &&
-                (position < (results.back().end() - last_flanking_bases.back()))) {
-                continue;
-            }
-
-            int64_t curr_flanking_bases = 0;
-            int64_t chunk_start_pos = 0;
-            int64_t chunk_start_idx = 0;
-            int64_t chunk_end_idx = 0;
-            for (curr_flanking_bases = flanking_bases; curr_flanking_bases >= MIN_FLANKING_BASES;
-                 --curr_flanking_bases) {
-                chunk_start_pos = position - curr_flanking_bases;
-                chunk_start_idx = searchsorted_left(sample.positions_major, chunk_start_pos);
-                chunk_end_idx = chunk_start_idx + chunk_len;
-
-                if (chunk_start_idx >= std::ssize(sample.positions_major)) {
-                    // This shouldn't be possible, but need to check the bounds.
-                    std::ostringstream oss;
-                    oss << "Tried to create chunk from chunk_start_pos = " << chunk_start_pos
-                        << " on seq_id = " << sample.seq_id
-                        << " but the position could not be found in this sample! chunk_start_idx = "
-                        << chunk_start_idx << ", sample: " << sample;
-                    throw std::runtime_error{oss.str()};
-                }
-
-                // TODO: Handle this properly. E.g. Create an overlapping large chunk at the end.
-                if (chunk_end_idx >= std::ssize(sample.positions_major)) {
-                    spdlog::warn(
-                            "Tried to create chunk but "
-                            "chunk exceeds sample length. chunk_start_pos = {}, chunk_start_idx = "
-                            "{}, chunk_end_idx = {}, positions_major.size() = {}, seq_id = {}. "
-                            "Stopping. Sample: {}",
-                            chunk_start_pos, chunk_start_idx, chunk_end_idx,
-                            std::ssize(sample.positions_major), sample.seq_id, chunk_end_idx,
-                            secondary::sample_to_string(sample));
-                    stop_chunking = true;
-                    break;
-                }
-
-                const int64_t chunk_end_pos = sample.positions_major[chunk_end_idx];
-
-                if (position <= (chunk_end_pos - curr_flanking_bases)) {
-                    break;
-                }
-            }
-            if (stop_chunking) {
-                break;
-            }
-            if (curr_flanking_bases < MIN_FLANKING_BASES) {
-                spdlog::warn(
-                        "Could not create chunk around position = {} with more than {} bases of "
-                        "flanking context. Skipping this position.",
-                        position, MIN_FLANKING_BASES);
-                continue;
-            }
-
-            // Extract the chunk around this position.
-            results.emplace_back(slice_sample(sample, chunk_start_idx, chunk_end_idx, true));
-            last_flanking_bases.emplace_back(curr_flanking_bases);
-
-#ifdef DEBUG_POLISH_SPLIT_SAMPLES_AROUND_POSITIONS
-            spdlog::debug(
-                    "[split_samples_around_positions] Created a chunk around position = {}. "
-                    "chunk_start_pos = {}, chunk_start_idx = {}, chunk_end_idx = {}, "
-                    "curr_flanking_bases = {}. Chunk sample: {}",
-                    position, chunk_start_pos, chunk_start_idx, chunk_end_idx, curr_flanking_bases,
-                    secondary::sample_to_string(results.back()));
-#endif
-        }
-
-        all_results.insert(std::end(all_results), std::make_move_iterator(std::begin(results)),
-                           std::make_move_iterator(std::end(results)));
-    }
-
-    return all_results;
-}
-
-std::vector<secondary::Sample> split_samples_tiled_with_candidates(
-        std::vector<secondary::Sample> samples,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
-        const int64_t chunk_len,
-        const int64_t chunk_overlap,
-        const bool ext_flanks,          // Control extension heuristic.
-        const int64_t ext_major_bases,  // Check this many major positions to trigger.
-        const int64_t ext_min_cov,      // Minimum absolute coverage to trigger the heuristic.
-        const double ext_cov_frac       // Minimum coverage fraction to trigger the heuristic.
-) {
-    if ((chunk_overlap < 0) || (chunk_overlap > chunk_len)) {
-        throw std::runtime_error(
-                "Wrong chunk_overlap length. chunk_len = " + std::to_string(chunk_len) +
-                ", chunk_overlap = " + std::to_string(chunk_overlap));
-    }
-
-    const auto has_candidates = [](const dorado::polisher::IntervalTreeInt64& tree,
-                                   const secondary::Sample& sample, const int64_t start_idx,
-                                   const int64_t end_idx) {
-        if ((start_idx < 0) || (end_idx <= 0) || (start_idx >= end_idx) ||
-            (end_idx > std::ssize(sample.positions_major))) {
-            return false;
-        }
-        const int64_t start = sample.positions_major[start_idx];
-        const int64_t end = sample.positions_major[end_idx - 1];  // Inclusive for IntervalTree.
-        const std::vector<interval_tree::Interval<int64_t, int64_t>> positions =
-                tree.findOverlapping(start, end);
-        return !std::empty(positions);
-    };
-
-    const auto check_excess_deletions = [](const secondary::Sample& sample, const int64_t start_idx,
-                                           const int64_t end_idx, const bool reverse,
-                                           const int64_t major_bases, const double cov_fraction,
-                                           const int64_t min_abs_cov) {
-        /// @brief Returns true if any of the first/last `major_bases` major positions have many deletion
-        ///         counts (above `max(cov * cov_fraction, min_abs_cov)`).
-        static constexpr int8_t DEL_VAL = 5;  // Value representing deletion in base channel.
-
-        // Find maximum non-padded coverage of this sample.
-        const int64_t cov = sample.find_max_depth(start_idx, end_idx);
-        const int64_t min_count = std::max(min_abs_cov, static_cast<int64_t>(cov * cov_fraction));
-
-        if (!reverse) {
-            for (int64_t pos = start_idx, num_major = 0; pos < end_idx; ++pos) {
-                if (sample.positions_minor[pos] > 0) {
-                    continue;
-                }
-                ++num_major;
-                if (num_major > major_bases) {
-                    break;
-                }
-                const at::Tensor pos_slice = sample.features.index({pos});
-                const at::Tensor bases = pos_slice.index({torch::indexing::Slice(), 0});
-                const at::Tensor mask = (bases == DEL_VAL);
-                const int64_t count = mask.sum().item<int64_t>();
-                if (count >= min_count) {
-                    return true;
-                }
-            }
-        } else {
-            for (int64_t pos = (end_idx - 1), num_major = 0; pos >= start_idx; --pos) {
-                if (sample.positions_minor[pos] > 0) {
-                    continue;
-                }
-                ++num_major;
-                if (num_major > major_bases) {
-                    break;
-                }
-                const at::Tensor pos_slice = sample.features.index({pos});
-                const at::Tensor bases = pos_slice.index({torch::indexing::Slice(), 0});
-                const at::Tensor mask = (bases == DEL_VAL);
-                const int64_t count = mask.sum().item<int64_t>();
-                if (count >= min_count) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
-
-    const auto check_flanking_minor = [](const secondary::Sample& sample, const int64_t start_idx,
-                                         const int64_t end_idx, const bool reverse) {
-        /// @brief Returns true if the first/last position is a minor one.
-        if (std::empty(sample.positions_minor)) {
-            return false;
-        }
-        if (start_idx >= end_idx) {
-            return false;
-        }
-        if ((start_idx < 0) || (end_idx <= 0) ||
-            (start_idx >= std::ssize(sample.positions_minor)) ||
-            (end_idx > std::ssize(sample.positions_minor))) {
-            return false;
-        }
-        if (!reverse) {
-            return sample.positions_minor[start_idx] != 0;
-        } else {
-            return sample.positions_minor[end_idx - 1] != 0;
-        }
-        return false;
-    };
-
-    std::vector<secondary::Sample> results;
-    results.reserve(std::size(samples));
-
-    for (auto& sample : samples) {
-        const int64_t sample_len = static_cast<int64_t>(std::size(sample.positions_major));
-
-        // Get the interval tree of candidates for this sequence ID.
-        const auto it_seq_id = candidate_trees->find(sample.seq_id);
-        if (it_seq_id == std::cend(*candidate_trees)) {
-            spdlog::debug("Cannot find seq_id = {} in candidate_trees! Sample: {}", sample.seq_id,
-                          secondary::sample_to_string(sample));
-            continue;
-        }
-        const auto& tree = it_seq_id->second;
-
-        if (sample_len <= chunk_len) {
-            if (has_candidates(tree, sample, 0, sample_len)) {
-                results.emplace_back(std::move(sample));
-            }
-            continue;
-        }
-
-        const int64_t step = chunk_len - chunk_overlap;
-
-        // Create window coordinates.
-        std::vector<std::pair<int64_t, int64_t>> windows;
-        {
-            windows.reserve((sample_len - chunk_len) / chunk_overlap);
-            int64_t end = 0;
-            for (int64_t start = 0; start < (sample_len - chunk_len + 1); start += step) {
-                end = start + chunk_len;
-                windows.emplace_back(start, end);
-            }
-            if (end < sample_len) {
-                const int64_t start = sample_len - chunk_len;
-                end = sample_len;
-                windows.emplace_back(start, end);
-            }
-        }
-
-        // Find windows with candidates.
-        std::vector<bool> window_used(std::size(windows), false);
-        for (int64_t i = 0; i < std::ssize(windows); ++i) {
-            const auto [start, end] = windows[i];
-            if (has_candidates(tree, sample, start, end)) {
-                window_used[i] = true;
-            }
-        }
-
-        // Heuristic to include neighboring windows if there are possible
-        // deletions at the flanks.
-        if (ext_flanks) {
-            for (int64_t i = 0; i < std::ssize(windows); ++i) {
-                if (!window_used[i]) {
-                    continue;
-                }
-
-                // Extend to the left if needed.
-                for (int64_t j = i; j > 0; --j) {
-                    // Predecessor window is already used, no need to extend to the left any further.
-                    if (!window_used[j] || window_used[j - 1]) {
-                        break;
-                    }
-                    const auto [start, end] = windows[j];
-                    if (!check_excess_deletions(sample, start, end, false, ext_major_bases,
-                                                ext_cov_frac, ext_min_cov) ||
-                        !check_flanking_minor(sample, start, end, false)) {
-                        break;
-                    }
-                    window_used[j - 1] = true;
-                }
-
-                // Extend to the right if needed.
-                for (int64_t j = i; j < (std::ssize(windows) - 1); ++j) {
-                    // Next window is already used, no need to extend to the right any further.
-                    if (!window_used[j] || window_used[j + 1]) {
-                        break;
-                    }
-                    const auto [start, end] = windows[j];
-                    if (!check_excess_deletions(sample, start, end, true, ext_major_bases,
-                                                ext_cov_frac, ext_min_cov) ||
-                        !check_flanking_minor(sample, start, end, true)) {
-                        break;
-                    }
-                    window_used[j + 1] = true;
-                }
-            }
-        }
-
-        // Slice out selected windows to return.
-        for (int64_t i = 0; i < std::ssize(windows); ++i) {
-            if (window_used[i]) {
-                const auto [start, end] = windows[i];
-                results.emplace_back(slice_sample(sample, start, end, true));
-            }
-        }
-    }
-
-    return results;
-}
 /**
  * \brief This function performs the following operations:
  *          1. Merges adjacent samples, which were split for efficiency of computing the pileup.
@@ -841,7 +379,7 @@ merge_and_split_bam_regions_in_parallel(
         const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
         const std::span<const secondary::Window> bam_regions,
         const std::span<const secondary::Interval> bam_region_intervals,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
+        const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees,
         const int32_t num_threads,
         const int32_t window_len,
         const int32_t window_overlap,
@@ -873,7 +411,7 @@ merge_and_split_bam_regions_in_parallel(
     const auto worker = [&](const int32_t tid, const int32_t start, const int32_t end,
                             std::vector<std::vector<secondary::Sample>>& results_samples,
                             std::vector<std::vector<secondary::TrimInfo>>& results_trims,
-                            WorkerReturnStatus& ret_val) {
+                            secondary::WorkerReturnStatus& ret_val) {
         utils::ScopedProfileRange spr2("merge_and_split_bam_regions_in_parallel-worker", 4);
 
         for (int32_t bam_region_id = start; bam_region_id < end; ++bam_region_id) {
@@ -898,8 +436,11 @@ merge_and_split_bam_regions_in_parallel(
                 // Split all samples on discontinuities.
                 for (int32_t sample_id = interval.start; sample_id < interval.end; ++sample_id) {
                     auto& sample = window_samples[sample_id];
+                    if (std::empty(sample.positions_major)) {
+                        continue;
+                    }
                     std::vector<secondary::Sample> disc_samples =
-                            split_sample_on_discontinuities(sample);
+                            secondary::split_sample_on_discontinuities(sample);
                     local_samples.insert(std::end(local_samples),
                                          std::make_move_iterator(std::begin(disc_samples)),
                                          std::make_move_iterator(std::end(disc_samples)));
@@ -927,11 +468,11 @@ merge_and_split_bam_regions_in_parallel(
                 if (candidate_trees) {
                     if (!tiled_regions) {
                         local_samples = split_samples_around_positions(std::move(local_samples),
-                                                                       candidate_trees, window_len,
+                                                                       *candidate_trees, window_len,
                                                                        variant_flanking_bases);
                     } else {
                         local_samples = split_samples_tiled_with_candidates(
-                                std::move(local_samples), candidate_trees, window_len,
+                                std::move(local_samples), *candidate_trees, window_len,
                                 window_overlap, tiled_ext_flanks, tiled_ext_major,
                                 tiled_ext_min_cov, tiled_ext_cov_fract);
                     }
@@ -1002,7 +543,7 @@ merge_and_split_bam_regions_in_parallel(
     cxxpool::thread_pool pool{std::size(thread_chunks)};
     std::vector<std::future<void>> futures;
     futures.reserve(std::size(thread_chunks));
-    std::vector<WorkerReturnStatus> worker_return_vals(std::size(thread_chunks));
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(std::size(thread_chunks));
     for (size_t tid = 0; tid < std::size(thread_chunks); ++tid) {
         const auto [chunk_start, chunk_end] = thread_chunks[tid];
         futures.emplace_back(pool.push(worker, tid, chunk_start, chunk_end,
@@ -1015,7 +556,7 @@ merge_and_split_bam_regions_in_parallel(
     }
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }
@@ -1091,7 +632,8 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
 
     // Worker function, each thread computes tensors for a set of windows assigned to it.
     const auto worker = [&](const int32_t thread_id, utils::AsyncQueue<std::size_t>& window_queue,
-                            std::vector<secondary::Sample>& results, WorkerReturnStatus& ret_val) {
+                            std::vector<secondary::Sample>& results,
+                            secondary::WorkerReturnStatus& ret_val) {
         utils::ScopedProfileRange spr2("encode_windows_in_parallel-worker", 4);
 
         const std::size_t n_windows = std::size(windows);
@@ -1149,7 +691,7 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
     std::vector<std::future<void>> futures;
     futures.reserve(actual_threads);
     std::vector<secondary::Sample> results(std::size(windows));
-    std::vector<WorkerReturnStatus> worker_return_vals(actual_threads);
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(actual_threads);
 
     spdlog::debug("Starting to encode regions for {} windows using {} threads.", std::size(windows),
                   actual_threads);
@@ -1165,7 +707,7 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
     }
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }
@@ -1180,52 +722,6 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
 }
 
 }  // namespace
-
-std::vector<secondary::Window> create_windows_from_regions(
-        const std::vector<secondary::Region>& regions,
-        const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& draft_lookup,
-        const int32_t bam_chunk_len,
-        const int32_t window_overlap) {
-    utils::ScopedProfileRange spr1("create_windows_from_regions", 2);
-
-    std::vector<secondary::Window> windows;
-
-    for (int64_t i = 0; i < std::ssize(regions); ++i) {
-        secondary::Region region = regions[i];
-
-        spdlog::debug("Creating windows for region: '{}'.", region_to_string(region));
-
-        const auto it = draft_lookup.find(region.name);
-        if (it == std::end(draft_lookup)) {
-            throw std::runtime_error(
-                    "Sequence specified by custom region not found in input! Sequence name: " +
-                    region.name);
-        }
-        const auto [seq_id, seq_length] = it->second;
-
-        region.start = std::max<int64_t>(0, region.start);
-        region.end = (region.end < 0) ? seq_length : std::min(seq_length, region.end);
-
-        if (region.start >= region.end) {
-            throw std::runtime_error{"Region coordinates not valid. Given: region.name = '" +
-                                     region.name +
-                                     "', region.start = " + std::to_string(region.start) +
-                                     ", region.end = " + std::to_string(region.end)};
-        }
-
-        // Split the custom region if it's too long.
-        std::vector<secondary::Window> new_windows = secondary::create_windows(
-                static_cast<int32_t>(seq_id), region.start, region.end, seq_length, bam_chunk_len,
-                window_overlap, static_cast<int32_t>(i));
-
-        spdlog::debug("Generated {} windows for region: '{}'.", std::size(new_windows),
-                      region_to_string(region));
-        windows.reserve(std::size(windows) + std::size(new_windows));
-        windows.insert(std::end(windows), std::begin(new_windows), std::end(new_windows));
-    }
-
-    return windows;
-}
 
 std::vector<secondary::Variant> convert_variants(
         const std::vector<kadayashi::variant_dorado_style_t>& kadayashi_variants,
@@ -1452,7 +948,7 @@ void sample_producer(
         const std::vector<secondary::Window>& bam_regions,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
         const std::vector<std::unordered_map<std::string, int32_t>>& bam_region_haplotags,
-        const std::optional<IntervalTreesInt64Map>& candidate_trees,
+        const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees,
         const int32_t num_threads,
         const int32_t batch_size,
         const int32_t encoding_batch_size,
@@ -1469,7 +965,7 @@ void sample_producer(
         const float tiled_ext_cov_fract,
         utils::AsyncQueue<InferenceData>& infer_data,
         std::atomic<bool>& worker_terminate,
-        WorkerReturnStatus& ret_status) {
+        secondary::WorkerReturnStatus& ret_status) {
     utils::ScopedProfileRange spr1("sample_producer", 2);
 
     spdlog::debug("[producer] Input: {} BAM windows.", std::size(bam_regions));
@@ -1720,7 +1216,8 @@ void infer_samples_in_parallel(
         const std::vector<c10::optional<c10::Stream>>& streams,
         const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
         [[maybe_unused]] const std::vector<std::pair<std::string, int64_t>>& draft_lens,
-        const bool continue_on_exception) {
+        const bool continue_on_exception,
+        secondary::WorkerReturnStatus& ret_status) {
     utils::ScopedProfileRange spr1("infer_samples_in_parallel", 2);
 
     if (std::empty(models)) {
@@ -1852,7 +1349,7 @@ void infer_samples_in_parallel(
 
     const auto worker = [&](const int32_t tid, secondary::ModelTorchBase& model,
                             [[maybe_unused]] const c10::optional<c10::Stream>& stream,
-                            WorkerReturnStatus& ret_val) {
+                            secondary::WorkerReturnStatus& ret_val) {
         utils::ScopedProfileRange spr2("infer_samples_in_parallel-worker", 3);
 
 #if DORADO_CUDA_BUILD
@@ -1925,7 +1422,7 @@ void infer_samples_in_parallel(
     const size_t num_threads = std::min(std::size(models), std::size(encoders));
     cxxpool::thread_pool pool{num_threads};
 
-    std::vector<WorkerReturnStatus> worker_return_vals(num_threads);
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(num_threads);
 
     std::vector<std::future<void>> futures;
     futures.reserve(num_threads);
@@ -1942,12 +1439,16 @@ void infer_samples_in_parallel(
     decode_queue.terminate(utils::AsyncQueueTerminateFast::No);
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }
         if (!continue_on_exception) {
-            throw std::runtime_error{"(infer-samples) " + rv.message};
+            // Cannot throw because this is a worker function intended to run on a separate thread.
+            // Instead, communicate the error and return.
+            ret_status = rv;
+            worker_terminate = true;
+            return;
         } else {
             spdlog::warn("(infer-samples) " + rv.message);
         }
@@ -1961,7 +1462,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
                                 utils::AsyncQueue<DecodeData>& decode_queue,
                                 secondary::Stats& stats,
                                 std::atomic<bool>& worker_terminate,
-                                polisher::WorkerReturnStatus& ret_status,
+                                secondary::WorkerReturnStatus& ret_status,
                                 const secondary::DecoderBase& decoder,
                                 const int32_t num_threads,
                                 const int32_t min_depth,
@@ -2103,7 +1604,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
     const auto worker = [&](const int32_t tid,
                             std::vector<std::vector<secondary::ConsensusResult>>& thread_results,
                             std::vector<secondary::VariantCallingSample>& thread_vc_data,
-                            WorkerReturnStatus& ret_val) {
+                            secondary::WorkerReturnStatus& ret_val) {
         utils::ScopedProfileRange spr2("decode_samples_in_parallel-worker", 3);
         at::InferenceMode infer_guard;
 
@@ -2189,7 +1690,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
 
     cxxpool::thread_pool pool{static_cast<size_t>(num_threads)};
 
-    std::vector<WorkerReturnStatus> worker_return_vals(num_threads);
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(num_threads);
 
     std::vector<std::future<void>> futures;
     futures.reserve(num_threads);
@@ -2205,7 +1706,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
     }
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }
@@ -2355,7 +1856,7 @@ std::vector<secondary::Variant> call_variants(
     // Worker for parallel processing.
     const auto worker = [&](const int32_t tid, const int32_t start, const int32_t end,
                             std::vector<std::vector<secondary::Variant>>& results,
-                            secondary::Stats& ps, WorkerReturnStatus& ret_val) {
+                            secondary::Stats& ps, secondary::WorkerReturnStatus& ret_val) {
         if ((start < 0) || (start >= end) || (end > std::ssize(results))) {
             throw std::runtime_error("Worker group_id is out of bounds! start = " +
                                      std::to_string(start) + ", end = " + std::to_string(end) +
@@ -2437,7 +1938,7 @@ std::vector<secondary::Variant> call_variants(
     // Reserve the space for results for each individual group.
     std::vector<std::vector<secondary::Variant>> thread_results(std::size(groups));
 
-    std::vector<WorkerReturnStatus> worker_return_vals(std::size(thread_chunks));
+    std::vector<secondary::WorkerReturnStatus> worker_return_vals(std::size(thread_chunks));
 
 #ifdef DEBUG_VC_DATA
     {
@@ -2497,7 +1998,7 @@ std::vector<secondary::Variant> call_variants(
     }
 
     for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const WorkerReturnStatus& rv = worker_return_vals[tid];
+        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
         if (!rv.exception_thrown) {
             continue;
         }

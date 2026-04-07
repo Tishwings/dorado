@@ -6,11 +6,15 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/bam_file.h
         ${PUBLIC_BASE}/bam_info.h
         ${PUBLIC_BASE}/batching.h
+        ${PUBLIC_BASE}/device_info.h
         ${PUBLIC_BASE}/interval.h
+        ${PUBLIC_BASE}/interval_tree_types.h
         ${PUBLIC_BASE}/region.h
         ${PUBLIC_BASE}/stats.h
         ${PUBLIC_BASE}/variant.h
         ${PUBLIC_BASE}/vcf_writer.h
+        ${PUBLIC_BASE}/window.h
+        ${PUBLIC_BASE}/worker_return_status.h
     PRIVATE
         alignment.cpp
         bam_file.cpp
@@ -19,6 +23,7 @@ target_sources(dorado_secondary
         region.cpp
         variant.cpp
         vcf_writer.cpp
+        window.cpp
 )
 
 target_include_directories(dorado_secondary

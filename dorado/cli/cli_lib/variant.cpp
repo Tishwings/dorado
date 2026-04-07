@@ -12,6 +12,7 @@
 #include "secondary/common/stats.h"
 #include "secondary/common/vcf_writer.h"
 #include "secondary/consensus/variant_calling.h"
+#include "secondary/consensus/window_utils.h"
 #include "secondary/features/haplotag_source.h"
 #include "secondary/features/variant_candidate_source.h"
 #include "torch_utils/auto_detect_device.h"
@@ -868,11 +869,11 @@ std::unordered_map<std::string, std::vector<int64_t>> load_candidate_sites(
     return ret;
 }
 
-std::optional<std::unordered_map<int32_t, polisher::IntervalTreeInt64>>
+std::optional<std::unordered_map<int32_t, secondary::IntervalTreeInt64>>
 create_candidate_interval_trees(
         const std::unordered_map<std::string, std::vector<int64_t>>& candidate_sites,
         const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& draft_lookup) {
-    std::unordered_map<int32_t, polisher::IntervalTreeInt64> trees;
+    std::unordered_map<int32_t, secondary::IntervalTreeInt64> trees;
     for (const auto& [ref_name, positions] : candidate_sites) {
         const auto it = draft_lookup.find(ref_name);
         if (it == std::cend(draft_lookup)) {
@@ -883,20 +884,20 @@ create_candidate_interval_trees(
             continue;
         }
         const int32_t seq_id = static_cast<int32_t>(it->second.first);
-        std::vector<interval_tree::Interval<int64_t, int64_t>> intervals;
+        std::vector<secondary::IntervalInt64> intervals;
         for (const int64_t pos : positions) {
             intervals.emplace_back(pos, pos + 1, 0);
         }
-        trees[seq_id] = polisher::IntervalTreeInt64(std::move(intervals));
+        trees[seq_id] = secondary::IntervalTreeInt64(std::move(intervals));
     }
-    return std::optional<std::unordered_map<int32_t, polisher::IntervalTreeInt64>>(
+    return std::optional<std::unordered_map<int32_t, secondary::IntervalTreeInt64>>(
             std::move(trees));
 }
 
-std::unordered_map<int32_t, polisher::IntervalTreeInt64> create_sample_interval_trees(
+std::unordered_map<int32_t, secondary::IntervalTreeInt64> create_sample_interval_trees(
         const std::vector<secondary::VariantCallingSample>& vc_input_data,
         const int64_t trim_len) {
-    using IntervalInt64 = interval_tree::Interval<int64_t, int64_t>;
+    using IntervalInt64 = secondary::IntervalInt64;
 
     // Collect all the intervals.
     std::unordered_map<int32_t, std::vector<IntervalInt64>> all_intervals;
@@ -911,9 +912,9 @@ std::unordered_map<int32_t, polisher::IntervalTreeInt64> create_sample_interval_
     }
 
     // Construct the trees from the intervals.
-    std::unordered_map<int32_t, polisher::IntervalTreeInt64> trees;
+    std::unordered_map<int32_t, secondary::IntervalTreeInt64> trees;
     for (auto& [key, intervals] : all_intervals) {
-        trees[key] = polisher::IntervalTreeInt64(std::move(intervals));
+        trees[key] = secondary::IntervalTreeInt64(std::move(intervals));
     }
 
     return trees;
@@ -922,7 +923,7 @@ std::unordered_map<int32_t, polisher::IntervalTreeInt64> create_sample_interval_
 std::vector<secondary::Variant> merge_variants(
         const std::vector<secondary::Variant>& inference_variants,
         const std::vector<secondary::Variant>& simple_variants,
-        const std::unordered_map<int32_t, polisher::IntervalTreeInt64>& processed_regions) {
+        const std::unordered_map<int32_t, secondary::IntervalTreeInt64>& processed_regions) {
     std::vector<secondary::Variant> new_variants;
     new_variants.reserve(std::size(inference_variants) + std::size(simple_variants));
 
@@ -1000,7 +1001,7 @@ void run_variant_calling(const Options& opt,
 
     // Create interval trees from candidate variant locations.
     // The opt.variant_candidate_source can be NONE, which means no candidate filtering is applied.
-    const std::optional<polisher::IntervalTreesInt64Map> candidate_trees_from_file =
+    const std::optional<secondary::IntervalTreesInt64Map> candidate_trees_from_file =
             (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE)
                     ? create_candidate_interval_trees(candidate_sites, draft_lookup)
                     : std::nullopt;
@@ -1099,7 +1100,7 @@ void run_variant_calling(const Options& opt,
             return 0.0;
         }
         double ret = resources.devices.front().available_memory_GB;
-        for (const polisher::DeviceInfo& device_info : resources.devices) {
+        for (const secondary::DeviceInfo& device_info : resources.devices) {
             ret = std::min(ret, device_info.available_memory_GB);
         }
         return ret;
@@ -1157,8 +1158,8 @@ void run_variant_calling(const Options& opt,
                 // NOTE: the window.seq_id is the _absolute_ sequence ID of the input draft sequences.
                 spdlog::debug("Creating BAM windows.");
                 const std::vector<secondary::Window> bam_regions =
-                        polisher::create_windows_from_regions(region_batch, draft_lookup,
-                                                              opt.bam_chunk, opt.window_overlap);
+                        secondary::create_windows_from_regions(region_batch, draft_lookup,
+                                                               opt.bam_chunk, opt.window_overlap);
 
                 spdlog::debug(
                         "[run_variant_calling] Starting to produce consensus for regions: {}-{}/{} "
@@ -1180,7 +1181,7 @@ void run_variant_calling(const Options& opt,
                         opt.pass_min_qual);
 
                 // Candidate variants, if needed.
-                std::optional<polisher::IntervalTreesInt64Map> candidate_trees;
+                std::optional<secondary::IntervalTreesInt64Map> candidate_trees;
                 if (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE) {
                     // There are no simple variants to merge in this case, merging should be handled outside.
                     spdlog::debug("Using candidate sites from an input file.");
@@ -1197,7 +1198,7 @@ void run_variant_calling(const Options& opt,
                 utils::AsyncQueue<polisher::DecodeData> decode_queue(opt.queue_size);
 
                 // Create a thread for the sample producer.
-                polisher::WorkerReturnStatus wrs_sample_producer;
+                secondary::WorkerReturnStatus wrs_sample_producer;
                 auto thread_sample_producer = utils::jthread(
                         [&resources, &bam_regions, &draft_lens, &candidate_trees, &opt, &usable_mem,
                          &batch_queue, &worker_terminate, &wrs_sample_producer, &haplotag_results] {
@@ -1214,7 +1215,7 @@ void run_variant_calling(const Options& opt,
                         });
 
                 // Create a thread for the sample decoder.
-                polisher::WorkerReturnStatus wrs_decoder;
+                secondary::WorkerReturnStatus wrs_decoder;
                 auto thread_sample_decoder =
                         utils::jthread([&all_results_cons, &vc_input_data, &decode_queue, &stats,
                                         &resources, &opt, &worker_terminate, &wrs_decoder] {
@@ -1227,9 +1228,11 @@ void run_variant_calling(const Options& opt,
                         });
 
                 // Run the inference worker on the main thread.
-                polisher::infer_samples_in_parallel(
-                        batch_queue, decode_queue, resources.models, worker_terminate,
-                        resources.streams, resources.encoders, draft_lens, opt.continue_on_error);
+                secondary::WorkerReturnStatus wrs_infer;
+                polisher::infer_samples_in_parallel(batch_queue, decode_queue, resources.models,
+                                                    worker_terminate, resources.streams,
+                                                    resources.encoders, draft_lens,
+                                                    opt.continue_on_error, wrs_infer);
 
                 // Join the workers.
                 thread_sample_producer.join();
@@ -1241,6 +1244,9 @@ void run_variant_calling(const Options& opt,
                 }
                 if (wrs_decoder.exception_thrown) {
                     throw std::runtime_error{wrs_decoder.message};
+                }
+                if (wrs_infer.exception_thrown) {
+                    throw std::runtime_error{wrs_infer.message};
                 }
             }
 
@@ -1304,7 +1310,7 @@ void run_variant_calling(const Options& opt,
                                 ? 0
                                 : opt.flank_trim_len;
 
-                const std::unordered_map<int32_t, polisher::IntervalTreeInt64> processed_regions =
+                const std::unordered_map<int32_t, secondary::IntervalTreeInt64> processed_regions =
                         create_sample_interval_trees(vc_input_data, flank_trim_len);
 
                 variants = merge_variants(variants, haplotag_results.merged_pass_variants,

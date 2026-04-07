@@ -4,7 +4,10 @@ dorado_add_library(
     PUBLIC_DIR
         polish
     SOURCES_PUBLIC
+        decode_data.h
+        inference_data.h
         polish_impl.h
+        polisher_resources.h
     SOURCES_PRIVATE
         polish_impl.cpp
     DEPENDS_PUBLIC
