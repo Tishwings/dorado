@@ -9,6 +9,7 @@
 #include <spdlog/spdlog.h>
 
 #include <atomic>
+#include <chrono>
 #include <numeric>
 #include <thread>
 
@@ -120,6 +121,30 @@ CATCH_TEST_CASE(TEST_GROUP ": NonBlocking") {
     CATCH_CHECK(queue.try_pop_nonblocking(val, FullLock) == AsyncQueueStatus::Timeout);
 }
 
+CATCH_TEST_CASE(TEST_GROUP ": try_pop_until") {
+    using Clock = AsyncQueue<int>::Clock;
+
+    AsyncQueue<int> queue(5);
+    CATCH_CHECK(queue.try_push(1) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(2) == AsyncQueueStatus::Success);
+
+    const auto small_timeout = std::chrono::milliseconds(200);
+    const auto distant_future = std::chrono::seconds(100);
+
+    // Pop the items.
+    int val = 0;
+    CATCH_CHECK(queue.try_pop_until(val, Clock::now() + distant_future) ==
+                AsyncQueueStatus::Success);
+    CATCH_CHECK(val == 1);
+    CATCH_CHECK(queue.try_pop_until(val, Clock::now() + small_timeout) ==
+                AsyncQueueStatus::Success);
+    CATCH_CHECK(val == 2);
+
+    // Popping from an empty queue should timeout.
+    CATCH_CHECK(queue.try_pop_until(val, Clock::now() + small_timeout) ==
+                AsyncQueueStatus::Timeout);
+}
+
 // Spawned thread sits waiting for an item.
 // Main thread supplies that item.
 CATCH_TEST_CASE(TEST_GROUP ": PopFromOtherThread") {
@@ -202,6 +227,44 @@ CATCH_TEST_CASE(TEST_GROUP ": process_and_pop_n") {
     std::iota(expected.begin(), expected.end(), 0);
     CATCH_CHECK(popped_items == expected);
     CATCH_CHECK(queue.size() == 0);
+}
+
+CATCH_TEST_CASE(TEST_GROUP ": process_and_pop_n_with_timeout") {
+    using Clock = AsyncQueue<int>::Clock;
+
+    AsyncQueue<int> queue(5);
+    CATCH_CHECK(queue.try_push(1) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(2) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(3) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(4) == AsyncQueueStatus::Success);
+
+    const auto small_timeout = std::chrono::milliseconds(200);
+    const auto distant_future = std::chrono::seconds(100);
+
+    std::vector<int> popped_items;
+    auto pop_item = [&popped_items](int popped) { popped_items.push_back(popped); };
+
+    // Take 2 of the 4 items.
+    CATCH_CHECK(queue.process_and_pop_n_with_timeout(pop_item, 2, Clock::now() + distant_future) ==
+                AsyncQueueStatus::Success);
+    CATCH_REQUIRE(popped_items.size() == 2);
+    CATCH_CHECK(popped_items.at(0) == 1);
+    CATCH_CHECK(popped_items.at(1) == 2);
+
+    // Try and take 3 of the remaining 2 items.
+    // The timeout is on waiting for any elements, so we should pop 2 successfully.
+    popped_items.clear();
+    CATCH_CHECK(queue.process_and_pop_n_with_timeout(pop_item, 3, Clock::now() + small_timeout) ==
+                AsyncQueueStatus::Success);
+    CATCH_REQUIRE(popped_items.size() == 2);
+    CATCH_CHECK(popped_items.at(0) == 3);
+    CATCH_CHECK(popped_items.at(1) == 4);
+
+    // Popping from an empty queue should timeout.
+    popped_items.clear();
+    CATCH_CHECK(queue.process_and_pop_n_with_timeout(pop_item, 1, Clock::now() + small_timeout) ==
+                AsyncQueueStatus::Timeout);
+    CATCH_CHECK(popped_items.empty());
 }
 
 CATCH_TEST_CASE(TEST_GROUP ": name") {
