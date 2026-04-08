@@ -14,6 +14,8 @@
 
 using dorado::utils::AsyncQueue;
 using dorado::utils::AsyncQueueStatus;
+using dorado::utils::AsyncQueueNonBlockingMode::FullLock;
+using dorado::utils::AsyncQueueNonBlockingMode::TryLock;
 
 #define TEST_GROUP "AsyncQueue "
 
@@ -95,6 +97,27 @@ CATCH_TEST_CASE(TEST_GROUP ": QueueEmptyAfterRestarting") {
     queue.terminate(terminate_mode);
     queue.restart();
     CATCH_CHECK(queue.size() == 0);
+}
+
+CATCH_TEST_CASE(TEST_GROUP ": NonBlocking") {
+    AsyncQueue<int> queue(5);
+    CATCH_CHECK(queue.try_push(1) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(2) == AsyncQueueStatus::Success);
+
+    // Pop the items.
+    int val = 0;
+    CATCH_CHECK(queue.try_pop_nonblocking(val, FullLock) == AsyncQueueStatus::Success);
+    CATCH_CHECK(val == 1);
+    {
+        // Blocking the queue should cause a timeout rather than blocking the caller.
+        auto blocker = queue.block_for_testing();
+        CATCH_CHECK(queue.try_pop_nonblocking(val, TryLock) == AsyncQueueStatus::Timeout);
+    }
+    CATCH_CHECK(queue.try_pop_nonblocking(val, FullLock) == AsyncQueueStatus::Success);
+    CATCH_CHECK(val == 2);
+
+    // Popping from an empty queue should timeout too.
+    CATCH_CHECK(queue.try_pop_nonblocking(val, FullLock) == AsyncQueueStatus::Timeout);
 }
 
 // Spawned thread sits waiting for an item.

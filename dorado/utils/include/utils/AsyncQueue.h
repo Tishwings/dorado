@@ -17,6 +17,9 @@ enum class AsyncQueueStatus { Success, Timeout, Terminate };
 // Whether to terminate the queue fast or wait until it's empty.
 enum class AsyncQueueTerminateFast : bool { No = false, Yes = true };
 
+// Whether or not to try a full lock in non-blocking mode.
+enum class AsyncQueueNonBlockingMode { TryLock, FullLock };
+
 // Asynchronous queue for producer/consumer use.
 // Items must be movable.
 template <class Item>
@@ -192,6 +195,30 @@ public:
         return AsyncQueueStatus::Success;
     }
 
+    // Non-blocking variant of try_pop().
+    AsyncQueueStatus try_pop_nonblocking(Item& item, AsyncQueueNonBlockingMode mode) {
+        std::unique_lock lock(m_mutex, std::defer_lock);
+        if (mode == AsyncQueueNonBlockingMode::TryLock) {
+            if (!lock.try_lock()) {
+                // If we're only trying to lock and fail then don't block.
+                return AsyncQueueStatus::Timeout;
+            }
+        } else {
+            lock.lock();
+        }
+        // Check for terminate flag.
+        if (m_terminate == Terminate::Fast ||
+            (m_terminate == Terminate::WhenEmpty && m_items.empty())) {
+            return AsyncQueueStatus::Terminate;
+        }
+        // If there's no items then return with nothing.
+        if (m_items.empty()) {
+            return AsyncQueueStatus::Timeout;
+        }
+        pop_item(lock, item);
+        return AsyncQueueStatus::Success;
+    }
+
     // Obtains all items in the queue, up to the limit of max_count,
     // once the lock is obtained.
     // If the lock is contended this could be more efficient than repeated
@@ -294,6 +321,9 @@ public:
         stats["pops"] = num_pops;
         return stats;
     }
+
+    // Blocks all actions on the queue. Only useful for testing.
+    auto block_for_testing() { return std::unique_lock(m_mutex); }
 };
 
 }  // namespace dorado::utils
