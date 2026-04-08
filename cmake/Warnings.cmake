@@ -13,6 +13,8 @@ function(enable_warnings_as_errors TARGET_NAME)
             $<$<NOT:$<COMPILE_LANGUAGE:CUDA>>:/Zc:preprocessor>
             # spdlog's bundled libfmt requires this, and we get PCH errors if we don't set it too.
             $<$<NOT:$<COMPILE_LANGUAGE:CUDA>>:/utf-8>
+            # Ignore unhelpful warnings.
+            /wd4324 # structure was padded due to alignment specifier
         )
         target_compile_definitions(${TARGET_NAME} PRIVATE
             _CRT_SECURE_NO_WARNINGS
