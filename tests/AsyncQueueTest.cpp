@@ -1,6 +1,5 @@
 #include "utils/AsyncQueue.h"
 
-#include "utils/concurrency/synchronisation.h"
 #include "utils/jthread.h"
 
 #include <catch2/benchmark/catch_benchmark.hpp>
@@ -10,6 +9,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <latch>
 #include <numeric>
 #include <thread>
 
@@ -284,7 +284,7 @@ CATCH_TEST_CASE(TEST_GROUP ": benchmarks") {
 
     using Item = std::unique_ptr<int>;
     AsyncQueue<Item> queue(unbounded ? 1'000'000 : 10);
-    dorado::utils::concurrency::Latch latch(num_producers + num_consumers);
+    std::latch latch(num_producers + num_consumers);
     std::vector<std::size_t> processed_counts(num_consumers);
 
     // Start the threads.
@@ -292,8 +292,7 @@ CATCH_TEST_CASE(TEST_GROUP ": benchmarks") {
     threads.reserve(num_producers + num_consumers);
     for (int i = 0; i < num_producers; i++) {
         threads.emplace_back([&latch, &queue] {
-            latch.count_down();
-            latch.wait();
+            latch.arrive_and_wait();
 
             while (true) {
                 auto res = queue.try_push(Item{});
@@ -306,8 +305,7 @@ CATCH_TEST_CASE(TEST_GROUP ": benchmarks") {
     for (int i = 0; i < num_consumers; i++) {
         auto &counter = processed_counts.at(i);
         threads.emplace_back([&latch, &queue, &counter] {
-            latch.count_down();
-            latch.wait();
+            latch.arrive_and_wait();
 
             std::size_t processed = 0;
             while (true) {
