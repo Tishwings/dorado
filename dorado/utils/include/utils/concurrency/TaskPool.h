@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Task.h"
 #include "utils/AsyncQueue.h"
+#include "utils/concurrency/Task.h"
 
 namespace dorado::utils::concurrency {
 

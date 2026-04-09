@@ -1,6 +1,6 @@
-#include "WorkerPool.h"
+#include "utils/concurrency/WorkerPool.h"
 
-#include "TaskPool.h"
+#include "utils/concurrency/TaskPool.h"
 
 #include <cassert>
 #include <latch>
