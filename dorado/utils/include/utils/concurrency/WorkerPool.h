@@ -21,14 +21,29 @@ private:
 
 private:
     void worker_thread(size_t worker_idx);
+    void set_task_pool(TaskPool* pool);
+
+    void bind_task_pool(TaskPool& pool);
+    void unbind_task_pool();
 
 public:
     explicit WorkerPool(size_t num_workers);
     ~WorkerPool();
 
     // Bind the given task pool to this worker pool.
-    // Tasks will begin being popped and executed immediately.
-    void set_task_pool(TaskPool& pool);
+    // Tasks will begin being popped and executed immediately after binding.
+    class BindTasks {
+        WorkerPool& m_workers;
+
+        BindTasks(const BindTasks&) = delete;
+        BindTasks& operator=(const BindTasks&) = delete;
+        BindTasks(BindTasks&&) = delete;
+        BindTasks& operator=(BindTasks&&) = delete;
+
+    public:
+        explicit BindTasks(WorkerPool& workers, TaskPool& tasks);
+        ~BindTasks();
+    };
 
     // Wait for all existing work to complete.
     void flush();

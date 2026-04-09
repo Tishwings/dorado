@@ -5,6 +5,7 @@
 #include <cassert>
 #include <latch>
 #include <new>
+#include <stdexcept>
 #include <thread>
 
 namespace dorado::utils::concurrency {
@@ -52,10 +53,36 @@ void WorkerPool::worker_thread(size_t worker_idx) {
             continue;
         }
 
-        // If we're here then we should be running and have a pool assigned.
+        // If we get here then we should be running.
         assert(state == WorkerState::Running);
-        assert(worker_state.task_pool != nullptr);
+
+        // If we don't have an active task pool then wait for one to be bound.
+        if (worker_state.task_pool == nullptr) {
+            worker_state.state.wait(WorkerState::Running, std::memory_order_relaxed);
+            continue;
+        }
+
         worker_state.task_pool->run_task(worker_idx);
+    }
+}
+
+void WorkerPool::set_task_pool(TaskPool* pool) {
+    flush();
+
+    // Tell the workers to pause.
+    for (size_t idx = 0; idx < m_num_workers; idx++) {
+        m_states[idx].state.exchange(WorkerState::Pausing, std::memory_order_relaxed);
+        m_states[idx].state.notify_one();
+    }
+    // Wait for all of them to become paused.
+    for (size_t idx = 0; idx < m_num_workers; idx++) {
+        m_states[idx].state.wait(WorkerState::Pausing, std::memory_order_acquire);
+    }
+    // Assign the new task pool and start them off again.
+    for (size_t idx = 0; idx < m_num_workers; idx++) {
+        m_states[idx].task_pool = pool;
+        m_states[idx].state.exchange(WorkerState::Running, std::memory_order_release);
+        m_states[idx].state.notify_one();
     }
 }
 
@@ -78,33 +105,35 @@ WorkerPool::~WorkerPool() {
     }
 }
 
-void WorkerPool::set_task_pool(TaskPool& pool) {
-    flush();
-
-    // Tell the workers to pause.
-    for (size_t idx = 0; idx < m_num_workers; idx++) {
-        m_states[idx].state.exchange(WorkerState::Pausing, std::memory_order_relaxed);
-        m_states[idx].state.notify_one();
+void WorkerPool::bind_task_pool(TaskPool& pool) {
+    if (m_states[0].task_pool != nullptr) {
+        throw std::logic_error("WorkerPool already has a TaskPool bound");
     }
-    // Wait for all of them to become paused.
-    for (size_t idx = 0; idx < m_num_workers; idx++) {
-        m_states[idx].state.wait(WorkerState::Pausing, std::memory_order_acquire);
-    }
-    // Assign the new task pool and start them off again.
-    for (size_t idx = 0; idx < m_num_workers; idx++) {
-        m_states[idx].task_pool = &pool;
-        m_states[idx].state.exchange(WorkerState::Running, std::memory_order_release);
-        m_states[idx].state.notify_one();
-    }
+    set_task_pool(&pool);
 }
 
+void WorkerPool::unbind_task_pool() { set_task_pool(nullptr); }
+
 void WorkerPool::flush() {
+    // If we haven't been assigned a pool yet then bail.
+    TaskPool* task_pool = m_states[0].task_pool;
+    if (task_pool == nullptr) {
+        return;
+    }
+
     // Send a blocking task for all workers to pop and wait on.
+    const std::size_t num_queues = task_pool->num_queues();
     auto blocker = std::make_shared<std::latch>(m_num_workers + 1);
     for (size_t idx = 0; idx < m_num_workers; idx++) {
-        m_states[idx].task_pool->send([blocker] { blocker->arrive_and_wait(); }, idx);
+        task_pool->send([blocker] { blocker->arrive_and_wait(); }, idx % num_queues);
     }
     blocker->arrive_and_wait();
 }
+
+WorkerPool::BindTasks::BindTasks(WorkerPool& workers, TaskPool& tasks) : m_workers(workers) {
+    m_workers.bind_task_pool(tasks);
+}
+
+WorkerPool::BindTasks::~BindTasks() { m_workers.unbind_task_pool(); }
 
 }  // namespace dorado::utils::concurrency

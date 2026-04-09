@@ -27,6 +27,8 @@ public:
     explicit TaskPool(std::size_t num_queues, std::size_t q_capacity);
     ~TaskPool();
 
+    std::size_t num_queues() const { return m_task_qs.size(); }
+
     // Push a task into the pool.
     void send(Task &&task, std::size_t q_idx) {
         auto &q = m_task_qs.at(q_idx);

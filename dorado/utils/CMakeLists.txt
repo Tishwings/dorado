@@ -90,6 +90,7 @@ dorado_add_library(
         time_utils.cpp
         uuid_utils.cpp
     SOURCES_TEST
+        test_AsyncExecutor.cpp
         test_FunctionRef.cpp
         test_MoveOnlyFunction.cpp
     DEPENDS_PUBLIC
