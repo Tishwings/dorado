@@ -265,7 +265,7 @@ int main(int argc, char *argv[]) {
             double timestamp = kadayashi::get_timestamp();
             kadayashi::write_haptagged_bam_given_hashtable_and_itvl(
                     clio.fn_bam, ".", clio.fn_out_bam, qname2hp, clio.n_threads);
-            spdlog::info("[kdys::{}] haptagged bam written, used %.1fs", __func__,
+            spdlog::info("[kdys::{}] haptagged bam written, used {:.1f}s", __func__,
                          kadayashi::get_timestamp() - timestamp);
         }
         ret = 0;
@@ -284,7 +284,7 @@ int main(int argc, char *argv[]) {
                 clio.pp.min_strand_cov, clio.pp.min_strand_cov_frac,
                 clio.pp.max_gapcompressed_seqdiv, clio.vcf_write_allow_refbase_N,
                 clio.pp.disable_region_expansion, clio.varcall_use_dvr, clio.bed_flanking);
-        spdlog::info("[kdys::{}] varcall main routine done, used %.1fs", __func__,
+        spdlog::info("[kdys::{}] varcall main routine done, used {:.1f}s", __func__,
                      kadayashi::get_timestamp() - timestamp);
 
         if (clio.write_dbg_bam) {
@@ -292,7 +292,7 @@ int main(int argc, char *argv[]) {
             std::string fn_out_bam = clio.output_prefix.string() + ".kadayashi.bam";
             kadayashi::write_haptagged_bam_given_hashtable_and_multiple_itvls(
                     clio.fn_bam, clio.varcall_regions, fn_out_bam, qname2hp, clio.n_threads);
-            spdlog::info("[kdys::{}] haptagged bam written, used %.1fs", __func__,
+            spdlog::info("[kdys::{}] haptagged bam written, used {:.1f}s", __func__,
                          kadayashi::get_timestamp() - timestamp);
         }
         ret = 0;
