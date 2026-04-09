@@ -1609,7 +1609,7 @@ std::vector<secondary::Variant> call_variants(
         const int32_t num_threads,
         const bool continue_on_exception) {
     // Group samples by sequence ID.
-    std::vector<std::vector<std::pair<int64_t, int32_t>>> groups(region_batch.length());
+    std::vector<std::vector<int32_t>> groups(region_batch.length());
     for (int32_t i = 0; i < std::ssize(vc_input_data); ++i) {
         const auto& vc_sample = vc_input_data[i];
 
@@ -1628,7 +1628,7 @@ std::vector<secondary::Variant> call_variants(
                     vc_sample.seq_id, std::size(draft_lens), std::size(groups));
             continue;
         }
-        groups[local_id].emplace_back(vc_sample.start(), i);
+        groups[local_id].emplace_back(i);
     }
 
     // Worker for parallel processing.
@@ -1652,9 +1652,13 @@ std::vector<secondary::Variant> call_variants(
             // Catch exceptions here to skip variant calling only on one sequence instead
             // of the entire batch.
             try {
-                // Sort the group by start positions.
+                // Sort the group by the full starting coordinate before trimming overlaps.
                 auto& group = groups[group_id];
-                std::stable_sort(std::begin(group), std::end(group));
+                std::stable_sort(std::begin(group), std::end(group),
+                                 [&vc_input_data](const int32_t lhs_id, const int32_t rhs_id) {
+                                     return secondary::variant_calling_sample_less(
+                                             vc_input_data[lhs_id], vc_input_data[rhs_id]);
+                                 });
 
                 if (std::empty(group)) {
                     continue;

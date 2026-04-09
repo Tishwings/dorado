@@ -171,4 +171,41 @@ CATCH_TEST_CASE("merge_vc_samples", TEST_GROUP) {
     }
 }
 
+CATCH_TEST_CASE("variant_calling_sample_less orders by full start coordinate", TEST_GROUP) {
+    const VariantCallingSample major_start_only{
+            0,
+            {195447, 195447, 195448},
+            {1, 2, 0},
+            at::ones({3, 1}, at::kFloat),
+    };
+    const VariantCallingSample true_predecessor{
+            0,
+            {195447, 195448},
+            {0, 0},
+            at::ones({2, 1}, at::kFloat),
+    };
+
+    CATCH_CHECK(variant_calling_sample_less(true_predecessor, major_start_only));
+    CATCH_CHECK_FALSE(variant_calling_sample_less(major_start_only, true_predecessor));
+}
+
+CATCH_TEST_CASE("variant_calling_sample_less prefers longer sample for identical starts",
+                TEST_GROUP) {
+    const VariantCallingSample longer{
+            0,
+            {195447, 195447, 195448},
+            {0, 1, 0},
+            at::ones({3, 1}, at::kFloat),
+    };
+    const VariantCallingSample shorter{
+            0,
+            {195447, 195448},
+            {0, 0},
+            at::ones({2, 1}, at::kFloat),
+    };
+
+    CATCH_CHECK(variant_calling_sample_less(longer, shorter));
+    CATCH_CHECK_FALSE(variant_calling_sample_less(shorter, longer));
+}
+
 }  // namespace dorado::secondary::consensus::tests

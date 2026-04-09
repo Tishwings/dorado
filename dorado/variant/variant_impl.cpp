@@ -1149,21 +1149,25 @@ std::vector<secondary::Variant> call_variants_single_chrom(
         const float pass_min_qual,
         const bool ambig_ref,
         const bool gvcf) {
-    std::vector<std::pair<int64_t, int32_t>> group;
-    group.reserve(std::size(vc_input_data));
+    std::vector<int32_t> ordered_ids;
+    ordered_ids.reserve(std::size(vc_input_data));
 
     // Skip filtered samples.
     for (int32_t i = 0; i < std::ssize(vc_input_data); ++i) {
         if (vc_input_data[i].seq_id < 0) {
             continue;
         }
-        group.emplace_back(vc_input_data[i].start(), i);
+        ordered_ids.emplace_back(i);
     }
 
-    // Sort by start position. Samples could have arrived in a mixed order.
-    std::stable_sort(std::begin(group), std::end(group));
+    // Sort by the full starting coordinate so async arrival order does not leak into trimming.
+    std::stable_sort(std::begin(ordered_ids), std::end(ordered_ids),
+                     [&vc_input_data](const int32_t lhs_id, const int32_t rhs_id) {
+                         return secondary::variant_calling_sample_less(vc_input_data[lhs_id],
+                                                                       vc_input_data[rhs_id]);
+                     });
 
-    if (std::empty(group)) {
+    if (std::empty(ordered_ids)) {
         return {};
     }
 
@@ -1171,7 +1175,7 @@ std::vector<secondary::Variant> call_variants_single_chrom(
     const std::string draft = fastx_reader.fetch_seq(seq_name);
 
     // Trim the overlapping portions between samples.
-    const auto trimmed_vc_samples = secondary::trim_vc_samples(vc_input_data, group);
+    const auto trimmed_vc_samples = secondary::trim_vc_samples(vc_input_data, ordered_ids);
 
     // Break and merge samples on non-variant positions.
     const auto joined_samples = join_samples(trimmed_vc_samples, draft, decoder);

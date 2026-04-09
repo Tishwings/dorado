@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <sstream>
 #include <stdexcept>
+#include <tuple>
 
 namespace dorado::secondary {
 
@@ -85,6 +86,31 @@ bool operator==(const VariantCallingSample& lhs, const VariantCallingSample& rhs
     return (lhs.logits.equal(rhs.logits)) &&
            (std::tie(lhs.seq_id, lhs.positions_major, lhs.positions_minor) ==
             std::tie(rhs.seq_id, rhs.positions_major, rhs.positions_minor));
+}
+
+namespace {
+template <typename T>
+inline T get_front_val(const std::vector<T>& data, const T default_val) {
+    return std::empty(data) ? default_val : data.front();
+}
+template <typename T>
+inline T get_back_val(const std::vector<T>& data, const T default_val) {
+    return std::empty(data) ? default_val : data.back();
+}
+}  // namespace
+
+bool variant_calling_sample_less(const VariantCallingSample& lhs, const VariantCallingSample& rhs) {
+    const auto order_key = [](const VariantCallingSample& sample) {
+        constexpr int64_t def = -1;
+        const int64_t start_major = get_front_val(sample.positions_major, def);
+        const int64_t start_minor = get_front_val(sample.positions_minor, def);
+        const int64_t end_major = get_back_val(sample.positions_major, def);
+        const int64_t end_minor = get_back_val(sample.positions_minor, def);
+        const int64_t neg_len = -std::ssize(sample.positions_major);
+        return std::tuple{sample.seq_id, start_major, start_minor, neg_len, end_major, end_minor};
+    };
+
+    return order_key(lhs) < order_key(rhs);
 }
 
 VariantCallingSample slice_vc_sample(const VariantCallingSample& vc_sample,
@@ -266,12 +292,12 @@ std::vector<VariantCallingSample> join_samples(const std::vector<VariantCallingS
 
 std::vector<VariantCallingSample> trim_vc_samples(
         const std::vector<VariantCallingSample>& vc_input_data,
-        const std::vector<std::pair<int64_t, int32_t>>& group) {
+        const std::vector<int32_t>& ordered_ids) {
     // Mock the Sample objects. Trimming works on Sample objects only, but
     // it only needs positions, not the actual tensors.
     std::vector<Sample> local_samples;
-    local_samples.reserve(std::size(group));
-    for (const auto& [start, id] : group) {
+    local_samples.reserve(std::size(ordered_ids));
+    for (const int32_t id : ordered_ids) {
         const auto& vc_sample = vc_input_data[id];
         local_samples.emplace_back(Sample{.seq_id = vc_sample.seq_id,
                                           .features = {},
@@ -288,10 +314,10 @@ std::vector<VariantCallingSample> trim_vc_samples(
     std::vector<VariantCallingSample> trimmed_samples;
 
     assert(std::size(trims) == std::size(local_samples));
-    assert(std::size(trims) == std::size(group));
+    assert(std::size(trims) == std::size(ordered_ids));
 
     for (std::size_t i = 0; i < std::size(trims); ++i) {
-        const int32_t id = group[i].second;
+        const int32_t id = ordered_ids[i];
         const auto& s = vc_input_data[id];
         const TrimInfo& t = trims[i];
 
