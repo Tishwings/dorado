@@ -6,6 +6,10 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/model_factory.h
         ${PUBLIC_BASE}/model_config.h
     PRIVATE
+        flash_attention_module.cpp
+        flash_attention_module.h
+        flash_attention3_backend.cpp
+        flash_attention3_backend.h
         model_config.cpp
         model_factory.cpp
         model_gru.cpp
@@ -24,5 +28,4 @@ target_sources(dorado_secondary
 target_include_directories(dorado_secondary
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
 )

@@ -14,6 +14,7 @@ dorado_add_library(
         cxxpool
         dorado_nn
         dorado_version
+        dorado_flashattention3
         htslib
         intervaltree
         kadayashi::haplotag_lib
