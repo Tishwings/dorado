@@ -622,6 +622,7 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
 
     const std::vector<std::vector<secondary::Window>> bam_regions{{bam_window}};
     const std::vector<std::pair<std::string, int64_t>> draft_lens{{"chr1", bam_window.seq_length}};
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
 
     // Mock encoder which returns zero samples for this region.
     VariantResources resources;
@@ -664,7 +665,7 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
     /// Run the unit under test.         ///
     ////////////////////////////////////////
     worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
-                           worker_terminate, ret_status, bam_regions, draft_lens,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
                            secondary::VariantCandidateSource::COMPUTE, std::nullopt, 1,
                            bam_window.seq_length, 0, 10, false, 2, 30.0f, false, false, 0, 0, 0.0f,
                            0);
@@ -719,6 +720,7 @@ CATCH_TEST_CASE("worker_sample_producer rejects bam windows with seq_id outside 
 
     // Define the draft lens. Only one sequence.
     const std::vector<std::pair<std::string, int64_t>> draft_lens{{"chr1", 10}};
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
 
     // Populate the input queue.
     utils::AsyncQueue<secondary::Window> input_queue{2};
@@ -741,7 +743,7 @@ CATCH_TEST_CASE("worker_sample_producer rejects bam windows with seq_id outside 
     /// Run the unit under test.         ///
     ////////////////////////////////////////
     worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
-                           worker_terminate, ret_status, bam_regions, draft_lens,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
                            secondary::VariantCandidateSource::COMPUTE, std::nullopt, 1,
                            bam_window.seq_length, 0, 10, false, 2, 30.0f, false, false, 0, 0, 0.0f,
                            0);
@@ -803,6 +805,7 @@ CATCH_TEST_CASE("worker_sample_producer rejects negative remaining_bam_regions",
     // Bam regions and draft lengths.
     const std::vector<std::vector<secondary::Window>> bam_regions{{bam_window}};
     const std::vector<std::pair<std::string, int64_t>> draft_lens{{"chr1", 10}};
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
 
     // Populate the input queue.
     utils::AsyncQueue<secondary::Window> input_queue{2};
@@ -825,7 +828,7 @@ CATCH_TEST_CASE("worker_sample_producer rejects negative remaining_bam_regions",
     /// Run the unit under test.         ///
     ////////////////////////////////////////
     worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
-                           worker_terminate, ret_status, bam_regions, draft_lens,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
                            secondary::VariantCandidateSource::COMPUTE, std::nullopt, 1,
                            bam_window.seq_length, 0, 10, false, 2, 30.0f, false, false, 0, 0, 0.0f,
                            0);
@@ -861,6 +864,8 @@ CATCH_TEST_CASE("worker_sample_producer handles migrated haplotagging with real 
 
     const std::vector<std::pair<std::string, int64_t>> draft_lens =
             utils::load_seq_lengths(in_ref_fn);
+
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
 
     // Define input BAM regions for processing.
     const std::vector<secondary::Window> bam_windows{
@@ -905,7 +910,7 @@ CATCH_TEST_CASE("worker_sample_producer handles migrated haplotagging with real 
 
     // Unit under test.
     worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
-                           worker_terminate, ret_status, bam_regions, draft_lens,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
                            secondary::VariantCandidateSource::COMPUTE, std::nullopt,
                            /*num_threads=*/2, /*window_len=*/1000, /*window_overlap=*/0,
                            /*variant_flanking_bases=*/50, /*continue_on_exception=*/false,
