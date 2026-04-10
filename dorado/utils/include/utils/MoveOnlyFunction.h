@@ -57,8 +57,21 @@ class MoveOnlyFunctionBase {
 
 public:
     // Construct from a function pointer.
-    MoveOnlyFunctionBase(FunctionPtr ptr) noexcept : MoveOnlyFunctionBase() {
+    template <typename Func>
+        requires(std::is_invocable_r_v<R, Func, Args...> &&
+                 std::is_convertible_v<Func, FunctionPtr>)
+    MoveOnlyFunctionBase(Func&& func) noexcept : MoveOnlyFunctionBase() {
+        FunctionPtr ptr = func;
+        // Silence warning that |ptr| will always be non-NULL if |func| is the
+        // address of a function.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress"
+#endif
         if (ptr) {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
             m_data.func_ptr = ptr;
             m_move_and_destroy = [](Data& src, Data* dst) {
                 if (dst) {
@@ -73,7 +86,8 @@ public:
 
     // Construct from a big functor.
     template <typename Func>
-        requires(std::is_invocable_r_v<R, Func, Args...> && !detail::is_small_v<Func>)
+        requires(std::is_invocable_r_v<R, Func, Args...> &&
+                 !std::is_convertible_v<Func, FunctionPtr> && !detail::is_small_v<Func>)
     MoveOnlyFunctionBase(Func&& func) {
         using F = std::remove_reference_t<Func>;
 
@@ -98,7 +112,8 @@ public:
 
     // Construct from a small functor.
     template <typename Func>
-        requires(std::is_invocable_r_v<R, Func, Args...> && detail::is_small_v<Func>)
+        requires(std::is_invocable_r_v<R, Func, Args...> &&
+                 !std::is_convertible_v<Func, FunctionPtr> && detail::is_small_v<Func>)
     MoveOnlyFunctionBase(Func&& func) {
         using F = std::remove_reference_t<Func>;
 
@@ -116,6 +131,8 @@ public:
             return (*f)(std::forward<Args>(args)...);
         };
     }
+
+    MoveOnlyFunctionBase(std::nullptr_t) noexcept : MoveOnlyFunctionBase() {}
 
     MoveOnlyFunctionBase() noexcept = default;
     MoveOnlyFunctionBase(MoveOnlyFunctionBase&) = delete;
