@@ -813,18 +813,30 @@ void worker_infer_samples_in_parallel(
 #endif
 
         // We can simply stack these since all windows are of the same size. (Smaller windows are set aside.)
-        timer::TimerHighRes timer_collate;
         torch::Tensor batch_features_tensor;
         int64_t time_collate = 0;
+        int64_t time_move_to_device = 0;
         {
             utils::ScopedProfileRange spr3("infer_samples_in_parallel-collate", 4);
+            timer::TimerHighRes timer_collate;
             std::vector<torch::Tensor> batch_features;
             batch_features.reserve(std::size(batch.samples));
             for (const auto& sample : batch.samples) {
                 batch_features.emplace_back(sample.features);
             }
-            batch_features_tensor = encoders[tid]->collate(std::move(batch_features));
+            const bool use_pinned_memory = (model.get_device().type() == torch::kCUDA);
+            batch_features_tensor =
+                    encoders[tid]->collate(std::move(batch_features), use_pinned_memory);
             time_collate = timer_collate.GetElapsedMilliseconds();
+        }
+
+        {
+            utils::ScopedProfileRange spr3("infer_samples_in_parallel-move_to_device", 4);
+            timer::TimerHighRes timer_move_to_device;
+            const bool non_blocking = (model.get_device().type() == torch::kCUDA);
+            batch_features_tensor =
+                    model.prepare_batch_input(std::move(batch_features_tensor), non_blocking);
+            time_move_to_device = timer_move_to_device.GetElapsedMilliseconds();
         }
 
         const std::string input_batch_tensor_shape =
@@ -843,7 +855,9 @@ void worker_infer_samples_in_parallel(
 
         // Inference.
         torch::Tensor output;
-        timer::TimerHighRes timer_forward;
+        torch::Tensor output_on_device;
+        int64_t time_forward = 0;
+        int64_t time_move_to_host = 0;
 
         {
             utils::ScopedProfileRange spr3("infer_samples_in_parallel-infer", 4);
@@ -866,21 +880,32 @@ void worker_infer_samples_in_parallel(
             }
 #endif
 
+            timer::TimerHighRes timer_forward;
+
             try {
-                output = model.predict_on_batch(std::move(batch_features_tensor));
+                output_on_device = model.predict_on_device_batch(std::move(batch_features_tensor));
             } catch (const std::exception& e) {
                 spdlog::error("Exception caught: {}", e.what());
                 throw;
             }
 
+            time_forward = timer_forward.GetElapsedMilliseconds();
+
 #ifdef DEBUG_INFERENCE_DATA
             {
-                std::cout << "[infer] output: output.shape = "
-                          << utils::tensor_shape_as_string(output) << "\n";
-                std::cout << "[infer] output: output =\n" << output << "\n";
-                utils::save_tensor(output, "debug.tensor.out.pt");
+                std::cout << "[infer] output_device.shape = "
+                          << utils::tensor_shape_as_string(output_device) << "\n";
+                std::cout << "[infer] output_device =\n" << output_device << "\n";
+                utils::save_tensor(output_device, "debug.tensor.out.pt");
             }
 #endif
+        }
+
+        {
+            utils::ScopedProfileRange spr3("infer_samples_in_parallel-move_to_host", 4);
+            timer::TimerHighRes timer_move_to_host;
+            output = output_on_device.cpu();
+            time_move_to_host = timer_move_to_host.GetElapsedMilliseconds();
         }
 
 #ifdef DEBUG_DUMP_INFERENCE_TENSORS_TO_DISK
@@ -900,14 +925,14 @@ void worker_infer_samples_in_parallel(
 
         // Debug output.
         {
-            const int64_t time_forward = timer_forward.GetElapsedMilliseconds();
             const int64_t time_total = timer_total.GetElapsedMilliseconds();
 
             spdlog::trace(
-                    "[consumer {}] Computed batch inference. Timings - collate: {} ms, forward: {} "
-                    "ms, "
+                    "[consumer {}] Computed batch inference. Timings - collate: {} ms, "
+                    "move_to_device: {} ms, forward: {} ms, move_to_host: {} ms, "
                     "total = {}, batch_features_tensor.shape = [{}]",
-                    tid, time_collate, time_forward, time_total, input_batch_tensor_shape);
+                    tid, time_collate, time_move_to_device, time_forward, time_move_to_host,
+                    time_total, input_batch_tensor_shape);
         }
 
         return output;

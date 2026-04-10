@@ -69,7 +69,7 @@ public:
         return {};
     }
 
-    at::Tensor collate(std::vector<at::Tensor> batch) const override {
+    at::Tensor collate(std::vector<at::Tensor> batch, const bool /*pinned_memory*/) const override {
         return std::empty(batch) ? at::empty({0}) : std::move(batch.front());
     }
 
@@ -102,7 +102,7 @@ public:
         throw std::runtime_error{"Unexpected encode_region call."};
     }
 
-    at::Tensor collate(std::vector<at::Tensor> batch) const override {
+    at::Tensor collate(std::vector<at::Tensor> batch, const bool /*pinned_memory*/) const override {
         if (std::empty(batch)) {
             return at::empty({0}, at::TensorOptions().dtype(at::kFloat).device(at::kCPU));
         }

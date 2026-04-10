@@ -397,7 +397,8 @@ secondary::Sample EncoderReadAlignment::encode_region(
     return sample;
 }
 
-at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch) const {
+at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch,
+                                         const bool pinned_memory) const {
     if (std::empty(batch)) {
         return {};
     }
@@ -427,8 +428,14 @@ at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch) const {
         }
         const int64_t max_depth = *std::max_element(std::begin(depths), std::end(depths));
 
+        // Initialize tensor options for either pinned or pageable memory.
+        at::TensorOptions opts = at::TensorOptions().dtype(at::kByte).device(at::kCPU);
+        if (pinned_memory) {
+            opts = opts.pinned_memory(true);
+        }
+
         // Initialize a zero-filled feature tensor.
-        features = at::zeros({batch_size, npos, max_depth, nfeats}, at::kByte);
+        features = at::zeros({batch_size, npos, max_depth, nfeats}, opts);
 
         // Fill the tensor with sample data, padding as necessary.
         for (size_t i = 0; i < std::size(batch); ++i) {
