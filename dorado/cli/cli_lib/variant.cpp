@@ -5,38 +5,30 @@
 #include "hts_utils/fai_utils.h"
 #include "model_downloader/model_downloader.h"
 #include "models/models.h"
-#include "polish/polish_impl.h"
 #include "secondary/architectures/model_config.h"
 #include "secondary/common/bam_info.h"
-#include "secondary/common/batching.h"
+#include "secondary/common/region.h"
 #include "secondary/common/stats.h"
 #include "secondary/common/vcf_writer.h"
-#include "secondary/consensus/variant_calling.h"
 #include "secondary/consensus/window_utils.h"
 #include "secondary/features/haplotag_source.h"
 #include "secondary/features/variant_candidate_source.h"
 #include "torch_utils/auto_detect_device.h"
-#include "torch_utils/gpu_profiling.h"
 #include "torch_utils/torch_utils.h"
 #include "utils/AsyncQueue.h"
 #include "utils/arg_parse_ext.h"
 #include "utils/fs_utils.h"
-#include "utils/io_utils.h"
 #include "utils/jthread.h"
-#include "utils/log_utils.h"
-#include "utils/memory_utils.h"
 #include "utils/string_utils.h"
 #include "utils/thread_utils.h"
+#include "variant/variant_impl.h"
 #include "variant_progress_tracker.h"
 
-#include <ATen/Parallel.h>
 #include <IntervalTree.h>
-#include <htslib/faidx.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -50,10 +42,6 @@
 #include <thread>
 #include <tuple>
 #include <vector>
-
-#ifndef _WIN32
-#include <unistd.h>
-#endif
 
 namespace dorado {
 
@@ -79,13 +67,10 @@ struct Options {
     int32_t infer_threads = 1;
     std::string device_str;
     int32_t batch_size = 10;
-    int64_t ref_batch_size = 200'000'000;
-    int64_t encoding_batch_size = 0;
     int32_t window_len = 10000;
     int32_t window_overlap = 1000;
     int32_t variant_flanking_bases = 100;
     int32_t bam_chunk = 1'000'000;
-    int32_t bam_subchunk = 100'000;
     std::optional<std::string> regions_str;
     std::vector<secondary::Region> regions;
     bool full_precision = false;
@@ -187,13 +172,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Batch size for inference. Default: 0 for auto batch size detection.")
                 .default_value(0)
                 .scan<'i', int>();
-        parser.add_argument("--ref-batchsize")
-                .help("Approximate batch size for processing input reference sequences.")
-                .default_value(std::string{"200M"});
-        parser.add_argument("--encoding-batchsize")
-                .help("Approximate batch size of windows for encoding. (0=number of threads)")
-                .default_value(0)
-                .scan<'i', int>();
         parser.add_argument("--window-len")
                 .help("Window size for processing.")
                 .default_value(10000)
@@ -205,10 +183,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
         parser.add_argument("--bam-chunk")
                 .help("Size of reference chunks to parse from the input BAM at a time.")
                 .default_value(1000000)
-                .scan<'i', int>();
-        parser.add_argument("--bam-subchunk")
-                .help("Size of regions to split the bam_chunk in to for parallel processing")
-                .default_value(100000)
                 .scan<'i', int>();
         parser.add_argument("--regions")
                 .help("Process only these regions of the input. Can be either a path to a BED file "
@@ -433,17 +407,11 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     }
 
     opt.batch_size = parser.get<int>("batchsize");
-    opt.ref_batch_size = std::max<int64_t>(0, utils::arg_parse::parse_string_to_size<int64_t>(
-                                                      parser.get<std::string>("ref-batchsize")));
-
-    const int32_t encoding_batch_size = parser.get<int>("encoding-batchsize");
-    opt.encoding_batch_size = (encoding_batch_size == 0) ? opt.threads : encoding_batch_size;
 
     opt.window_len = parser.get<int>("window-len");
     opt.variant_flanking_bases = parser.get<int>("variant-flanking-bases");
     opt.window_overlap = parser.get<int>("window-overlap");
     opt.bam_chunk = parser.get<int>("bam-chunk");
-    opt.bam_subchunk = parser.get<int>("bam-subchunk");
     opt.verbosity = verbosity;
     opt.regions_str = parser.present<std::string>("regions");
     if (opt.regions_str) {
@@ -467,14 +435,6 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
                                    : std::nullopt;
     opt.min_mapq = parser.present<int32_t>("min-mapq");
     opt.ambig_ref = parser.get<bool>("ambig-ref");
-
-    if (opt.bam_subchunk > opt.bam_chunk) {
-        spdlog::warn(
-                "BAM sub-chunk size is larger than bam_chunk size. Limiting to bam_chunk size. "
-                "bam_subchunk = {}, bam_chunk = {}",
-                opt.bam_chunk, opt.bam_subchunk);
-        opt.bam_subchunk = opt.bam_chunk;
-    }
 
     opt.pass_min_qual = parser.get<float>("pass-qual-filter");
 
@@ -537,10 +497,6 @@ void validate_options(const Options& opt) {
         spdlog::error("Batch size should be >= 0. Given: {}.", opt.batch_size);
         std::exit(EXIT_FAILURE);
     }
-    if (opt.ref_batch_size <= 0) {
-        spdlog::error("Draft batch size should be > 0. Given: {}.", opt.ref_batch_size);
-        std::exit(EXIT_FAILURE);
-    }
     if (opt.window_len <= 0) {
         spdlog::error("Window size should be > 0. Given: {}.", opt.window_len);
         std::exit(EXIT_FAILURE);
@@ -554,10 +510,7 @@ void validate_options(const Options& opt) {
         spdlog::error("BAM chunk size should be > 0. Given: {}.", opt.bam_chunk);
         std::exit(EXIT_FAILURE);
     }
-    if (opt.bam_subchunk <= 0) {
-        spdlog::error("BAM sub-chunk size should be > 0. Given: {}.", opt.bam_chunk);
-        std::exit(EXIT_FAILURE);
-    }
+
     if ((opt.window_overlap < 0) || (opt.window_overlap >= opt.window_len)) {
         spdlog::error(
                 "Window overlap should be >= 0 and < window_len. Given: window_overlap = {}, "
@@ -884,7 +837,7 @@ create_candidate_interval_trees(
             continue;
         }
         const int32_t seq_id = static_cast<int32_t>(it->second.first);
-        std::vector<secondary::IntervalInt64> intervals;
+        std::vector<interval_tree::Interval<int64_t, int64_t>> intervals;
         for (const int64_t pos : positions) {
             intervals.emplace_back(pos, pos + 1, 0);
         }
@@ -894,80 +847,83 @@ create_candidate_interval_trees(
             std::move(trees));
 }
 
-std::unordered_map<int32_t, secondary::IntervalTreeInt64> create_sample_interval_trees(
-        const std::vector<secondary::VariantCallingSample>& vc_input_data,
-        const int64_t trim_len) {
-    using IntervalInt64 = secondary::IntervalInt64;
+/**
+ * \brief Determine the input regions for processing. IF user_regions were provided, use those
+ *          but validate them vs the input reference lookup.
+ *          Otherwise, use the reference sequences listed in the input BAM file (bam_ref_seqs).
+ */
+std::vector<std::vector<secondary::Region>> resolve_input_regions(
+        const std::unordered_map<std::string, std::pair<int64_t, int64_t>>& ref_lookup,
+        const std::vector<std::pair<std::string, int64_t>>& bam_ref_seqs,
+        const std::vector<secondary::Region>& user_regions) {
+    // Outer vector: ID of the draft, inner vector: regions.
+    std::vector<std::vector<secondary::Region>> ret(std::size(ref_lookup));
 
-    // Collect all the intervals.
-    std::unordered_map<int32_t, std::vector<IntervalInt64>> all_intervals;
-    for (const auto& vc_sample : vc_input_data) {
-        std::vector<IntervalInt64>& intervals = all_intervals[vc_sample.seq_id];
-        const int64_t start = vc_sample.start() + trim_len;
-        const int64_t end = vc_sample.end() - trim_len - 1;
-        if (start >= end) {
-            continue;
+    if (std::empty(user_regions)) {
+        // Add full draft sequences referenced in the input BAM.
+        for (const auto& [ref_name, ref_len_from_bam] : bam_ref_seqs) {
+            const auto it = ref_lookup.find(ref_name);
+            if (it == std::cend(ref_lookup)) {
+                throw std::runtime_error{
+                        "BAM header references a sequence which is not present in the input "
+                        "reference FASTA file. Sequence name: '" +
+                        ref_name + "'"};
+            }
+            const auto [ref_id, ref_len] = it->second;
+            if (ref_len != ref_len_from_bam) {
+                throw std::runtime_error{
+                        "Length of the reference sequence differs between the input reference "
+                        "FASTA and the BAM header. Sequence name: '" +
+                        ref_name + "', length from FASTA: " + std::to_string(ref_len) +
+                        ", length from BAM: " + std::to_string(ref_len_from_bam)};
+            }
+            ret[ref_id].emplace_back(secondary::Region{ref_name, 0, ref_len});
         }
-        intervals.emplace_back(start, end, 0);
+
+    } else {
+        // Bin the user regions for individual contigs.
+        for (const auto& region : user_regions) {
+            const auto it = ref_lookup.find(region.name);
+            if (it == std::cend(ref_lookup)) {
+                throw std::runtime_error(
+                        "Sequence name from a custom specified region not found in the input "
+                        "sequence file! region: " +
+                        region_to_string(region));
+            }
+            const auto [ref_id, ref_len] = it->second;
+            ret[ref_id].emplace_back(secondary::Region{region.name, region.start, region.end});
+        }
     }
 
-    // Construct the trees from the intervals.
-    std::unordered_map<int32_t, secondary::IntervalTreeInt64> trees;
-    for (auto& [key, intervals] : all_intervals) {
-        trees[key] = secondary::IntervalTreeInt64(std::move(intervals));
-    }
-
-    return trees;
+    return ret;
 }
 
-std::vector<secondary::Variant> merge_variants(
-        const std::vector<secondary::Variant>& inference_variants,
-        const std::vector<secondary::Variant>& simple_variants,
-        const std::unordered_map<int32_t, secondary::IntervalTreeInt64>& processed_regions) {
-    std::vector<secondary::Variant> new_variants;
-    new_variants.reserve(std::size(inference_variants) + std::size(simple_variants));
+void init_progress_tracker(secondary::Stats& stats,
+                           const std::vector<std::vector<secondary::Region>>& input_regions) {
+    int64_t total_input_bases = std::accumulate(
+            std::cbegin(input_regions), std::cend(input_regions), static_cast<int64_t>(0),
+            [](const int64_t a, const std::vector<secondary::Region>& b) {
+                int64_t sum = 0;
+                for (const auto& region : b) {
+                    sum += region.end - region.start;
+                }
+                return a + sum;
+            });
 
-    // Keep inference variants which are within the processed_regions.
-    for (const secondary::Variant& var : inference_variants) {
-        const auto it_seq_id = processed_regions.find(var.seq_id);
-        if (it_seq_id == std::cend(processed_regions)) {
-            continue;
-        }
-        const auto& tree = it_seq_id->second;
-        const std::vector<interval_tree::Interval<int64_t, int64_t>> region_hits =
-                tree.findOverlapping(var.pos, var.pos);
-        if (std::empty(region_hits)) {
-            continue;
-        }
-        new_variants.emplace_back(var);
-    }
+    // Multiply by 2 because we will count each base twice for progress:
+    //  1. When the inference is done.
+    //  2. When the chromosome is done.
+    // This ameliorates issues when some regions have zero inference samples.
+    total_input_bases *= 2;
 
-    // Keep Kadayashi variants which are not within the processed_regions.
-    for (const secondary::Variant& var : simple_variants) {
-        const auto it_seq_id = processed_regions.find(var.seq_id);
-        if (it_seq_id == std::cend(processed_regions)) {
-            continue;
-        }
-        const auto& tree = it_seq_id->second;
-        const std::vector<interval_tree::Interval<int64_t, int64_t>> region_hits =
-                tree.findOverlapping(var.pos, var.pos);
-        // IMPORTANT difference to the above block - negative test.
-        if (!std::empty(region_hits)) {
-            continue;
-        }
-        new_variants.emplace_back(var);
-    }
-
-    std::sort(std::begin(new_variants), std::end(new_variants));
-
-    return new_variants;
+    stats.set("total", static_cast<double>(total_input_bases));
+    stats.set("processed", 0.0);
 }
 
 void run_variant_calling(const Options& opt,
                          const secondary::BamInfo& bam_info,
                          const secondary::ModelConfig& model_config,
-                         polisher::PolisherResources& resources,
-                         variant::VariantProgressTracker& tracker,
+                         variant::VariantResources& resources,
                          secondary::Stats& stats) {
     spdlog::info("Threads: {}, inference threads: {}, number of devices: {}", opt.threads,
                  opt.infer_threads, std::size(resources.devices));
@@ -1054,42 +1010,16 @@ void run_variant_calling(const Options& opt,
             std::make_unique<secondary::VCFWriter>(out_vcf_fn, vcf_filters, draft_lens);
 
     // Optionally write Kadayashi variants.
-    std::unique_ptr<secondary::VCFWriter> vcf_writer_kadayashi;
-    std::unique_ptr<secondary::VCFWriter> vcf_writer_inference;
+    std::optional<secondary::VCFWriter> vcf_writer_kadayashi;
+    std::optional<secondary::VCFWriter> vcf_writer_inference;
     if (opt.candidate_filtering && opt.dump_variants) {
         const std::string out_vcf_kadayashi_fn =
                 (std::empty(opt.output_dir)) ? "-" : (opt.output_dir / "kadayashi.vcf").string();
-        vcf_writer_kadayashi = std::make_unique<secondary::VCFWriter>(out_vcf_kadayashi_fn,
-                                                                      vcf_filters, draft_lens);
+        vcf_writer_kadayashi.emplace(out_vcf_kadayashi_fn, vcf_filters, draft_lens);
 
         const std::string out_vcf_inference_fn =
                 (std::empty(opt.output_dir)) ? "-" : (opt.output_dir / "inference.vcf").string();
-        vcf_writer_inference = std::make_unique<secondary::VCFWriter>(out_vcf_inference_fn,
-                                                                      vcf_filters, draft_lens);
-    }
-
-    // Prepare regions for processing.
-    const auto [input_regions, region_batches] = secondary::prepare_region_batches(
-            draft_lookup, bam_info.ref_seqs, opt.regions, opt.ref_batch_size);
-
-    // Update the progress tracker.
-    {
-        int64_t total_input_bases = std::accumulate(
-                std::cbegin(input_regions), std::cend(input_regions), static_cast<int64_t>(0),
-                [](const int64_t a, const std::vector<secondary::Region>& b) {
-                    int64_t sum = 0;
-                    for (const auto& region : b) {
-                        sum += region.end - region.start;
-                    }
-                    return a + sum;
-                });
-
-        // Variant calling likely takes much less time than consensus,
-        // but we need an estimate.
-        total_input_bases *= 2;
-
-        stats.set("total", static_cast<double>(total_input_bases));
-        stats.set("processed", 0.0);
+        vcf_writer_inference.emplace(out_vcf_inference_fn, vcf_filters, draft_lens);
     }
 
     // Compute the minimum usable memory across all devices and use that as the batch size.
@@ -1115,239 +1045,166 @@ void run_variant_calling(const Options& opt,
                      usable_mem);
     }
 
-    int64_t total_batch_bases = 0;
-    std::atomic<bool> worker_terminate{false};
+    // Prepare regions for processing.
+    const std::vector<std::vector<secondary::Region>> input_regions =
+            resolve_input_regions(draft_lookup, bam_info.ref_seqs, opt.regions);
 
     const int32_t ploidy = secondary::label_scheme_type_to_ploidy(
             secondary::parse_label_scheme_type(model_config.label_scheme_type));
 
-    // Process the draft sequences in batches of user-specified size.
-    for (const auto& batch_interval : region_batches) {
-        // Get the regions for this interval.
-        std::vector<secondary::Region> region_batch;
-        for (int32_t i = batch_interval.start; i < batch_interval.end; ++i) {
-            region_batch.insert(std::end(region_batch), std::begin(input_regions[i]),
-                                std::end(input_regions[i]));
+    init_progress_tracker(stats, input_regions);
+
+    const int32_t flank_trim_len =
+            (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE)
+                    ? 0
+                    : opt.flank_trim_len;
+
+    // Create the BAM regions per chromosome.
+    std::vector<std::vector<secondary::Window>> bam_regions;
+    bam_regions.reserve(std::ssize(input_regions));
+    {
+        for (const auto& ref_regions : input_regions) {
+            std::vector<secondary::Window> new_bam_regions = secondary::create_windows_from_regions(
+                    ref_regions, draft_lookup, opt.bam_chunk, opt.window_overlap);
+            bam_regions.emplace_back(std::move(new_bam_regions));
         }
+    }
 
-        // Total number of bases in this batch.
-        const int64_t batch_bases = std::accumulate(
-                std::cbegin(region_batch), std::cend(region_batch), static_cast<int64_t>(0),
-                [](const int64_t a, const auto& b) { return a + (b.end - b.start); });
+    utils::AsyncQueue<secondary::Window> bam_region_queue(opt.queue_size);
+    utils::AsyncQueue<variant::InferenceData> sample_queue(opt.queue_size);
+    utils::AsyncQueue<variant::InferenceData> batch_queue(opt.queue_size);
+    utils::AsyncQueue<variant::DecodeData> decode_queue(opt.queue_size);
+    utils::AsyncQueue<secondary::VariantCallingSample> vc_data_queue(opt.queue_size);
+    utils::AsyncQueue<int64_t> vc_writer_queue(opt.queue_size);
 
-        // Debug print.
-        spdlog::debug("[run_variant_calling] =============================");
-        spdlog::debug("[run_variant_calling] Processing batch interval of drafts: [{}, {})",
-                      batch_interval.start, batch_interval.end);
-        for (int64_t i = 0; i < std::ssize(region_batch); ++i) {
-            spdlog::debug("[run_variant_calling] region_batch i = {}: {}", i,
-                          secondary::region_to_string(region_batch[i]));
-        }
+    // Initialize data needed to reduce the processing (decode/merge/trim results).
+    std::vector<variant::ChromosomeReduceData> chrom_reduce_data(std::size(input_regions));
+    {
+        for (int64_t seq_id = 0; seq_id < std::ssize(bam_regions); ++seq_id) {
+            auto& crd = chrom_reduce_data[seq_id];
+            crd.seq_id = seq_id;
+            std::tie(crd.seq_name, crd.seq_len) = draft_lens[seq_id];
+            crd.num_bam_regions = std::ssize(bam_regions[seq_id]);
+            crd.remaining_bam_regions = std::ssize(bam_regions[seq_id]);
+            crd.progress_target = std::accumulate(
+                    std::cbegin(bam_regions[seq_id]), std::cend(bam_regions[seq_id]),
+                    static_cast<int64_t>(0), [](const int64_t sum, const secondary::Window& w) {
+                        return sum + std::max<int64_t>(0, w.end_no_overlap - w.start_no_overlap);
+                    });
 
-        std::vector<std::vector<secondary::ConsensusResult>> all_results_cons;
-        std::vector<secondary::VariantCallingSample> vc_input_data;
-        polisher::HaplotagResults haplotag_results;
-
-        // Inference.
-        try {
-            // Profiling block.
-            {
-                utils::ScopedProfileRange spr1("run-prep_infer_decode", 1);
-
-                // Split the sequences into larger BAM windows, like Medaka.
-                // NOTE: the window.seq_id is the _absolute_ sequence ID of the input draft sequences.
-                spdlog::debug("Creating BAM windows.");
-                const std::vector<secondary::Window> bam_regions =
-                        secondary::create_windows_from_regions(region_batch, draft_lookup,
-                                                               opt.bam_chunk, opt.window_overlap);
-
-                spdlog::debug(
-                        "[run_variant_calling] Starting to produce consensus for regions: {}-{}/{} "
-                        "(number: {}, total "
-                        "length: {:.2f} Mbp)",
-                        batch_interval.start, batch_interval.end, std::size(input_regions),
-                        std::size(region_batch), batch_bases / (1000.0 * 1000.0));
-
-                // Update the tracker title.
-                {
-                    std::ostringstream oss;
-                    oss << batch_interval.start << "-" << batch_interval.end << "/"
-                        << std::size(input_regions) << ", bases: " << batch_bases;
-                    tracker.set_description("Processing sequences: " + oss.str());
-                }
-
-                haplotag_results = polisher::haplotag_regions_in_parallel(
-                        resources.encoders, bam_regions, draft_lens, opt.threads, ploidy,
-                        opt.pass_min_qual);
-
-                // Candidate variants, if needed.
-                std::optional<secondary::IntervalTreesInt64Map> candidate_trees;
-                if (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE) {
-                    // There are no simple variants to merge in this case, merging should be handled outside.
-                    spdlog::debug("Using candidate sites from an input file.");
-                    candidate_trees = candidate_trees_from_file;
-
-                } else if (opt.variant_candidate_source ==
-                           secondary::VariantCandidateSource::COMPUTE) {
-                    candidate_trees = create_candidate_interval_trees(
-                            haplotag_results.candidate_sites, draft_lookup);
-                }
-
-                // Each item is one batch for inference.
-                utils::AsyncQueue<polisher::InferenceData> batch_queue(opt.queue_size);
-                utils::AsyncQueue<polisher::DecodeData> decode_queue(opt.queue_size);
-
-                // Create a thread for the sample producer.
-                secondary::WorkerReturnStatus wrs_sample_producer;
-                auto thread_sample_producer = utils::jthread(
-                        [&resources, &bam_regions, &draft_lens, &candidate_trees, &opt, &usable_mem,
-                         &batch_queue, &worker_terminate, &wrs_sample_producer, &haplotag_results] {
-                            utils::set_thread_name("variant_produce");
-                            polisher::sample_producer(
-                                    resources, bam_regions, draft_lens,
-                                    haplotag_results.region_haplotags, candidate_trees, opt.threads,
-                                    opt.batch_size, opt.encoding_batch_size, opt.window_len,
-                                    opt.window_overlap, opt.variant_flanking_bases,
-                                    opt.bam_subchunk, usable_mem, opt.continue_on_error,
-                                    opt.tiled_regions, opt.tiled_ext_flanks, opt.tiled_ext_major,
-                                    opt.tiled_ext_min_cov, opt.tiled_ext_cov_fract, batch_queue,
-                                    worker_terminate, wrs_sample_producer);
-                        });
-
-                // Create a thread for the sample decoder.
-                secondary::WorkerReturnStatus wrs_decoder;
-                auto thread_sample_decoder =
-                        utils::jthread([&all_results_cons, &vc_input_data, &decode_queue, &stats,
-                                        &resources, &opt, &worker_terminate, &wrs_decoder] {
-                            utils::set_thread_name("variant_decode");
-                            polisher::decode_samples_in_parallel(
-                                    all_results_cons, vc_input_data, decode_queue, stats,
-                                    worker_terminate, wrs_decoder, *resources.decoder, opt.threads,
-                                    opt.min_depth,
-                                    /*collect_vc_data=*/true, opt.continue_on_error);
-                        });
-
-                // Run the inference worker on the main thread.
-                secondary::WorkerReturnStatus wrs_infer;
-                polisher::infer_samples_in_parallel(batch_queue, decode_queue, resources.models,
-                                                    worker_terminate, resources.streams,
-                                                    resources.encoders, draft_lens,
-                                                    opt.continue_on_error, wrs_infer);
-
-                // Join the workers.
-                thread_sample_producer.join();
-                thread_sample_decoder.join();
-
-                // Propagate worker errors into the main thread.
-                if (wrs_sample_producer.exception_thrown) {
-                    throw std::runtime_error{wrs_sample_producer.message};
-                }
-                if (wrs_decoder.exception_thrown) {
-                    throw std::runtime_error{wrs_decoder.message};
-                }
-                if (wrs_infer.exception_thrown) {
-                    throw std::runtime_error{wrs_infer.message};
-                }
-            }
-
-        } catch (const std::exception& e) {
-            if (!opt.continue_on_error) {
-                throw;
-            } else {
-                spdlog::warn(
-                        "Exception caught when running inference on the batch interval of drafts: "
-                        "[{}, {}). Skipping this batch. Original exception: \"{}\"",
-                        batch_interval.start, batch_interval.end, e.what());
+            // If this chromosome has no BAM regions to process, mark it as ready so it gets popped.
+            if (std::empty(bam_regions[seq_id])) {
+                chrom_reduce_data[seq_id].ready = true;
             }
         }
+    }
 
-        // Variant calling.
-        try {
-            utils::ScopedProfileRange spr1("run-variant_calling", 1);
+    // Capture any possible exceptions from worker threads in these objects.
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus wrs_sample_producer;
+    secondary::WorkerReturnStatus wrs_batch_producer;
+    secondary::WorkerReturnStatus wrs_infer;
+    secondary::WorkerReturnStatus wrs_separate_infer_output;
+    secondary::WorkerReturnStatus wrs_thread_call_variants;
+    secondary::WorkerReturnStatus wrs_thread_write_variants;
 
-            std::vector<secondary::Variant> variants = polisher::call_variants(
-                    worker_terminate, stats, batch_interval, vc_input_data, draft_readers,
-                    draft_lens, *resources.decoder, opt.pass_min_qual, opt.ambig_ref,
-                    opt.out_format == VariantCallingFormatEnum::GVCF, opt.threads,
-                    opt.continue_on_error);
-
-            spdlog::debug("Inference variants: {}, Kadayashi confident variants: {}",
-                          std::size(variants), std::size(haplotag_results.merged_pass_variants));
-
-            // Sort variants from inference.
-            std::sort(std::begin(variants), std::end(variants));
-
-            if (opt.candidate_filtering) {
-                // Sort variants from Kadayashi.
-                std::sort(std::begin(haplotag_results.merged_pass_variants),
-                          std::end(haplotag_results.merged_pass_variants));
-            }
-
-            // Write and sort the Kadayashi variants separately.
-            // Debug output. Write the inference and Kadayashi variants separately.
-            if (opt.candidate_filtering && opt.dump_variants) {
-                // Write Kadayashi VCF.
-                if (vcf_writer_kadayashi) {
-                    for (const secondary::Variant& variant :
-                         haplotag_results.merged_pass_variants) {
-                        vcf_writer_kadayashi->write_variant(variant);
-                    }
-                }
-
-                // Write the inference VCF file.
-                if (vcf_writer_inference) {
-                    for (const secondary::Variant& variant : variants) {
-                        vcf_writer_inference->write_variant(variant);
-                    }
+    // Worker to push BAM regions to the processing queue.
+    auto thread_bam_region_producer = utils::jthread([&] {
+        utils::set_thread_name("bam_region_producer");
+        bool terminated = false;
+        for (int64_t i = 0; (i < std::ssize(bam_regions)) && !terminated; ++i) {
+            for (int64_t j = 0; j < std::ssize(bam_regions[i]); ++j) {
+                secondary::Window w = bam_regions[i][j];
+                const auto status = bam_region_queue.try_push(std::move(w));
+                if (status == utils::AsyncQueueStatus::Terminate) {
+                    terminated = true;
+                    break;
                 }
             }
+        }
+        if (!worker_terminate.load(std::memory_order_acquire)) {
+            bam_region_queue.terminate(utils::AsyncQueueTerminateFast::No);
+        }
+    });
 
-            // Merge the variants from two sources.
-            if (opt.candidate_filtering) {
-                // Do not trim variants on inference region flanks if the input is from a file. This should be done outside.
-                const int32_t flank_trim_len =
-                        (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE)
-                                ? 0
-                                : opt.flank_trim_len;
+    auto thread_queue_terminator = utils::jthread([&] {
+        utils::set_thread_name("variant_queue_terminator");
+        worker_terminate.wait(false, std::memory_order_acquire);
+        bam_region_queue.terminate(utils::AsyncQueueTerminateFast::Yes);
+        sample_queue.terminate(utils::AsyncQueueTerminateFast::Yes);
+        batch_queue.terminate(utils::AsyncQueueTerminateFast::Yes);
+        decode_queue.terminate(utils::AsyncQueueTerminateFast::Yes);
+        vc_data_queue.terminate(utils::AsyncQueueTerminateFast::Yes);
+        vc_writer_queue.terminate(utils::AsyncQueueTerminateFast::Yes);
+    });
 
-                const std::unordered_map<int32_t, secondary::IntervalTreeInt64> processed_regions =
-                        create_sample_interval_trees(vc_input_data, flank_trim_len);
+    // Async workflow, this block joins the threads.
+    {
+        // Create a thread for worker_sample_producer.
+        auto thread_sample_producer = utils::jthread([&] {
+            utils::set_thread_name("worker_sample_producer");
+            variant::worker_sample_producer(
+                    bam_region_queue, sample_queue, chrom_reduce_data, resources, stats,
+                    worker_terminate, wrs_sample_producer, bam_regions, draft_lens,
+                    opt.variant_candidate_source, candidate_trees_from_file, opt.threads,
+                    opt.window_len, opt.window_overlap, opt.variant_flanking_bases,
+                    opt.continue_on_error, ploidy, opt.pass_min_qual, opt.tiled_regions,
+                    opt.tiled_ext_flanks, opt.tiled_ext_major, opt.tiled_ext_min_cov,
+                    opt.tiled_ext_cov_fract, opt.min_depth);
+        });
 
-                variants = merge_variants(variants, haplotag_results.merged_pass_variants,
-                                          processed_regions);
-            }
+        // Create a thread for worker_batch_producer.
+        auto thread_batch_producer = utils::jthread([&] {
+            utils::set_thread_name("worker_batch_producer");
+            variant::worker_batch_producer(sample_queue, batch_queue, worker_terminate,
+                                           wrs_batch_producer, *resources.models.front(),
+                                           opt.window_len, opt.batch_size, usable_mem,
+                                           opt.continue_on_error);
+        });
 
-            // Sort variants from inference.
-            std::sort(std::begin(variants), std::end(variants));
+        auto thread_infer = utils::jthread([&] {
+            utils::set_thread_name("worker_infer_samples_in_parallel");
+            variant::worker_infer_samples_in_parallel(
+                    batch_queue, decode_queue, resources.models, worker_terminate, wrs_infer,
+                    resources.streams, resources.encoders, draft_lens, opt.continue_on_error);
+        });
 
-            // Write the VCF file.
-            for (const secondary::Variant& variant : variants) {
-                vcf_writer->write_variant(variant);
-            }
+        auto thread_separate_infer_output = utils::jthread([&] {
+            utils::set_thread_name("worker_separate_decode_data");
+            const int32_t num_threads = static_cast<int32_t>(
+                    std::min(std::ssize(resources.models), std::ssize(resources.encoders)));
+            variant::worker_separate_decode_data(decode_queue, vc_data_queue, worker_terminate,
+                                                 wrs_separate_infer_output, num_threads,
+                                                 opt.continue_on_error);
+        });
 
-            // Write the processed_regions.bed.
-            if (ofs_regions.is_open()) {
-                for (const auto& vc_sample : vc_input_data) {
-                    const std::string_view seq_name = draft_lens[vc_sample.seq_id].first;
-                    ofs_regions << seq_name << '\t' << vc_sample.start() << '\t' << vc_sample.end()
-                                << '\n';
-                }
-            }
+        auto thread_call_variants = utils::jthread([&] {
+            utils::set_thread_name("worker_variant_calling_reduce");
+            variant::worker_variant_calling_reduce(
+                    vc_data_queue, vc_writer_queue, chrom_reduce_data, worker_terminate,
+                    wrs_thread_call_variants, stats, draft_readers, opt.continue_on_error,
+                    opt.threads, draft_lens, *resources.decoder, opt.pass_min_qual, opt.ambig_ref,
+                    opt.out_format == VariantCallingFormatEnum::GVCF, flank_trim_len,
+                    opt.variant_candidate_source);
+        });
 
-            // We approximate the progress by expecting 2x bases to be processed
-            // when doing variant calling.
-            total_batch_bases += batch_bases;
-            stats.set("processed", static_cast<double>(total_batch_bases));
-        } catch (const std::exception& e) {
-            if (!opt.continue_on_error) {
-                throw;
-            } else {
-                spdlog::warn(
-                        "Exception caught when calling variants in the batch interval of drafts: "
-                        "[{}, {}). Not producing variant calls for this batch of drafts. Original "
-                        "exception: \"{}\"",
-                        batch_interval.start, batch_interval.end, e.what());
-            }
+        auto thread_write_variants = utils::jthread([&] {
+            utils::set_thread_name("worker_variant_writer");
+            variant::worker_variant_writer(vc_writer_queue, chrom_reduce_data, worker_terminate,
+                                           wrs_thread_write_variants, *vcf_writer, ofs_regions,
+                                           vcf_writer_kadayashi, vcf_writer_inference,
+                                           opt.continue_on_error);
+        });
+    }
+
+    variant::signal_worker_terminate(worker_terminate);
+
+    // Propagate exceptions from threads.
+    for (const auto& wrs :
+         {wrs_sample_producer, wrs_batch_producer, wrs_infer, wrs_separate_infer_output,
+          wrs_thread_call_variants, wrs_thread_write_variants}) {
+        if (wrs.exception_thrown) {
+            throw std::runtime_error{wrs.message};
         }
     }
 }
@@ -1435,7 +1292,7 @@ int variant_caller(int argc, char* argv[]) {
                 resolve_model(bam_info, opt.model_str, opt.load_scripted_model, opt.any_model);
 
         // Create the models, encoders and BAM handles.
-        polisher::PolisherResources resources = polisher::create_resources(
+        variant::VariantResources resources = variant::create_resources(
                 model_config, opt.in_ref_fastx_fn, opt.in_aln_bam_fn, opt.device_str, opt.threads,
                 opt.infer_threads, opt.full_precision, opt.read_group, opt.tag_name, opt.tag_value,
                 opt.min_snp_accuracy, opt.tag_keep_missing, opt.min_mapq, opt.haplotag_source,
@@ -1458,7 +1315,7 @@ int variant_caller(int argc, char* argv[]) {
             spdlog::info("Using half precision!");
         }
 
-        run_variant_calling(opt, bam_info, model_config, resources, tracker, stats);
+        run_variant_calling(opt, bam_info, model_config, resources, stats);
 
         tracker.finalize();
         stats_sampler->terminate();

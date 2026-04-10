@@ -4,11 +4,11 @@
 
 #include <IntervalTree.h>
 
-#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <ostream>
 #include <sstream>
+#include <stdexcept>
 #include <tuple>
 #include <unordered_map>
 

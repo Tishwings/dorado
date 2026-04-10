@@ -41,7 +41,8 @@ bool operator==(const Variant& lhs, const Variant& rhs) {
 }
 
 bool operator<(const Variant& lhs, const Variant& rhs) {
-    return std::tie(lhs.seq_id, lhs.pos) < std::tie(rhs.seq_id, rhs.pos);
+    return std::tie(lhs.seq_id, lhs.pos, lhs.ref, lhs.alts, lhs.qual) <
+           std::tie(rhs.seq_id, rhs.pos, rhs.ref, rhs.alts, rhs.qual);
 }
 
 bool is_valid(const Variant& var) {

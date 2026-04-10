@@ -22,7 +22,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <fstream>
 #include <memory>
+#include <span>
 #include <stdexcept>
 
 #if DORADO_CUDA_BUILD
@@ -54,7 +56,6 @@ std::vector<secondary::DeviceInfo> init_devices(const std::string& devices_str) 
         torch::Device torch_device = torch::Device(devices_str);
         devices.emplace_back(
                 secondary::DeviceInfo{.name = devices_str,
-                                      .type = secondary::DeviceType::CPU,
                                       .device = std::move(torch_device),
                                       .available_memory_GB = utils::available_host_memory_GB()});
     }
@@ -71,7 +72,6 @@ std::vector<secondary::DeviceInfo> init_devices(const std::string& devices_str) 
             const double available_memory_GB =
                     utils::available_memory(torch_device) / dorado::utils::BYTES_PER_GB;
             devices.emplace_back(secondary::DeviceInfo{.name = val,
-                                                       .type = secondary::DeviceType::CUDA,
                                                        .device = std::move(torch_device),
                                                        .available_memory_GB = available_memory_GB});
         }
@@ -143,7 +143,7 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
                 model->to_device(device_info.device);
 
                 // Half-precision if needed.
-                if ((device_info.type == secondary::DeviceType::CUDA) && !full_precision) {
+                if (device_info.device.is_cuda() && !full_precision) {
                     spdlog::debug("[create_resources] Converting the model to half precision.");
                     model->to_half();
                 } else {
@@ -356,6 +356,7 @@ std::vector<std::vector<secondary::ConsensusResult>> stitch_sequence(
 }
 
 namespace {
+
 /**
  * \brief This function performs the following operations:
  *          1. Merges adjacent samples, which were split for efficiency of computing the pileup.
@@ -555,15 +556,14 @@ merge_and_split_bam_regions_in_parallel(
         f.get();
     }
 
-    for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
+    for (const secondary::WorkerReturnStatus& rv : worker_return_vals) {
         if (!rv.exception_thrown) {
             continue;
         }
         if (!continue_on_exception) {
             throw std::runtime_error{"(merge-samples) " + rv.message};
         } else {
-            spdlog::warn("(merge-samples) " + rv.message);
+            spdlog::warn("(merge-samples) {}", rv.message);
         }
     }
 
@@ -706,8 +706,7 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
         f.get();
     }
 
-    for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
+    for (const secondary::WorkerReturnStatus& rv : worker_return_vals) {
         if (!rv.exception_thrown) {
             continue;
         }
@@ -722,226 +721,6 @@ std::vector<secondary::Sample> encode_windows_in_parallel(
 }
 
 }  // namespace
-
-std::vector<secondary::Variant> convert_variants(
-        const std::vector<kadayashi::variant_dorado_style_t>& kadayashi_variants,
-        const int32_t seq_id,
-        const int32_t ploidy,
-        const float pass_min_qual) {
-    std::vector<secondary::Variant> ret;
-    ret.reserve(std::ssize(kadayashi_variants));
-
-    for (int64_t j = 0; j < std::ssize(kadayashi_variants); ++j) {
-        const kadayashi::variant_dorado_style_t& var = kadayashi_variants[j];
-
-        secondary::Variant new_var = secondary::Variant{
-                .seq_id = seq_id,
-                .pos = static_cast<int64_t>(var.pos),
-                .ref = var.ref,
-                .alts = var.alts,
-                .filter = "",
-                .info = {},
-                .qual = static_cast<float>(var.qual),
-                .genotype = {},
-                .rstart = 0,
-                .rend = 0,
-        };
-
-        // Kadayashi does not output an alt for every haplotype.
-        // Alts which match the reference are added here.
-        while (!std::empty(new_var.alts) && (std::ssize(new_var.alts) < ploidy)) {
-            if (var.genotype.first != var.genotype.second) {
-                // The alt matches the ref (het variant).
-                new_var.alts.emplace_back(new_var.ref);
-            } else {
-                // Hom variant.
-                new_var.alts.emplace_back(new_var.alts.front());
-            }
-        }
-
-        new_var = secondary::normalize_genotype(new_var, ploidy, pass_min_qual);
-
-        ret.emplace_back(std::move(new_var));
-    }
-
-    return ret;
-}
-
-HaplotagResults haplotag_regions_in_parallel(
-        std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
-        const std::vector<secondary::Window>& regions,
-        const std::vector<std::pair<std::string, int64_t>>& draft_lens,
-        const int32_t num_threads,
-        const int32_t ploidy,
-        const float pass_min_qual) {
-    if (std::empty(encoders)) {
-        throw std::runtime_error{"No encoders are provided to haplotag the regions."};
-    }
-    if (num_threads <= 0) {
-        throw std::runtime_error{"Number of threads should be >= 1 for haplotagging, given: " +
-                                 std::to_string(num_threads)};
-    }
-    if (ploidy <= 0) {
-        throw std::runtime_error{"Ploidy should be >= 1 for haplotagging, given: " +
-                                 std::to_string(ploidy)};
-    }
-    if (std::empty(regions)) {
-        return {};
-    }
-
-    const size_t final_num_threads =
-            std::min(static_cast<size_t>(num_threads), std::size(encoders));
-
-    // Result data.
-    HaplotagResults ret;
-    std::vector<std::vector<secondary::Variant>> region_pass_variants(std::size(regions));
-
-    // Compute haplotags and collect results.
-    {
-        ret.region_haplotags.resize(std::size(regions));
-
-        // To enable merging by reference name.
-        std::vector<std::mutex> ref_mutexes(std::size(draft_lens));
-
-        // Counters to process the queue.
-        const int64_t num_regions = std::ssize(regions);
-        std::atomic<int64_t> num_processed{0};
-
-        const auto worker = [&](const int32_t thread_id) {
-            auto& encoder = *encoders[thread_id];
-
-            std::vector<int64_t> candidate_sites;
-
-            while (true) {
-                // Fetch next job.
-                const int64_t region_id = num_processed.fetch_add(1, std::memory_order_relaxed);
-                if (region_id >= num_regions) {
-                    break;
-                }
-
-                // Get the region info.
-                const secondary::Window& region = regions[region_id];
-
-                // Sanity check.
-                if (region.seq_id >= std::ssize(draft_lens)) {
-                    throw std::runtime_error{
-                            "Region sequence ID is larger than the number of available input draft "
-                            "sequences when haplotagging. seq_id = " +
-                            std::to_string(region.seq_id) +
-                            ", draft_lens.size = " + std::to_string(std::ssize(draft_lens))};
-                }
-
-                const std::string& ref_name = draft_lens[region.seq_id].first;
-
-                // Run haplotagging/simple variant calling.
-                kadayashi::varcall_result_t kadayashi_result =
-                        encoder.produce_haplotags(ref_name, region.start, region.end);
-
-                // Move the haplotags to their spot.
-                ret.region_haplotags[region_id] = std::move(kadayashi_result.qname2hp);
-
-                // Increment the haplotag from 0/1 -> 1/2 because the model was trained on that.
-                for (auto& [key, val] : ret.region_haplotags[region_id]) {
-                    ++val;
-                }
-
-                // Convert variants.
-                std::vector<secondary::Variant> variants = convert_variants(
-                        kadayashi_result.variants, region.seq_id, ploidy, pass_min_qual);
-
-                std::vector<secondary::Variant>& ret_variants = region_pass_variants[region_id];
-
-                // Clear the thread-local buffer.
-                candidate_sites.clear();
-                candidate_sites.reserve(std::size(variants));
-
-                // Extract the set of candidate variant sites (low-qual variants) and PASS variants.
-                for (secondary::Variant& var : variants) {
-                    if (var.qual < pass_min_qual) {
-                        candidate_sites.emplace_back(var.pos);
-                    } else {
-                        ret_variants.emplace_back(std::move(var));
-                    }
-                }
-
-                // Merge all candidates for each reference.
-                {
-                    std::lock_guard<std::mutex> lock(ref_mutexes[region.seq_id]);
-                    std::vector<int64_t>& ret_sites = ret.candidate_sites[ref_name];
-                    ret_sites.insert(std::end(ret_sites), std::begin(candidate_sites),
-                                     std::end(candidate_sites));
-                }
-            }
-        };
-
-        cxxpool::thread_pool pool{final_num_threads};
-
-        std::vector<std::future<void>> futures;
-        futures.reserve(num_threads);
-
-        for (int32_t tid = 0; tid < static_cast<int32_t>(final_num_threads); ++tid) {
-            futures.emplace_back(pool.push(worker, tid));
-        }
-
-        for (auto& f : futures) {
-            f.get();
-        }
-    }
-
-    // Merge PASS variants from simple variant calling.
-    {
-        int64_t num_variants = 0;
-        for (const auto& vars : region_pass_variants) {
-            num_variants += std::size(vars);
-        }
-        ret.merged_pass_variants.clear();
-        ret.merged_pass_variants.reserve(num_variants);
-        for (auto& vars : region_pass_variants) {
-            ret.merged_pass_variants.insert(std::end(ret.merged_pass_variants),
-                                            std::make_move_iterator(std::begin(vars)),
-                                            std::make_move_iterator(std::end(vars)));
-        }
-    }
-
-    {  // Sort candidate sites and keep unique, in parallel.
-
-        const auto worker = [&](const std::string& key) {
-            // Find the item.
-            auto it = ret.candidate_sites.find(key);
-            if (it == std::end(ret.candidate_sites)) {
-                return;
-            }
-            auto& vals = it->second;
-            if (std::empty(vals)) {
-                return;
-            }
-            // Sort the values.
-            std::sort(std::begin(vals), std::end(vals));
-            // Deduplicate.
-            int64_t src = 0;
-            for (int64_t dest = 1; dest < std::ssize(vals); ++dest) {
-                if (vals[dest] != vals[src]) {
-                    ++src;
-                    vals[src] = vals[dest];
-                }
-            }
-            vals.resize(src + 1);
-        };
-
-        // Run on all references.
-        cxxpool::thread_pool pool{final_num_threads};
-        std::vector<std::future<void>> futures;
-        futures.reserve(std::size(ret.candidate_sites));
-        for (auto& [key, vals] : ret.candidate_sites) {
-            futures.emplace_back(pool.push(worker, key));
-        }
-        for (auto& f : futures) {
-            f.get();
-        }
-    }
-
-    return ret;
-}
 
 void sample_producer(
         PolisherResources& resources,
@@ -1414,9 +1193,10 @@ void infer_samples_in_parallel(
     };
 
     if (std::size(models) > std::size(encoders)) {
-        spdlog::warn("There are more models than there are encoders! Num models: " +
-                     std::to_string(std::size(models)) + ", num encoders: " +
-                     std::to_string(std::size(encoders)) + ". Using fewer models.");
+        spdlog::warn(
+                "There are more models than there are encoders! Num models: {}, num_encoders: {}. "
+                "Using fewer models.",
+                std::size(models), std::size(encoders));
     }
 
     const size_t num_threads = std::min(std::size(models), std::size(encoders));
@@ -1438,8 +1218,7 @@ void infer_samples_in_parallel(
 
     decode_queue.terminate(utils::AsyncQueueTerminateFast::No);
 
-    for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
+    for (const secondary::WorkerReturnStatus& rv : worker_return_vals) {
         if (!rv.exception_thrown) {
             continue;
         }
@@ -1450,7 +1229,7 @@ void infer_samples_in_parallel(
             worker_terminate = true;
             return;
         } else {
-            spdlog::warn("(infer-samples) " + rv.message);
+            spdlog::warn("(infer-samples) {}", rv.message);
         }
     }
 
@@ -1705,8 +1484,7 @@ void decode_samples_in_parallel(std::vector<std::vector<secondary::ConsensusResu
         f.get();
     }
 
-    for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
+    for (const secondary::WorkerReturnStatus& rv : worker_return_vals) {
         if (!rv.exception_thrown) {
             continue;
         }
@@ -1831,7 +1609,7 @@ std::vector<secondary::Variant> call_variants(
         const int32_t num_threads,
         const bool continue_on_exception) {
     // Group samples by sequence ID.
-    std::vector<std::vector<std::pair<int64_t, int32_t>>> groups(region_batch.length());
+    std::vector<std::vector<int32_t>> groups(region_batch.length());
     for (int32_t i = 0; i < std::ssize(vc_input_data); ++i) {
         const auto& vc_sample = vc_input_data[i];
 
@@ -1850,7 +1628,7 @@ std::vector<secondary::Variant> call_variants(
                     vc_sample.seq_id, std::size(draft_lens), std::size(groups));
             continue;
         }
-        groups[local_id].emplace_back(vc_sample.start(), i);
+        groups[local_id].emplace_back(i);
     }
 
     // Worker for parallel processing.
@@ -1874,9 +1652,13 @@ std::vector<secondary::Variant> call_variants(
             // Catch exceptions here to skip variant calling only on one sequence instead
             // of the entire batch.
             try {
-                // Sort the group by start positions.
+                // Sort the group by the full starting coordinate before trimming overlaps.
                 auto& group = groups[group_id];
-                std::stable_sort(std::begin(group), std::end(group));
+                std::stable_sort(std::begin(group), std::end(group),
+                                 [&vc_input_data](const int32_t lhs_id, const int32_t rhs_id) {
+                                     return secondary::variant_calling_sample_less(
+                                             vc_input_data[lhs_id], vc_input_data[rhs_id]);
+                                 });
 
                 if (std::empty(group)) {
                     continue;
@@ -1997,15 +1779,14 @@ std::vector<secondary::Variant> call_variants(
         f.get();
     }
 
-    for (size_t tid = 0; tid < std::size(worker_return_vals); ++tid) {
-        const secondary::WorkerReturnStatus& rv = worker_return_vals[tid];
+    for (const secondary::WorkerReturnStatus& rv : worker_return_vals) {
         if (!rv.exception_thrown) {
             continue;
         }
         if (!continue_on_exception) {
             throw std::runtime_error{"(call variants) " + rv.message};
         } else {
-            spdlog::warn("(call variants) " + rv.message);
+            spdlog::warn("(call variants) {}", rv.message);
         }
     }
 

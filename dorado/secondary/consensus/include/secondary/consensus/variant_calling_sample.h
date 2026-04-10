@@ -32,6 +32,13 @@ std::ostream& operator<<(std::ostream& os, const VariantCallingSample& vc_sample
 
 bool operator==(const VariantCallingSample& lhs, const VariantCallingSample& rhs);
 
+/**
+ * \brief Strict weak ordering for reduction/trim paths.
+ *          Samples are ordered by full starting coordinate (major, then minor), and for identical
+ *          starts the longer sample comes first to match trimming expectations for containment.
+ */
+bool variant_calling_sample_less(const VariantCallingSample& lhs, const VariantCallingSample& rhs);
+
 VariantCallingSample slice_vc_sample(const VariantCallingSample& vc_sample,
                                      int64_t idx_start,
                                      int64_t idx_end);
@@ -51,6 +58,6 @@ std::vector<VariantCallingSample> join_samples(const std::vector<VariantCallingS
 
 std::vector<VariantCallingSample> trim_vc_samples(
         const std::vector<VariantCallingSample>& vc_input_data,
-        const std::vector<std::pair<int64_t, int32_t>>& group);
+        const std::vector<int32_t>& ordered_ids);
 
 }  // namespace dorado::secondary
