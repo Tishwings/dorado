@@ -256,6 +256,7 @@ process_single_bam_window(
         const secondary::Window& bam_window,
         secondary::EncoderBase& encoder,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        [[maybe_unused]] const std::vector<std::string>& draft_seqs,
         const secondary::VariantCandidateSource candidate_source,
         const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees_from_file,
         const int32_t ploidy,
@@ -270,10 +271,12 @@ process_single_bam_window(
         const float tiled_ext_cov_fract,
         const int32_t min_depth,
         const int32_t tid) {
-    if ((bam_window.seq_id < 0) || (bam_window.seq_id >= std::ssize(draft_lens))) {
+    if ((bam_window.seq_id < 0) || (bam_window.seq_id >= std::ssize(draft_lens)) ||
+        (bam_window.seq_id >= std::ssize(draft_seqs))) {
         throw std::runtime_error{
-                fmt::format("bam_window.seq_id ({}) is out of bounds for draft_lens (size = {}).",
-                            bam_window.seq_id, std::size(draft_lens))};
+                fmt::format("bam_window.seq_id ({}) is out of bounds for draft_lens (size = {}) or "
+                            "the number of loaded reference sequences (size = {})",
+                            bam_window.seq_id, std::size(draft_lens), std::size(draft_seqs))};
     }
 
     const std::string& ref_name = draft_lens[bam_window.seq_id].first;
@@ -416,6 +419,7 @@ void worker_sample_producer(
         secondary::WorkerReturnStatus& ret_status,
         const std::vector<std::vector<secondary::Window>>& bam_regions,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        const std::vector<std::string>& draft_seqs,
         const secondary::VariantCandidateSource candidate_source,
         const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees_from_file,
         const int32_t num_threads,
@@ -432,6 +436,13 @@ void worker_sample_producer(
         const float tiled_ext_cov_fract,
         const int32_t min_depth) {
     utils::ScopedProfileRange spr1("sample_producer", 2);
+
+    if (std::size(draft_lens) != std::size(draft_seqs)) {
+        throw std::runtime_error{
+                "Number of loaded reference sequence lengths and sequences differs. draft_lens = " +
+                std::to_string(std::size(draft_lens)) +
+                ", draft_seqs = " + std::to_string(std::size(draft_seqs))};
+    }
 
     const auto worker = [&](const int32_t tid, secondary::WorkerReturnStatus& ret_val) {
         while (!worker_terminate) {
@@ -455,10 +466,11 @@ void worker_sample_producer(
             bool reduce_data_updated = false;
             try {
                 auto [local_samples, simple_variants] = process_single_bam_window(
-                        bam_window, *resources.encoders[tid], draft_lens, candidate_source,
-                        candidate_trees_from_file, ploidy, pass_min_qual, window_len,
-                        window_overlap, variant_flanking_bases, tiled_regions, tiled_ext_flanks,
-                        tiled_ext_major, tiled_ext_min_cov, tiled_ext_cov_fract, min_depth, tid);
+                        bam_window, *resources.encoders[tid], draft_lens, draft_seqs,
+                        candidate_source, candidate_trees_from_file, ploidy, pass_min_qual,
+                        window_len, window_overlap, variant_flanking_bases, tiled_regions,
+                        tiled_ext_flanks, tiled_ext_major, tiled_ext_min_cov, tiled_ext_cov_fract,
+                        min_depth, tid);
                 stats.add("processed",
                           static_cast<double>(std::max<int64_t>(
                                   0, bam_window.end_no_overlap - bam_window.start_no_overlap)));
