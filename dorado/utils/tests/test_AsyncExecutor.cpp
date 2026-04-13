@@ -48,26 +48,39 @@ DEFINE_TEST("Rebind task pools") {
     const std::size_t num_producers = GENERATE(1, 2, 4);
     const std::size_t queue_capacity = GENERATE(1, 10);
     const std::size_t num_tasks_per_producer = 10;
+    const std::size_t rebind_count = 2;
+    CATCH_CAPTURE(num_workers, num_producers, queue_capacity);
 
     // Create the workers.
     WorkerPool workers(num_workers);
 
-    for (int repeat = 0; repeat < 2; repeat++) {
+    std::atomic_size_t jobs_run = 0;
+    for (std::size_t repeat = 0; repeat < rebind_count; repeat++) {
         // Create the task pool and bind it.
         TaskPool tasks(num_producers, queue_capacity);
-        WorkerPool::BindTasks binder(workers, tasks);
+        {
+            WorkerPool::BindTasks binder(workers, tasks);
 
-        // Setup producers.
-        std::vector producers = make_simple_producers(tasks, num_producers);
+            // Setup producers.
+            std::vector producers = make_simple_producers(tasks, num_producers);
 
-        // Push some tasks.
-        for (std::size_t task_idx = 0; task_idx < num_tasks_per_producer; task_idx++) {
-            for (auto &producer : producers) {
-                producer.send([] { busy_task(std::chrono::microseconds(100)); });
+            // Push some tasks.
+            for (std::size_t task_idx = 0; task_idx < num_tasks_per_producer; task_idx++) {
+                for (auto &producer : producers) {
+                    producer.send([&jobs_run] {
+                        busy_task(std::chrono::microseconds(100));
+                        jobs_run.fetch_add(1, std::memory_order_relaxed);
+                    });
+                }
             }
+
+            // Unbinding the task pool should force a flush, so no need for any explicit synchronisation.
         }
 
-        // Unbinding the task pool should force a flush, so no need for any explicit synchronisation.
+        // Check that all the jobs did run.
+        CATCH_CHECK(jobs_run.load(std::memory_order_relaxed) ==
+                    num_tasks_per_producer * num_producers);
+        jobs_run.store(0, std::memory_order_relaxed);
     }
 }
 

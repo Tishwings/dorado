@@ -4,7 +4,6 @@
 #include "utils/hardware_interference_size.h"
 
 #include <cassert>
-#include <latch>
 #include <stdexcept>
 #include <thread>
 
@@ -110,13 +109,11 @@ void WorkerPool::flush() {
         return;
     }
 
-    // Send a blocking task for all workers to pop and wait on.
+    // Wait for all the queues to finish.
     const std::size_t num_queues = task_pool->num_queues();
-    auto blocker = std::make_shared<std::latch>(m_num_workers + 1);
-    for (size_t idx = 0; idx < m_num_workers; idx++) {
-        task_pool->send([blocker] { blocker->arrive_and_wait(); }, idx % num_queues);
+    for (size_t idx = 0; idx < num_queues; idx++) {
+        task_pool->wait_for_queue_to_complete(idx);
     }
-    blocker->arrive_and_wait();
 }
 
 WorkerPool::BindTasks::BindTasks(WorkerPool& workers, TaskPool& tasks) : m_workers(workers) {
