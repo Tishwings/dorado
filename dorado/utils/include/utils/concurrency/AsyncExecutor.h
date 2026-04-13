@@ -1,14 +1,12 @@
 #pragma once
 
-#include "Task.h"
+#include "utils/concurrency/TaskPool.h"
 
 #include <cassert>
 #include <cstddef>
 #include <utility>
 
 namespace dorado::utils::concurrency {
-
-class TaskPool;
 
 // Executor that you can push tasks to.
 class AsyncExecutor {
@@ -31,7 +29,11 @@ public:
     AsyncExecutor& operator=(AsyncExecutor&&) = delete;
 
     // Push a new task to the pool.
-    void send(Task&& func);
+    template <typename Func>
+    void send(Func&& func) {
+        assert(m_tasks != nullptr);
+        m_tasks->send(std::forward<Func>(func), m_q_idx);
+    }
 
     // Wait for all existing tasks to finish.
     void flush();
