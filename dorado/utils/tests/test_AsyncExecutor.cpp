@@ -272,7 +272,7 @@ static void producer_thread(std::atomic_bool &finished,
                             std::size_t seed,
                             std::atomic_size_t &counter) {
     // Randomly pick how long each task takes.
-    std::minstd_rand rng(seed);
+    std::minstd_rand rng(static_cast<std::minstd_rand::result_type>(seed));
     std::uniform_int_distribution<> time_dist(1, 100);
 
     // How many tasks to push per burst.
