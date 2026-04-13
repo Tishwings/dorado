@@ -1,25 +1,14 @@
 #include "utils/concurrency/WorkerPool.h"
 
 #include "utils/concurrency/TaskPool.h"
+#include "utils/hardware_interference_size.h"
 
 #include <cassert>
 #include <latch>
-#include <new>
 #include <stdexcept>
 #include <thread>
 
 namespace dorado::utils::concurrency {
-
-// Some stdlibs don't have this C++17 feature yet.
-#if defined(__cpp_lib_hardware_interference_size)
-constexpr auto hardware_destructive_interference_size = std::hardware_destructive_interference_size;
-#elif defined(__aarch64__)
-// https://developer.arm.com/documentation/ddi0601/2025-06/AArch64-Registers/CCSIDR-EL1--Current-Cache-Size-ID-Register
-constexpr auto hardware_destructive_interference_size = 256;
-#else
-// Assuming x86_64.
-constexpr auto hardware_destructive_interference_size = 64;
-#endif
 
 struct alignas(hardware_destructive_interference_size) WorkerPool::WorkerState {
     std::thread worker;

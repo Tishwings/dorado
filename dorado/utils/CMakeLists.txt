@@ -28,6 +28,7 @@ dorado_add_library(
         FixedSizeQueue.h
         fs_utils.h
         FunctionRef.h
+        hardware_interference_size.h
         io_utils.h
         jthread.h
         locale_utils.h
