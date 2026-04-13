@@ -2,6 +2,9 @@
 
 #include "utils/AsyncQueue.h"
 #include "utils/concurrency/Task.h"
+#include "utils/hardware_interference_size.h"
+
+#include <atomic>
 
 namespace dorado::utils::concurrency {
 
@@ -11,6 +14,10 @@ namespace dorado::utils::concurrency {
 class TaskPool {
     using TaskQueue = utils::AsyncQueue<Task>;
     std::vector<TaskQueue> m_task_qs;
+    struct alignas(hardware_destructive_interference_size) QueueCounter {
+        std::atomic_size_t value = 0;
+    };
+    std::vector<QueueCounter> m_q_counters;
 
 private:
     static std::vector<TaskQueue> make_queues(std::size_t num_queues, std::size_t q_capacity);
@@ -31,13 +38,26 @@ public:
     std::size_t queue_size(std::size_t q_idx) const { return m_task_qs.at(q_idx).size(); }
 
     // Push a task into the pool.
-    void send(Task &&task, std::size_t q_idx) {
+    template <typename Func>
+    void send(Func &&func, std::size_t q_idx) {
         auto &q = m_task_qs.at(q_idx);
-        q.try_push(std::move(task));
+        auto &counter = m_q_counters.at(q_idx).value;
+
+        // Keep track of the number of tasks in flight so that we can wait on them during a flush.
+        counter.fetch_add(1, std::memory_order_relaxed);
+        q.try_push([task = std::forward<Func>(func), &counter] {
+            task();
+
+            counter.fetch_sub(1, std::memory_order_release);
+            counter.notify_one();
+        });
     }
 
     // Try and run a task from the pool.
     void run_task(size_t worker_idx);
+
+    // Wait for all tasks from this queue to be completed.
+    void wait_for_queue_to_complete(std::size_t q_idx);
 };
 
 }  // namespace dorado::utils::concurrency

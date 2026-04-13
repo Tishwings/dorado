@@ -76,7 +76,7 @@ bool TaskPool::pop_task(Task& task, size_t worker_idx) {
 }
 
 TaskPool::TaskPool(std::size_t num_queues, std::size_t q_capacity)
-        : m_task_qs(make_queues(num_queues, q_capacity)) {}
+        : m_task_qs(make_queues(num_queues, q_capacity)), m_q_counters(num_queues) {}
 
 TaskPool::~TaskPool() = default;
 
@@ -86,6 +86,18 @@ void TaskPool::run_task(size_t worker_idx) {
     // approach relies on all of the pushed tasks going to separate workers.
     if (pop_task(task, worker_idx)) {
         task();
+    }
+}
+
+void TaskPool::wait_for_queue_to_complete(std::size_t q_idx) {
+    auto& counter = m_q_counters.at(q_idx).value;
+
+    while (true) {
+        const std::size_t current_count = counter.load(std::memory_order_acquire);
+        if (current_count == 0) {
+            break;
+        }
+        counter.wait(current_count, std::memory_order_acquire);
     }
 }
 
