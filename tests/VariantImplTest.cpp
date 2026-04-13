@@ -198,6 +198,22 @@ secondary::Sample make_sample(const int32_t seq_id,
     return sample;
 }
 
+secondary::Sample make_zero_depth_sample(const int32_t seq_id,
+                                         const std::vector<int64_t>& positions_major) {
+    const at::TensorOptions options = at::TensorOptions().dtype(at::kFloat).device(at::kCPU);
+    const int64_t num_positions = std::ssize(positions_major);
+    constexpr int64_t NUM_FEATURES = 2;
+
+    secondary::Sample sample;
+    sample.seq_id = seq_id;
+    sample.features = at::empty({num_positions, 0, NUM_FEATURES}, options);
+    sample.positions_major = positions_major;
+    sample.positions_minor = std::vector<int64_t>(std::size(positions_major), 0);
+    sample.depth = at::zeros({num_positions}, options);
+
+    return sample;
+}
+
 at::Tensor make_haploid_probs(const std::string_view symbols,
                               const std::string_view seq,
                               const float tp_prob) {
@@ -427,6 +443,7 @@ CATCH_TEST_CASE("batch and inference workflow functions operate on synthetic sam
     const secondary::Sample sample_a = make_sample(0, {0, 1, 2, 3}, 0.0f);
     const secondary::Sample sample_b = make_sample(0, {10, 11, 12, 13}, 10.0f);
     const secondary::Sample odd_sample = make_sample(0, {20, 21, 22}, 20.0f);
+    const secondary::Sample zero_depth_sample = make_zero_depth_sample(0, {30, 31, 32, 33});
 
     CATCH_SECTION("worker_batch_producer isolates odd samples and preserves fixed-size batches") {
         auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
@@ -468,6 +485,38 @@ CATCH_TEST_CASE("batch and inference workflow functions operate on synthetic sam
         CATCH_CHECK(second_output.samples[1].positions_major == sample_b.positions_major);
 
         // Nothing else in the queue.
+        InferenceData exhausted_output;
+        CATCH_CHECK(output_queue.try_pop(exhausted_output) == utils::AsyncQueueStatus::Terminate);
+    }
+
+    CATCH_SECTION("worker_batch_producer skips samples with coordinates but zero feature rows") {
+        auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+
+        utils::AsyncQueue<InferenceData> input_queue{2};
+        utils::AsyncQueue<InferenceData> output_queue{4};
+
+        InferenceData input_batch;
+        input_batch.samples = {sample_a, zero_depth_sample, sample_b};
+        CATCH_REQUIRE(input_queue.try_push(std::move(input_batch)) ==
+                      utils::AsyncQueueStatus::Success);
+        input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+
+        std::atomic<bool> worker_terminate{false};
+        secondary::WorkerReturnStatus ret_status;
+
+        worker_batch_producer(input_queue, output_queue, worker_terminate, ret_status, *model,
+                              window_len, /*batch_size=*/2, /*max_available_mem=*/1024.0, false);
+
+        CATCH_REQUIRE(!ret_status.exception_thrown);
+        CATCH_REQUIRE(!worker_terminate.load());
+        CATCH_REQUIRE(std::size(output_queue) == 1);
+
+        InferenceData output_batch;
+        CATCH_REQUIRE(output_queue.try_pop(output_batch) == utils::AsyncQueueStatus::Success);
+        CATCH_REQUIRE(std::size(output_batch.samples) == 2);
+        CATCH_CHECK(output_batch.samples[0].positions_major == sample_a.positions_major);
+        CATCH_CHECK(output_batch.samples[1].positions_major == sample_b.positions_major);
+
         InferenceData exhausted_output;
         CATCH_CHECK(output_queue.try_pop(exhausted_output) == utils::AsyncQueueStatus::Terminate);
     }

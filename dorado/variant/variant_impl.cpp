@@ -82,6 +82,11 @@ std::vector<secondary::DeviceInfo> init_devices(const std::string& devices_str) 
     return devices;
 }
 
+bool sample_has_inference_features(const secondary::Sample& sample) {
+    return !std::empty(sample.positions_major) && sample.features.defined() &&
+           (sample.features.numel() > 0);
+}
+
 }  // namespace
 
 void signal_worker_terminate(std::atomic<bool>& worker_terminate) {
@@ -483,12 +488,9 @@ void worker_sample_producer(
                 stats.add("processed",
                           static_cast<double>(std::max<int64_t>(
                                   0, bam_window.end_no_overlap - bam_window.start_no_overlap)));
-                const auto should_enqueue_sample = [](const secondary::Sample& sample) {
-                    return !std::empty(sample.positions_major);
-                };
                 const int64_t num_outgoing_samples =
                         std::count_if(std::cbegin(local_samples), std::cend(local_samples),
-                                      should_enqueue_sample);
+                                      sample_has_inference_features);
 
                 // Update the info needed to reduce the results.
                 {
@@ -531,7 +533,7 @@ void worker_sample_producer(
                 // Create single-element InferenceData items of samples.
                 for (int64_t i = 0; i < std::ssize(local_samples); ++i) {
                     auto& sample = local_samples[i];
-                    if (!should_enqueue_sample(sample)) {
+                    if (!sample_has_inference_features(sample)) {
                         continue;
                     }
                     InferenceData item{
@@ -673,6 +675,14 @@ void worker_batch_producer(utils::AsyncQueue<InferenceData>& input_queue,
 
             for (int64_t i = 0; i < std::ssize(item.samples); ++i) {
                 auto& sample = item.samples[i];
+
+                if (!sample_has_inference_features(sample)) {
+                    spdlog::trace(
+                            "[batch_producer] Skipping sample without inferable feature rows. "
+                            "Sample: [{}].",
+                            secondary::sample_to_string(sample));
+                    continue;
+                }
 
                 // Odd samples will be processed alone.
                 if (std::ssize(sample.positions_major) != window_len) {

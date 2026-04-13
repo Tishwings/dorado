@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include <cmath>
+#include <cstdint>
 #include <random>
 #include <stdexcept>
 #include <tuple>
@@ -25,6 +26,53 @@
 #endif
 
 namespace dorado::secondary {
+
+namespace {
+
+at::Tensor compute_cumsum_seq_lengths_from_masked_rows(const at::Tensor& depths,
+                                                       const at::Tensor& pos_mask) {
+    const at::Tensor nonzero_depth_mask = depths.gt(0);
+    const at::Tensor row_pos_counts_cumsum = pos_mask.sum(-1).cumsum(-1);
+    at::Tensor cumsum_seq_lengths = at::zeros_like(depths, row_pos_counts_cumsum.options());
+
+    // This checks if there are any positions with depth > 0 to prevent index out of bounds exceptions
+    // for zero-depth samples.
+    if (nonzero_depth_mask.any().item<bool>()) {
+        const at::Tensor depth_cumsum = depths.cumsum(0);
+        const at::Tensor sample_ends = (depth_cumsum - 1).index({nonzero_depth_mask});
+        cumsum_seq_lengths.masked_scatter_(nonzero_depth_mask,
+                                           row_pos_counts_cumsum.index({sample_ends}));
+        cumsum_seq_lengths = std::get<0>(at::cummax(cumsum_seq_lengths, 0));
+    }
+
+    return cumsum_seq_lengths;
+}
+
+at::Tensor expand_indices_from_depths(const at::Tensor& depths,
+                                      const int64_t max_allowed_depth,
+                                      const at::TensorOptions& opts) {
+    const int64_t batch_size = depths.size(0);
+    const int64_t max_depth = depths.max().item<int64_t>();
+    if (max_depth > max_allowed_depth) {
+        throw std::runtime_error{"A sample has depth " + std::to_string(max_depth) +
+                                 " larger than the maximum embedding depth " +
+                                 std::to_string(max_allowed_depth)};
+    }
+
+    const int64_t total_depth = depths.sum().item<int64_t>();
+    at::Tensor indices = torch::zeros({total_depth}, opts);
+
+    int64_t start = 0;
+    for (int64_t s = 0; s < batch_size; ++s) {
+        const int64_t sample_depth = depths.select(0, s).item<int64_t>();
+        indices.narrow(/*dim=*/0, /*index=*/start, /*length=*/sample_depth)
+                .copy_(at::arange(sample_depth, opts));
+        start += sample_depth;
+    }
+    return indices;
+}
+
+}  // namespace
 
 EmbeddingType parse_embedding_type(const std::string& type) {
     if (type == "rotational") {
@@ -76,6 +124,10 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
         throw std::runtime_error{"Value of dim not valid for RotaryEmbedding. dim = " +
                                  std::to_string(dim) + ", should be > 0."};
     }
+    if ((dim % 2) != 0) {
+        throw std::runtime_error{"Value of dim not valid for RotaryEmbedding. dim = " +
+                                 std::to_string(dim) + ", should be divisible by 2."};
+    }
 
     const at::Tensor inv_freq =
             torch::pow(m_theta, at::arange(0, m_dim, 2, options) / static_cast<float>(m_dim))
@@ -84,15 +136,9 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
 
     const at::Tensor pos = at::arange(max_seq_len, options);
     const at::Tensor freqs = at::outer(
-            pos, inv_freq);  // Equivalent to: torch::einsum("i,j->ij", {pos, m_inv_freq});
-    const at::Tensor emb = torch::cat({freqs, freqs}, /*dim=*/-1);
-
-    m_cos_freqs = torch::cos(emb);  // [T, D]
-    m_sin_freqs = torch::sin(emb);
-
-    LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
-                    utils::tensor_shape_as_string(m_cos_freqs),
-                    utils::tensor_shape_as_string(m_sin_freqs));
+            pos, inv_freq);           // Equivalent to: torch::einsum("i,j->ij", {pos, m_inv_freq});
+    m_cos_freqs = torch::cos(freqs);  // [T, D/2]
+    m_sin_freqs = torch::sin(freqs);
 
     // NOTE: There is no `persistent` option in Libtorch unlike Pytorch:
     //      register_buffer("inv_freq", m_inv_freq, /*persistent=*/false);
@@ -107,26 +153,20 @@ RotaryEmbeddingImpl::RotaryEmbeddingImpl(const int64_t dim,
 }
 
 void RotaryEmbeddingImpl::expand_freq_dims() {
-    m_cos_freqs = m_cos_freqs
-                          .unsqueeze(0)   // [1, T, D]
-                          .unsqueeze(2)   // [1, T, 1, D]
-                          .unsqueeze(2);  // [1, T, 1, 1, D]
-    m_sin_freqs = m_sin_freqs
-                          .unsqueeze(0)   // [1, T, D]
-                          .unsqueeze(2)   // [1, T, 1, D]
-                          .unsqueeze(2);  // [1, T, 1, 1, D]
+    m_cos_freqs = m_cos_freqs.unsqueeze(0).unsqueeze(2);  // [1, T, 1, D]
+    m_sin_freqs = m_sin_freqs.unsqueeze(0).unsqueeze(2);  // [1, T, 1, D]
 }
 
 std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at::Tensor k) {
     utils::ScopedProfileRange spr1("RotaryEmbeddingImpl::forward", 4);
 
-    if (std::size(q.sizes()) != std::size(k.sizes())) {
+    if (q.dim() != k.dim()) {
         throw std::runtime_error{"Q and K tensors mismatch in dimensions! q.shape = " +
                                  utils::tensor_shape_as_string(q) +
                                  ", k.shape = " + utils::tensor_shape_as_string(k)};
     }
-    if (std::size(q.sizes()) != 5) {
-        throw std::runtime_error{"Q and K tensors should be 5D. Given: q.shape = " +
+    if (q.dim() != 4) {
+        throw std::runtime_error{"Q and K tensors should be 4D. Given: q.shape = " +
                                  utils::tensor_shape_as_string(q)};
     }
     if (!q.defined()) {
@@ -139,29 +179,31 @@ std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at:
     LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Input: q.dtype() = {}, k.dtype() = {}",
                     torch::toString(q.scalar_type()), torch::toString(k.scalar_type()));
 
-    if (std::size(m_cos_freqs.sizes()) == 2) {
-        LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Expanding frequency dimensions");
-
-        LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
-                        utils::tensor_shape_as_string(m_cos_freqs),
-                        utils::tensor_shape_as_string(m_sin_freqs));
-
+    if (m_cos_freqs.dim() == 2) {
         this->expand_freq_dims();
-
-        LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
-                        utils::tensor_shape_as_string(m_cos_freqs),
-                        utils::tensor_shape_as_string(m_sin_freqs));
     }
 
-    // Dimensions: N, T, C, H, D = batch_size, num_positions, num_sequences, num_heads, head_dim
+    // Dimensions: C, T, H, D = num_sequences, num_positions, num_heads, head_dim
     const int64_t T = q.size(1);
 
     // View only the number of values needed.
     const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 1, /*start*/ 0, /*end*/ T);
-    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 1, /* start*/ 0, /*end*/ T);
+    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 1, /*start*/ 0, /*end*/ T);
 
-    q = rotate_half(q).mul_(sin_vals).add_(cos_vals * q);
-    k = rotate_half(k).mul_(sin_vals).add_(cos_vals * k);
+    // Apply RoPE on half channels directly to reduce intermediate tensor traffic.
+    const int64_t half = q.size(-1) / 2;
+    const at::Tensor q1 = q.narrow(/*dim=*/-1, /*start=*/0, /*length=*/half);
+    const at::Tensor q2 = q.narrow(/*dim=*/-1, /*start=*/half, /*length=*/half);
+    const at::Tensor k1 = k.narrow(/*dim=*/-1, /*start=*/0, /*length=*/half);
+    const at::Tensor k2 = k.narrow(/*dim=*/-1, /*start=*/half, /*length=*/half);
+
+    const at::Tensor q_rot_1 = q1 * cos_vals - q2 * sin_vals;
+    const at::Tensor q_rot_2 = q2 * cos_vals + q1 * sin_vals;
+    const at::Tensor k_rot_1 = k1 * cos_vals - k2 * sin_vals;
+    const at::Tensor k_rot_2 = k2 * cos_vals + k1 * sin_vals;
+
+    q = torch::cat({q_rot_1, q_rot_2}, /*dim=*/-1);
+    k = torch::cat({k_rot_1, k_rot_2}, /*dim=*/-1);
 
     LOG_TRACE_DTYPE("[RotaryEmbeddingImpl] Output: q.dtype() = {}, k.dtype() = {}",
                     torch::toString(q.scalar_type()), torch::toString(k.scalar_type()));
@@ -169,33 +211,23 @@ std::pair<at::Tensor, at::Tensor> RotaryEmbeddingImpl::forward(at::Tensor q, at:
     return {std::move(q), std::move(k)};
 }
 
-at::Tensor RotaryEmbeddingImpl::rotate_half(const at::Tensor& x) const {
-    std::vector<at::Tensor> chunks = x.chunk(2, /*dim=*/-1);
-    return torch::cat({-chunks[1], chunks[0]}, /*dim=*/-1);
-}
-
 AbsoluteRotaryEmbeddingImpl::AbsoluteRotaryEmbeddingImpl(int64_t dim,
                                                          float theta,
                                                          const int64_t max_read_depth,
                                                          const at::TensorOptions& options)
-        : RotaryEmbeddingImpl::RotaryEmbeddingImpl(dim, theta, max_read_depth, options) {};
+        : RotaryEmbeddingImpl::RotaryEmbeddingImpl(dim, theta, max_read_depth, options),
+          m_max_depth{max_read_depth} {};
 
 void AbsoluteRotaryEmbeddingImpl::expand_freq_dims() {
-    m_cos_freqs = m_cos_freqs
-                          .unsqueeze(0)   // [1, C, D]
-                          .unsqueeze(0)   // [1, 1, C, D]
-                          .unsqueeze(3);  // [1, 1, C, 1, D]
-    m_sin_freqs = m_sin_freqs
-                          .unsqueeze(0)   // [1, C, D]
-                          .unsqueeze(0)   // [1, 1, C, D]
-                          .unsqueeze(3);  // [1, 1, C, 1, D]
+    m_cos_freqs = m_cos_freqs.unsqueeze(1).unsqueeze(1);  // [C, 1, 1, D]
+    m_sin_freqs = m_sin_freqs.unsqueeze(1).unsqueeze(1);  // [C, 1, 1, D]
 }
 
-at::Tensor AbsoluteRotaryEmbeddingImpl::forward(at::Tensor x) {
+at::Tensor AbsoluteRotaryEmbeddingImpl::forward(at::Tensor x, const at::Tensor& depths) {
     utils::ScopedProfileRange spr1("AbsoluteRotaryEmbeddingImpl::forward", 4);
 
-    if (std::size(x.sizes()) != 5) {
-        throw std::runtime_error{"x tensor should be 5D. Given: x.shape = " +
+    if (x.dim() != 4) {
+        throw std::runtime_error{"x tensor should be 4D. Given: x.shape = " +
                                  utils::tensor_shape_as_string(x)};
     }
     if (!x.defined()) {
@@ -206,33 +238,27 @@ at::Tensor AbsoluteRotaryEmbeddingImpl::forward(at::Tensor x) {
     LOG_TRACE_DTYPE("[AbsoluteRotaryEmbeddingImpl] Input: x.dtype() = {}",
                     torch::toString(x.scalar_type()));
 
-    if (std::size(m_cos_freqs.sizes()) == 2) {
-        LOG_TRACE_DTYPE("[AbsoluteRotaryEmbeddingImpl] Expanding frequency dimensions");
-
-        LOG_TRACE_DTYPE(
-                "[AbsoluteRotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
-                utils::tensor_shape_as_string(m_cos_freqs),
-                utils::tensor_shape_as_string(m_sin_freqs));
-
+    if (m_cos_freqs.dim() == 2) {
         this->expand_freq_dims();
-
-        LOG_TRACE_DTYPE(
-                "[AbsoluteRotaryEmbeddingImpl] m_cos_freqs.shape = {}, m_sin_freqs.shape = {}",
-                utils::tensor_shape_as_string(m_cos_freqs),
-                utils::tensor_shape_as_string(m_sin_freqs));
     }
 
-    // Dimensions: N, T, C, H, D = batch_size, num_positions, num_sequences, num_heads, head_dim
-    const int64_t C = x.size(2);
+    // Find the required frequencies for each sample in the batch
+    const auto device = m_cos_freqs.device();
+    const auto opts = torch::TensorOptions().dtype(torch::kLong).device(device);
+    const at::Tensor indices = expand_indices_from_depths(depths, m_max_depth, opts);
+    // m_cos_freqs: [C, 1, 1, D/2]
+    const at::Tensor cos_vals = m_cos_freqs.index({indices});
+    const at::Tensor sin_vals = m_sin_freqs.index({indices});
 
-    // View only the number of values needed.
-    const at::Tensor cos_vals = m_cos_freqs.narrow(/*dim*/ 2, /*start*/ 0, /*end*/ C);
-    const at::Tensor sin_vals = m_sin_freqs.narrow(/*dim*/ 2, /* start*/ 0, /*end*/ C);
+    // Apply RoPE on half channels directly to reduce intermediate tensor traffic.
+    const int64_t half = x.size(-1) / 2;
+    const at::Tensor x1 = x.narrow(/*dim=*/-1, /*start=*/0, /*length=*/half);
+    const at::Tensor x2 = x.narrow(/*dim=*/-1, /*start=*/half, /*length=*/half);
 
-    // x = x * cos_vals + rotate_half(x) * sin_vals;
-    // k = k * cos_vals + rotate_half(k) * sin_vals;
+    const at::Tensor x_rot_1 = x1 * cos_vals - x2 * sin_vals;
+    const at::Tensor x_rot_2 = x2 * cos_vals + x1 * sin_vals;
 
-    x = rotate_half(x).mul_(sin_vals).add_(cos_vals * x);
+    x = torch::cat({x_rot_1, x_rot_2}, /*dim=*/-1);
 
     LOG_TRACE_DTYPE("[AbsoluteRotaryEmbeddingImpl] Output: x.dtype() = {}",
                     torch::toString(x.scalar_type()));
@@ -245,23 +271,17 @@ EmbeddingWrapperImpl::EmbeddingWrapperImpl(const int64_t max_depth, const int64_
     m_embedding = register_module("embedding", torch::nn::Embedding(max_depth, dimension));
 }
 
-at::Tensor EmbeddingWrapperImpl::forward(at::Tensor x) {
+at::Tensor EmbeddingWrapperImpl::forward(at::Tensor x, const at::Tensor& depths) {
     utils::ScopedProfileRange spr1("EmbeddingWrapperImpl::forward", 4);
 
-    const int64_t C = x.size(2);  // x: N, T, C, H, D
-    if (C > m_max_depth) {
-        throw std::runtime_error{"x tensor depth " + std::to_string(C) +
-                                 " is larger than the maximum embedding depth " +
-                                 std::to_string(m_max_depth)};
-    }
+    // Find the required indices for each sample in the batch
     const auto device = this->parameters()[0].device();
-    const auto opts = torch::TensorOptions().dtype(torch::kInt64).device(device);
-
-    const at::Tensor indices = torch::arange(C, opts);
+    const auto opts = torch::TensorOptions().dtype(torch::kLong).device(device);
+    const at::Tensor indices = expand_indices_from_depths(depths, m_max_depth, opts);
+    // x: C, T, H, D
     const auto emb = m_embedding->forward(indices)
-                             .unsqueeze(0)   // [1, C, D]
-                             .unsqueeze(0)   // [1, 1, C, D]
-                             .unsqueeze(3);  // [1, 1, C, 1, D]
+                             .unsqueeze(1)   // [C, 1, D]
+                             .unsqueeze(1);  // [C, 1, 1, D]
     x = x.add_(emb);
 
     return x;
@@ -273,12 +293,13 @@ MultiHeadCrossAttentionImpl::MultiHeadCrossAttentionImpl(
         const int64_t kv_max_depth,
         const int64_t nhead /*=4*/,
         const bool embed_features /*=false*/,
-        const EmbeddingType embedding_type /*=""*/,
-        const bool qkv_bias, /*=false*/
-        const bool out_bias, /*=true*/
+        const EmbeddingType embedding_type,
+        const bool qkv_bias,   /*=false*/
+        const bool out_bias,   /*=true*/
+        const bool use_varlen, /*=true*/
         const std::optional<int64_t>& /*rotary_dim*/,
         const std::optional<int64_t>& attn_window)
-        : m_nhead{nhead}, m_attn_window{attn_window} {
+        : m_nhead{nhead}, m_attn_window{attn_window}, m_use_varlen{use_varlen} {
     if (nhead <= 0) {
         throw std::runtime_error{"Number of heads should be > 0, given: " + std::to_string(nhead)};
     }
@@ -293,6 +314,7 @@ MultiHeadCrossAttentionImpl::MultiHeadCrossAttentionImpl(
     m_out_proj = register_module(
             "out_proj",
             torch::nn::Linear(torch::nn::LinearOptions(d_model, d_model).bias(out_bias)));
+    m_flash_attention = register_module("flash_attention", FlashAttentionModule());
     m_positional_embeddings =
             register_module("positional_embeddings",
                             RotaryEmbedding(m_head_dim / 2, 10000.0f, 100000, at::TensorOptions{}));
@@ -345,6 +367,7 @@ MultiHeadCrossAttentionImpl::MultiHeadCrossAttentionImpl(
                     int(embedding_type), int(m_q_embedding_type), int(m_k_embedding_type));
 }
 
+#if ENABLE_LOCAL_ATTENTION_MASK
 at::Tensor MultiHeadCrossAttentionImpl::local_attention_mask(const int64_t T,
                                                              const int64_t num_q_seqs,
                                                              const int64_t num_kv_seqs,
@@ -357,7 +380,16 @@ at::Tensor MultiHeadCrossAttentionImpl::local_attention_mask(const int64_t T,
     const int64_t Q_LEN = T * num_q_seqs;
     const int64_t KV_LEN = T * num_kv_seqs;
 
-    const auto device = this->parameters()[0].device();
+    const auto device = m_q_proj->weight.device();
+
+    // Reuse the same local mask for identical (T, num_q_seqs, num_kv_seqs, window, device).
+    if (m_cached_local_mask.defined() && (m_cached_local_mask_device == device) &&
+        (m_cached_local_mask_t == T) && (m_cached_local_mask_num_q == num_q_seqs) &&
+        (m_cached_local_mask_num_kv == num_kv_seqs) &&
+        (m_cached_local_mask_window == attn_window)) {
+        return m_cached_local_mask;
+    }
+
     const auto opts = torch::TensorOptions().dtype(torch::kInt64).device(device);
 
     // q_idx: [Q_LEN], k_idx: [KV_LEN]
@@ -372,115 +404,185 @@ at::Tensor MultiHeadCrossAttentionImpl::local_attention_mask(const int64_t T,
     const at::Tensor diff = (q_pos.unsqueeze(1) - k_pos.unsqueeze(0)).abs();
 
     // mask: bool [Q_LEN, KV_LEN]
-    at::Tensor mask = diff.le(attn_window);
+    m_cached_local_mask = diff.le(attn_window);
+    m_cached_local_mask_device = device;
+    m_cached_local_mask_t = T;
+    m_cached_local_mask_num_q = num_q_seqs;
+    m_cached_local_mask_num_kv = num_kv_seqs;
+    m_cached_local_mask_window = attn_window;
 
-    return mask;
+    return m_cached_local_mask;
+}
+#endif
+
+std::pair<at::Tensor, at::Tensor> MultiHeadCrossAttentionImpl::flatten_tensor(
+        const at::Tensor& x,
+        const at::Tensor& depths,
+        const std::optional<at::Tensor>& pos_mask) const {
+    /* Flatten tensor and remove masked positions.
+       Returns a new flattened tensor and tensor of number of batch positions.
+
+       Inputs:
+         x: sum(depths), T, H, dim
+         depths: N
+         mask: sum(depths), T
+       Outputs:
+         t: sum(depths) * T - sum(mask), H, dim
+         cumsum_seq_lengths: N + 1
+    */
+    const int64_t T = x.size(1);
+    const auto device = depths.device();
+    const auto cumsum_dtype = torch::kInt32;
+    const auto opts = at::TensorOptions().dtype(cumsum_dtype).device(device);
+    at::Tensor t = x.flatten(0, 1);
+    at::Tensor cumsum_seq_lengths;
+    if (pos_mask) {
+        const at::Tensor flat_pos_mask = (*pos_mask).flatten(0, 1);
+        cumsum_seq_lengths = compute_cumsum_seq_lengths_from_masked_rows(depths, *pos_mask);
+        t = flat_pos_mask.numel() == 0 ? t.narrow(/*dim=*/0, /*start=*/0, /*length=*/0)
+                                       : t.index({flat_pos_mask});
+    } else {
+        cumsum_seq_lengths = depths.cumsum(0) * T;
+    }
+    cumsum_seq_lengths = at::cat({at::zeros({1}, opts), cumsum_seq_lengths}, 0).to(torch::kInt32);
+    return {t.contiguous(), cumsum_seq_lengths.contiguous()};
 }
 
-at::Tensor MultiHeadCrossAttentionImpl::attn_fn(const at::Tensor& q,
-                                                const at::Tensor& k,
-                                                const at::Tensor& v,
-                                                const std::optional<at::Tensor>& pos_mask) const {
+at::Tensor MultiHeadCrossAttentionImpl::attn_fn(
+        const at::Tensor& q,
+        const at::Tensor& k,
+        const at::Tensor& v,
+        const at::Tensor& q_depths,
+        const at::Tensor& kv_depths,
+        const std::optional<at::Tensor>& q_pos_mask,
+        const std::optional<at::Tensor>& kv_pos_mask) const {
     /**
-     * q shape: N, T, N_Q, H, D (batch_size, num_positions, num_query_seqs, num_heads, head_dim)
-     * k shape: N, T, N_KV, H, D (batch_size, num_positions, num_kv_seqs, num_heads, head_dim)
+     * q shape: N_Q, T, H, D (num_q_seqs, num_positions, num_heads, head_dim)
+     * k shape: N_K, T, H, D (num_kv_seqs, num_positions, num_heads, head_dim)
      */
     utils::ScopedProfileRange spr1("MultiHeadCrossAttentionImpl::attn_fn", 4);
 
-    const int64_t N = q.size(0);
+    const int64_t N_Q = q.size(0);
     const int64_t T = q.size(1);
-    const int64_t N_Q = q.size(2);
-    const int64_t H = q.size(3);
-    const int64_t D = q.size(4);
-    const int64_t N_KV = k.size(2);
+    const int64_t N_K = k.size(0);
 
-    // Flatten positions and sequences, keep batch and head:
-    //      q -> (N, H, Lq, D), k/v -> (N, H, Lkv, D)
-    const at::Tensor q2 = q.permute({0, 3, 2, 1, 4}).contiguous().view({N, H, N_Q * T, D});
-    const at::Tensor k2 = k.permute({0, 3, 2, 1, 4}).contiguous().view({N, H, N_KV * T, D});
-    const at::Tensor v2 = v.permute({0, 3, 2, 1, 4}).contiguous().view({N, H, N_KV * T, D});
+    at::Tensor attn_out;
+    if (m_use_varlen) {
+        // Flatten positions and sequences, keep batch and head:
+        //      q -> (N_Q * T (masked), H, D), k/v -> (N_K * T (masked), H, D)
+        const auto [q2, cumsum_seqlens_q] = flatten_tensor(q, q_depths, q_pos_mask);
+        const auto [k2, cumsum_seqlens_k] = flatten_tensor(k, kv_depths, kv_pos_mask);
+        const auto [v2, cumsum_seqlens_v] = flatten_tensor(v, kv_depths, kv_pos_mask);
 
-    std::optional<at::Tensor> mask{std::nullopt};
-    if (pos_mask) {
-        mask = {(*pos_mask).unsqueeze(1).expand({-1, H, -1, -1})};
-    }
-    // Compute window mask if needed.
-    if (m_attn_window) {
-        utils::ScopedProfileRange spr2("MultiHeadCrossAttentionImpl::attn_fn-attn_window", 5);
+        LOG_TRACE_DTYPE("[attn] q.dtype() = {}, k.dtype() = {}, v.dtype() = {}",
+                        torch::toString(q.scalar_type()), torch::toString(k.scalar_type()),
+                        torch::toString(v.scalar_type()));
+        LOG_TRACE_DTYPE("[attn] q2.dtype() = {}, k2.dtype() = {}, v2.dtype() = {}",
+                        torch::toString(q2.scalar_type()), torch::toString(k2.scalar_type()),
+                        torch::toString(v2.scalar_type()));
+        LOG_TRACE_DTYPE("[attn] q.shape = {}, q2.shape = {}", utils::tensor_shape_as_string(q),
+                        utils::tensor_shape_as_string(q2));
+        LOG_TRACE_DTYPE("[attn] k.shape = {}, k2.shape = {}", utils::tensor_shape_as_string(k),
+                        utils::tensor_shape_as_string(k2));
+        LOG_TRACE_DTYPE("[attn] cumsum_seqlens_q.shape = {}, cumsum_seqlens_k.shape = {}",
+                        utils::tensor_shape_as_string(cumsum_seqlens_q),
+                        utils::tensor_shape_as_string(cumsum_seqlens_k));
 
-        at::Tensor new_mask = local_attention_mask(T, N_Q, N_KV, *m_attn_window);
+        attn_out =
+                m_flash_attention->forward_varlen(q2, k2, v2, cumsum_seqlens_q, cumsum_seqlens_k);
 
-        // Reshape the mask. Expand broadcasts from [1, 1, ...] to [N, H, ...]. It doesn't copy the data,
-        // it just produces a view of those rows.
-        new_mask = new_mask.view({1, 1, N_Q * T, N_KV * T})
-                           .expand({N, H, N_Q * T, N_KV * T});  // [1, 1, Lq, Lkv]
-        if (mask) {
-            mask = {torch::logical_and(new_mask, *mask)};
-        } else {
-            mask = {std::move(new_mask)};
+        static_cast<void>(cumsum_seqlens_v);
+
+        LOG_TRACE_DTYPE("[attn] attn_out.shape = {}", utils::tensor_shape_as_string(attn_out));
+        // flatten the H, D dimensions
+        attn_out = attn_out.view({-1, m_nhead * m_head_dim});
+
+        LOG_TRACE_DTYPE("[attn] attn_out.shape = {}", utils::tensor_shape_as_string(attn_out));
+
+        if (q_pos_mask) {
+            auto opts = at::TensorOptions().dtype(attn_out.dtype()).device(attn_out.device());
+            at::Tensor unmasked_attn_out = at::zeros({N_Q * T, m_nhead * m_head_dim}, opts);
+            unmasked_attn_out.masked_scatter_((*q_pos_mask).flatten(0, 1).unsqueeze(-1), attn_out);
+            attn_out = unmasked_attn_out;
         }
+        attn_out = attn_out.view({N_Q, T, -1}).contiguous();
+    } else {
+        if (!((q_depths == q_depths[0]).all().item<bool>() &&
+              (kv_depths == kv_depths[0]).all().item<bool>())) {
+            throw std::runtime_error{
+                    "[MultiHeadCrossAttentionImpl] Batched attn_fn requires constant depths across "
+                    "q/kv"};
+        }
+        at::Tensor q2 = q.contiguous();
+        at::Tensor k2 = k.contiguous();
+        at::Tensor v2 = v.contiguous();
+        const int64_t q_sample_depth = q_depths.index({0}).item<int64_t>();
+        const int64_t k_sample_depth = kv_depths.index({0}).item<int64_t>();
+        if (q_sample_depth != 1) {
+            q2 = q2.view({N_Q / q_sample_depth, q_sample_depth * T, m_nhead, m_head_dim});
+        }
+        if (k_sample_depth != 1) {
+            k2 = k2.view({N_K / k_sample_depth, k_sample_depth * T, m_nhead, m_head_dim});
+            v2 = v2.view({N_K / k_sample_depth, k_sample_depth * T, m_nhead, m_head_dim});
+        }
+        LOG_TRACE_DTYPE("[attn] q2.dtype() = {}, k2.dtype() = {}, v2.dtype() = {}",
+                        torch::toString(q2.scalar_type()), torch::toString(k2.scalar_type()),
+                        torch::toString(v2.scalar_type()));
+        LOG_TRACE_DTYPE("[attn] q2.shape = {}, k2.shape = {}", utils::tensor_shape_as_string(q2),
+                        utils::tensor_shape_as_string(k2));
+
+        attn_out = m_flash_attention->forward_batched(q2, k2, v2);
+
+        LOG_TRACE_DTYPE("[attn] attn_out.shape = {}", utils::tensor_shape_as_string(attn_out));
+        // flatten the H, D dimensions
+        attn_out = attn_out.view({N_Q, T, m_nhead * m_head_dim});
     }
 
-    LOG_TRACE_DTYPE("[attn] q.dtype() = {}, k.dtype() = {}, v.dtype() = {}",
-                    torch::toString(q.scalar_type()), torch::toString(k.scalar_type()),
-                    torch::toString(v.scalar_type()));
-    LOG_TRACE_DTYPE("[attn] q2.dtype() = {}, k2.dtype() = {}, v2.dtype() = {}",
-                    torch::toString(q2.scalar_type()), torch::toString(k2.scalar_type()),
-                    torch::toString(v2.scalar_type()));
+    LOG_TRACE_DTYPE("[attn] attn_out.shape = {}", utils::tensor_shape_as_string(attn_out));
 
-    at::Tensor attn = at::scaled_dot_product_attention(q2, k2, v2, mask);
-
-    // Reshape back to (N, T, N_Q, H*D).
-    attn = attn.permute({0, 2, 1, 3})            // (N, N_Q*T, H, D)
-                   .reshape({N, N_Q, T, H * D})  // (N, N_Q, T, H*D)
-                   .permute({0, 2, 1, 3})        // (N, T, N_Q, dim)
-                   .contiguous();
-
-    return attn;
+    return attn_out;
 }
 
 at::Tensor MultiHeadCrossAttentionImpl::forward(const at::Tensor& x,
                                                 const at::Tensor& y,
-                                                const std::optional<at::Tensor>& pos_mask) {
+                                                const at::Tensor& x_depths,
+                                                const at::Tensor& y_depths,
+                                                const std::optional<at::Tensor>& x_pos_mask,
+                                                const std::optional<at::Tensor>& y_pos_mask) {
     utils::ScopedProfileRange spr1("MultiHeadCrossAttentionImpl::forward", 3);
 
-    const int64_t N = x.size(0);
+    const int64_t D_x = x.size(0);
     const int64_t T = x.size(1);
-    const int64_t N_Q = x.size(2);
-    const int64_t N_KV = y.size(2);
+    const int64_t D_y = y.size(0);
 
     at::Tensor q;
     // Get the Q tensor.
     {
         utils::ScopedProfileRange spr2("MultiHeadCrossAttentionImpl::forward-q_proj", 4);
-        q = m_q_proj(x).view({N, T, N_Q, m_nhead, m_head_dim});
+        q = m_q_proj(x).view({D_x, T, m_nhead, m_head_dim});
     }
 
     // Get the K, V tensors.
-    std::vector<torch::Tensor> kv_unbound;
+    at::Tensor k;
+    at::Tensor v;
     {
         utils::ScopedProfileRange spr2("MultiHeadCrossAttentionImpl::forward-kv_proj", 4);
-        const at::Tensor kv = m_kv_proj(y).view({N, T, N_KV, m_nhead, m_head_dim, 2});
-        kv_unbound = kv.unbind(/*dim=*/-1);
-        if (std::ssize(kv_unbound) != 2) {
-            throw std::runtime_error{"Wrong size of the unbound tensors! kv_unbound.size = " +
-                                     std::to_string(std::size(kv_unbound)) + ", expected = 2"};
-        }
+        const at::Tensor kv = m_kv_proj(y).view({D_y, T, m_nhead, m_head_dim, 2});
+        k = kv.select(/*dim=*/-1, /*index=*/0);
+        v = kv.select(/*dim=*/-1, /*index=*/1);
     }
-    at::Tensor k = kv_unbound[0];
-    const auto& v = kv_unbound[1];
-    std::vector<at::Tensor> q_chunked = q.chunk(2, /*dim=*/-1);
-    std::vector<at::Tensor> k_chunked = k.chunk(2, /*dim=*/-1);
+    auto q_chunked = q.chunk(2, /*dim=*/-1);
+    auto k_chunked = k.chunk(2, /*dim=*/-1);
 
     auto [q_rot, k_rot] = m_positional_embeddings(q_chunked[0], k_chunked[0]);
     at::Tensor q_emb;
     at::Tensor k_emb;
     switch (m_q_embedding_type) {
     case EmbeddingType::ROTATIONAL:
-        q_emb = m_q_embedding_rot(q_chunked[1]);
+        q_emb = m_q_embedding_rot(q_chunked[1], x_depths);
         break;
     case EmbeddingType::WRAP_LEARNED:
-        q_emb = m_q_embedding_wrap(q_chunked[1]);
+        q_emb = m_q_embedding_wrap(q_chunked[1], x_depths);
         break;
     case EmbeddingType::IDENTITY:
     default:
@@ -488,10 +590,10 @@ at::Tensor MultiHeadCrossAttentionImpl::forward(const at::Tensor& x,
     }
     switch (m_k_embedding_type) {
     case EmbeddingType::ROTATIONAL:
-        k_emb = m_k_embedding_rot(k_chunked[1]);
+        k_emb = m_k_embedding_rot(k_chunked[1], y_depths);
         break;
     case EmbeddingType::WRAP_LEARNED:
-        k_emb = m_k_embedding_wrap(k_chunked[1]);
+        k_emb = m_k_embedding_wrap(k_chunked[1], y_depths);
         break;
     case EmbeddingType::IDENTITY:
     default:
@@ -506,7 +608,7 @@ at::Tensor MultiHeadCrossAttentionImpl::forward(const at::Tensor& x,
             torch::toString(x.scalar_type()), torch::toString(q.scalar_type()),
             torch::toString(k.scalar_type()), torch::toString(v.scalar_type()));
 
-    const at::Tensor attn_out = attn_fn(q, k, v, pos_mask);
+    const at::Tensor attn_out = attn_fn(q, k, v, x_depths, y_depths, x_pos_mask, y_pos_mask);
 
     {
         utils::ScopedProfileRange spr2("MultiHeadCrossAttentionImpl::forward-out_proj", 4);
@@ -527,6 +629,7 @@ MultiSequenceCrossAttentionBlockImpl::MultiSequenceCrossAttentionBlockImpl(
         const EmbeddingType embedding_type,
         const bool qkv_bias,
         const bool out_bias,
+        const bool use_varlen,
         const std::optional<int64_t>& rotary_dim,
         const std::optional<int64_t>& attn_window,
         // additional arguments for this module
@@ -535,9 +638,9 @@ MultiSequenceCrossAttentionBlockImpl::MultiSequenceCrossAttentionBlockImpl(
     m_deepnorm_alpha = at::tensor(deepnorm_alpha);
     register_buffer("deepnorm_alpha", m_deepnorm_alpha);
     m_attention = register_module(
-            "crossattn",
-            MultiHeadCrossAttention(d_model, q_max_depth, kv_max_depth, nhead, embed_features,
-                                    embedding_type, qkv_bias, out_bias, rotary_dim, attn_window));
+            "crossattn", MultiHeadCrossAttention(d_model, q_max_depth, kv_max_depth, nhead,
+                                                 embed_features, embedding_type, qkv_bias, out_bias,
+                                                 use_varlen, rotary_dim, attn_window));
     m_ff = register_module("ff", SwiGLU(d_model, d_model, false));
     m_norm1 = register_module("norm1", nn::RMSNorm(d_model));
     m_norm2 = register_module("norm2", nn::RMSNorm(d_model));
@@ -546,12 +649,15 @@ MultiSequenceCrossAttentionBlockImpl::MultiSequenceCrossAttentionBlockImpl(
 at::Tensor MultiSequenceCrossAttentionBlockImpl::forward(
         at::Tensor x,
         const at::Tensor& y,
-        const std::optional<at::Tensor>& pos_mask) {
+        const at::Tensor& x_depths,
+        const at::Tensor& y_depths,
+        const std::optional<at::Tensor>& x_pos_mask,
+        const std::optional<at::Tensor>& y_pos_mask) {
     // Computation here is the same as in TxEncoderImpl except for args to the attn function.
     utils::ScopedProfileRange spr1("MultiSequenceCrossAttentionBlockImpl::forward", 3);
     at::Tensor attn, f, residual;
     const auto deepnorm_alpha = named_buffers()["deepnorm_alpha"];
-    attn = m_attention(x, y, pos_mask);
+    attn = m_attention(x, y, x_depths, y_depths, x_pos_mask, y_pos_mask);
     residual = x * m_deepnorm_alpha;
     x = m_norm1(attn + residual);
     f = m_ff(x);
@@ -580,14 +686,17 @@ SelfAttentionBlockImpl::SelfAttentionBlockImpl(int64_t d_model,
                   embedding_type,
                   qkv_bias,
                   out_bias,
+                  false,
                   rotary_dim,
                   attn_window,
                   dim_feedforward,
                   deepnorm_alpha) {};
 
-at::Tensor SelfAttentionBlockImpl::forward(const at::Tensor& x) {
+at::Tensor SelfAttentionBlockImpl::forward(const at::Tensor& x, const at::Tensor& depths) {
     utils::ScopedProfileRange spr1("SelfAttentionBlockImpl::forward", 3);
-    at::Tensor ret = this->as<MultiSequenceCrossAttentionBlock>()->forward(x, x, std::nullopt);
+    const std::optional<at::Tensor> null_mask{std::nullopt};
+    at::Tensor ret = this->as<MultiSequenceCrossAttentionBlock>()->forward(x, x, depths, depths,
+                                                                           null_mask, null_mask);
     LOG_TRACE_DTYPE("[SelfAttentionBlockImpl] x.dtype() = {}, ret.dtype() = {}",
                     torch::toString(x.scalar_type()), torch::toString(ret.scalar_type()));
     return ret;
@@ -617,6 +726,7 @@ MessagePassingBlockImpl::MessagePassingBlockImpl(const int64_t dim,
                                                                  embedding_type, /*embedding_type*/
                                                                  false,          /*qkv_bias*/
                                                                  true,           /*out_bias*/
+                                                                 true,           /*use_varlen*/
                                                                  std::nullopt,   /*rotary_dim*/
                                                                  attn_window,    /*attn_window*/
                                                                  dim,            /*dim_feedforward*/
@@ -653,6 +763,7 @@ MessagePassingBlockImpl::MessagePassingBlockImpl(const int64_t dim,
                                                                  embedding_type, /*embedding_type*/
                                                                  false,          /*qkv_bias*/
                                                                  true,           /*out_bias*/
+                                                                 true,           /*use_varlen*/
                                                                  std::nullopt,   /*rotary_dim*/
                                                                  attn_window,    /*attn_window*/
                                                                  dim,            /*dim_feedforward*/
@@ -663,30 +774,33 @@ MessagePassingBlockImpl::MessagePassingBlockImpl(const int64_t dim,
 
 std::pair<at::Tensor, at::Tensor> MessagePassingBlockImpl::forward(at::Tensor read_seqs,
                                                                    at::Tensor hap_seqs,
-                                                                   const at::Tensor& mask) {
+                                                                   const at::Tensor& read_depths,
+                                                                   const at::Tensor& hap_depths,
+                                                                   const at::Tensor& pos_mask) {
     utils::ScopedProfileRange spr1("MessagePassingBlockImpl::forward", 2);
 
     LOG_TRACE_DTYPE(
             "[MessagePassingBlockImpl] Input: hap_seqs.dtype() = {}, read_seqs.dtype() = {}",
             torch::toString(hap_seqs.scalar_type()), torch::toString(read_seqs.scalar_type()));
 
-    const int64_t N = mask.size(0);
-    const int64_t D = mask.size(1);
-    const int64_t T = mask.size(2);
+    const std::optional<at::Tensor> null_mask{std::nullopt};
 
     if (m_cross_attend_read_embeddings) {
-        std::optional<at::Tensor> pos_mask = {
-                mask.view({N, D * T}).unsqueeze(1).expand({N, T, D * T})};
-        hap_seqs = m_reads_to_haplotypes(hap_seqs, read_seqs, pos_mask);
+        hap_seqs = m_reads_to_haplotypes(hap_seqs, read_seqs, hap_depths, read_depths, null_mask,
+                                         pos_mask);
 
         LOG_TRACE_DTYPE(
                 "[MessagePassingBlockImpl] Cross-attention (hap_seqs): hap_seqs.dtype() = {}, "
                 "read_seqs.dtype() = {}",
                 torch::toString(hap_seqs.scalar_type()), torch::toString(read_seqs.scalar_type()));
+
+        LOG_TRACE_DTYPE("[MessagePassingBlockImpl] read_seqs.shape = {}, hap_seqs.shape = {}",
+                        utils::tensor_shape_as_string(read_seqs),
+                        utils::tensor_shape_as_string(hap_seqs));
     }
 
     for (auto& layer : *m_haplotype_self_attention) {
-        hap_seqs = layer->as<SelfAttentionBlock>()->forward(hap_seqs);
+        hap_seqs = layer->as<SelfAttentionBlock>()->forward(hap_seqs, hap_depths);
     }
 
     LOG_TRACE_DTYPE(
@@ -695,14 +809,17 @@ std::pair<at::Tensor, at::Tensor> MessagePassingBlockImpl::forward(at::Tensor re
             torch::toString(hap_seqs.scalar_type()), torch::toString(read_seqs.scalar_type()));
 
     if (m_update_read_embeddings) {
-        std::optional<at::Tensor> pos_mask = {
-                mask.view({N, D * T}).unsqueeze(-1).expand({N, D * T, T})};
-        read_seqs = m_haplotypes_to_reads(read_seqs, hap_seqs, pos_mask);
+        read_seqs = m_haplotypes_to_reads(read_seqs, hap_seqs, read_depths, hap_depths, pos_mask,
+                                          null_mask);
 
         LOG_TRACE_DTYPE(
                 "[MessagePassingBlockImpl] Update embeddings (read_seqs): hap_seqs.dtype() = {}, "
                 "read_seqs.dtype() = {}",
                 torch::toString(hap_seqs.scalar_type()), torch::toString(read_seqs.scalar_type()));
+
+        LOG_TRACE_DTYPE("[MessagePassingBlockImpl] read_seqs.shape = {}, hap_seqs.shape = {}",
+                        utils::tensor_shape_as_string(read_seqs),
+                        utils::tensor_shape_as_string(hap_seqs));
     }
 
     return {read_seqs, hap_seqs};
@@ -926,18 +1043,20 @@ void ModelVariantPerceiver::validate_feature_tensor(const at::Tensor& x) const {
     }
 }
 
-std::pair<at::Tensor, at::Tensor> ModelVariantPerceiver::create_embedded_features(
+std::tuple<at::Tensor, at::Tensor, at::Tensor> ModelVariantPerceiver::create_embedded_features(
         const at::Tensor& in_x) {
     /**
      * Example:
      *      Input:  in_x.shape = 16, 300, 20, 7
-     *      Return: {x, pos_mask}
-     *              x.shape = 16, 300, 20, 10
+     *      Return: {x, pos_mask, sample_depths}
+     *              x.shape = sum(sample_depths), 300, 10
      *              (m_bases_embedding_size == 6, and 4 additional tensors concatenated:
      *              torch::cat(bases + strands + haptags, scaled_q_scores, scaled_mapqc, dwells, snp_qv)
      *                                      6           +       1        +      1      +    1  +    1       = 10
-     *              pos_mask.shape = 16, 20, 300
+     *              pos_mask.shape = sum(sample_depths), 300
      *              pos_mask is true where bases in in_x !=0 and false where bases in in_x == 0.
+     *              sample_depths.shape = 16
+     *              number of rows in x from each sample in batch
      */
     utils::ScopedProfileRange spr1("ModelVariantPerceiver::create_embedded_features", 2);
 
@@ -945,6 +1064,10 @@ std::pair<at::Tensor, at::Tensor> ModelVariantPerceiver::create_embedded_feature
                     torch::toString(in_x.scalar_type()));
 
     validate_feature_tensor(in_x);
+
+    at::Tensor pos_mask = in_x.select(-1, m_column_base).ne(0).permute({0, 2, 1});
+    at::Tensor row_mask = pos_mask.any(-1);
+    const at::Tensor sample_depths = row_mask.sum(-1);
 
     // Bases embeddings.
     at::Tensor embeddings =
@@ -960,43 +1083,70 @@ std::pair<at::Tensor, at::Tensor> ModelVariantPerceiver::create_embedded_feature
                 m_haplotag_embedder->forward(in_x.select(-1, m_column_haplotag).to(torch::kLong)));
     }
 
-    at::Tensor scaled_q_scores = (in_x.select(-1, m_column_qual) / 25).add_(-1).unsqueeze(-1);
+    const int64_t scalar_count = 1 + static_cast<int64_t>(m_use_mapqc) +
+                                 static_cast<int64_t>(m_use_dwells) +
+                                 static_cast<int64_t>(m_use_snp_qv);
+    at::Tensor x = torch::empty(
+            {in_x.size(0), in_x.size(1), in_x.size(2), embeddings.size(-1) + scalar_count},
+            embeddings.options());
 
-    std::vector<at::Tensor> features{std::move(embeddings), std::move(scaled_q_scores)};
+    const int64_t emb_dim = embeddings.size(-1);
+    x.narrow(/*dim=*/-1, /*start=*/0, /*length=*/emb_dim).copy_(embeddings);
+
+    int64_t dst_col = emb_dim;
+    x.select(-1, dst_col).copy_(in_x.select(-1, m_column_qual)).mul_(0.04).add_(-1);
+    ++dst_col;
 
     if (m_use_mapqc) {
-        at::Tensor scaled_mapqc = (in_x.select(-1, m_column_mapq) / 25).add_(-1).unsqueeze(-1);
-        features.emplace_back(std::move(scaled_mapqc));
+        x.select(-1, dst_col).copy_(in_x.select(-1, m_column_mapq)).mul_(0.04).add_(-1);
+        ++dst_col;
     }
 
     if (m_use_dwells) {
-        at::Tensor dwells = in_x.select(-1, m_column_dwell).unsqueeze(-1);
-        features.emplace_back(std::move(dwells));
+        x.select(-1, dst_col).copy_(in_x.select(-1, m_column_dwell));
+        ++dst_col;
     }
 
     if (m_use_snp_qv) {
-        at::Tensor snp_qv = (in_x.select(-1, m_column_snp_qv) / 25).add_(-1).unsqueeze(-1);
-        features.emplace_back(std::move(snp_qv));
+        x.select(-1, dst_col).copy_(in_x.select(-1, m_column_snp_qv)).mul_(0.04).add_(-1);
     }
 
-    at::Tensor x = torch::cat(features, -1);
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::create_embedded_features] pos_mask.shape = {}",
+                    utils::tensor_shape_as_string(pos_mask));
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::create_embedded_features] row_mask.shape = {}",
+                    utils::tensor_shape_as_string(row_mask));
+
+    row_mask = row_mask.flatten(0, 1);
+
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::create_embedded_features] row_mask.shape = {}",
+                    utils::tensor_shape_as_string(row_mask));
+
+    x = x.permute({0, 2, 1, 3}).flatten(0, 1);
+
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::create_embedded_features] x.shape = {}",
+                    utils::tensor_shape_as_string(x));
+
+    x = x.index({row_mask});
+
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::create_embedded_features] x.shape = {}",
+                    utils::tensor_shape_as_string(x));
+
+    pos_mask = pos_mask.flatten(0, 1).index({row_mask});
+
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::create_embedded_features] Output: pos_mask.shape = {}",
+                    utils::tensor_shape_as_string(x));
 
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::create_embedded_features] Output: x.dtype() = {}",
                     torch::toString(x.scalar_type()));
 
-    const at::Tensor pos_mask =
-            in_x.select(-1, m_column_base).ne(0).permute({0, 2, 1}).contiguous();
-
-    return {x, pos_mask};
+    return {x, pos_mask, sample_depths};
 }
 
 at::Tensor ModelVariantPerceiver::create_latent_embedding(const std::optional<at::Tensor>& refseqs,
                                                           const int64_t N,
                                                           const int64_t T) {
     const auto device = this->parameters()[0].device();
-    const auto opts = torch::TensorOptions().device(device);
-
-    at::Tensor haplotype_embedding = at::empty({N, T, m_dimension}, opts);
+    at::Tensor haplotype_embedding;
     if (m_latent_ref_init) {
         if (refseqs) {
             const int64_t N_ref = refseqs->size(0);
@@ -1004,8 +1154,10 @@ at::Tensor ModelVariantPerceiver::create_latent_embedding(const std::optional<at
             if ((N_ref != N) || (T_ref != T)) {
                 throw std::runtime_error{"[ModelVariantPerceiver] Reference tensor shape mismatch"};
             }
-            haplotype_embedding = m_latent_ref_project->forward(
-                    m_base_embedder->forward(refseqs->to(torch::kLong)));
+            const at::Tensor refseqs_long =
+                    refseqs->to(torch::TensorOptions().dtype(torch::kLong).device(device));
+            haplotype_embedding =
+                    m_latent_ref_project->forward(m_base_embedder->forward(refseqs_long));
         } else {
             throw std::runtime_error{"References are missing from the variant perceiver model"};
         }
@@ -1013,10 +1165,6 @@ at::Tensor ModelVariantPerceiver::create_latent_embedding(const std::optional<at
         haplotype_embedding = m_latent_init.unsqueeze(0).unsqueeze(0).expand(
                 {N, T, -1});  // (batch_size, num_positions, dimension)
     }
-    haplotype_embedding = haplotype_embedding.unsqueeze(2);
-
-    LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] haplotype_sequence.dtype() = {}",
-                    torch::toString(haplotype_sequence.scalar_type()));
 
     return haplotype_embedding;
 }
@@ -1031,23 +1179,18 @@ at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x,
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] Input: in_x.dtype() = {}",
                     torch::toString(in_x.scalar_type()));
 
-    auto [x, pos_mask] = create_embedded_features(in_x);
+    auto [x, pos_mask, sample_depths] = create_embedded_features(in_x);
 
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] x.dtype() = {}",
                     torch::toString(x.scalar_type()));
 
-    x = x.permute({0, 2, 3, 1});  // batch x reads x features x positions
+    const int64_t b = sample_depths.size(0);  // Batch size
+    // Note, total depth would be: const int64_t d = x.size(0);
+    const int64_t p = x.size(1);  // Num positions
 
-    const int64_t b = x.size(0);  // Batch size
-    const int64_t d = x.size(1);
-    // const int64_t f = x.size(2);
-    const int64_t p = x.size(3);  // Num positions
-
-    x = x.flatten(0, 1);
+    x = x.permute({0, 2, 1});
     x = m_read_level_conv(x);  // b*d x cnn_size x p
-    x = x.view({b, d, -1, p});
-
-    x = x.permute({0, 3, 1, 2});
+    x = x.permute({0, 2, 1});
 
     at::Tensor reads;
     {
@@ -1058,18 +1201,22 @@ at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x,
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] reads.dtype() = {}",
                     torch::toString(reads.scalar_type()));
 
+    const auto device = reads.device();
     at::Tensor haplotype_sequence =
-            create_latent_embedding(refseqs, b, p);  // (batch_size, num_positions, 1, dimension)
+            create_latent_embedding(refseqs, b, p);  // (batch_size, num_positions, dimension)
+    if (haplotype_sequence.device() != device) {
+        haplotype_sequence = haplotype_sequence.to(device);
+    }
+    const auto opts = at::TensorOptions().dtype(sample_depths.dtype()).device(device);
+    const at::Tensor hap_depths = at::ones({b}, opts);
 
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] haplotype_sequence.dtype() = {}",
                     torch::toString(haplotype_sequence.scalar_type()));
 
     for (auto& layer : *m_blocks) {
-        std::tie(reads, haplotype_sequence) =
-                layer->as<MessagePassingBlock>()->forward(reads, haplotype_sequence, pos_mask);
+        std::tie(reads, haplotype_sequence) = layer->as<MessagePassingBlock>()->forward(
+                reads, haplotype_sequence, sample_depths, hap_depths, pos_mask);
     }
-
-    haplotype_sequence.squeeze_(2);
 
     if (m_use_decoder_lstm) {
         haplotype_sequence = std::get<0>(m_decoder_lstm(haplotype_sequence));
