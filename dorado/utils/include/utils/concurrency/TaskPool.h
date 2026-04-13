@@ -28,6 +28,7 @@ public:
     ~TaskPool();
 
     std::size_t num_queues() const { return m_task_qs.size(); }
+    std::size_t queue_size(std::size_t q_idx) const { return m_task_qs.at(q_idx).size(); }
 
     // Push a task into the pool.
     void send(Task &&task, std::size_t q_idx) {
