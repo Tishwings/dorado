@@ -3,6 +3,7 @@
 #include "utils/concurrency/WorkerPool.h"
 #include "utils/jthread.h"
 
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <spdlog/spdlog.h>
@@ -15,6 +16,8 @@
 
 #define CUT_TAG "[AsyncExecutor]"
 #define DEFINE_TEST(name) CATCH_TEST_CASE(CUT_TAG " " name, CUT_TAG)
+#define DEFINE_TEMPLATE_TEST(name, ...) \
+    CATCH_TEMPLATE_TEST_CASE(CUT_TAG " " name, CUT_TAG, __VA_ARGS__)
 
 using namespace dorado::utils::concurrency;
 
@@ -210,15 +213,62 @@ DEFINE_TEST("Per-producer flushing works") {
 
 #if DORADO_ENABLE_BENCHMARK_TESTS
 
+}  // namespace
+
+#include "utils/concurrency/async_task_executor.h"
+#include "utils/concurrency/multi_queue_thread_pool.h"
+
+namespace {
+
+// Old style thread pool.
+struct OldThreadPool {
+    static const char *name() { return "OldThreadPool"; }
+
+    using ThreadPool = MultiQueueThreadPool;
+
+    struct Executors {
+        std::vector<std::unique_ptr<AsyncTaskExecutor>> executors;
+
+        Executors(ThreadPool &threads, std::size_t num_producers, std::size_t queue_capacity)
+                : executors(num_producers) {
+            for (auto &executor : executors) {
+                executor = std::make_unique<AsyncTaskExecutor>(threads, TaskPriority::normal,
+                                                               queue_capacity);
+            }
+        }
+
+        AsyncTaskExecutor &get(std::size_t idx) { return *executors.at(idx); }
+    };
+};
+
+// New-style thread pool.
+struct NewThreadPool {
+    static const char *name() { return "NewThreadPool"; }
+
+    using ThreadPool = WorkerPool;
+
+    // Not really executors, but matches the old style.
+    struct Executors {
+        TaskPool tasks;
+        WorkerPool::BindTasks binder;
+
+        Executors(ThreadPool &threads, std::size_t num_producers, std::size_t queue_capacity)
+                : tasks(num_producers, queue_capacity), binder(threads, tasks) {}
+
+        AsyncExecutor get(std::size_t idx) { return AsyncExecutor(tasks, idx); }
+    };
+};
+
 enum class ProducerMode {
     Continuous,  ///< Continuous production of tasks.
     Burst,       ///< Bursts of jobs where the total job time matches the gaps between bursts.
     BurstHalf,   ///< Bursts of jobs where the total job time is half of the gaps between bursts.
 };
 
+template <typename Executor>
 static void producer_thread(std::atomic_bool &finished,
                             ProducerMode mode,
-                            AsyncExecutor executor,
+                            Executor &&executor,
                             std::size_t seed,
                             std::atomic_size_t &counter) {
     // Randomly pick how long each task takes.
@@ -250,7 +300,7 @@ static void producer_thread(std::atomic_bool &finished,
     }
 };
 
-DEFINE_TEST("Benchmarking") {
+DEFINE_TEMPLATE_TEST("Benchmarking", NewThreadPool, OldThreadPool) {
     const auto producer_mode =
             GENERATE(ProducerMode::Continuous, ProducerMode::Burst, ProducerMode::BurstHalf);
     const std::size_t num_workers = GENERATE(1, 2, 4, 8, 16);
@@ -263,25 +313,23 @@ DEFINE_TEST("Benchmarking") {
                    << num_workers << ") due to not enough CPU cores(" << max_threads << ")");
     }
 
-    // Create the workers.
-    WorkerPool workers(num_workers);
+    // Create the worker pool.
+    typename TestType::ThreadPool thread_pool(num_workers);
 
     // Typically we have a small number of producers vs a large number of workers.
     for (std::size_t num_producers : {1, 2, 4}) {
         std::atomic_size_t counter = 0;
         std::atomic_bool finished = false;  // TODO: remove and use jthread's stop_token
 
-        // Create the task pool and bind it.
-        TaskPool task_pool(num_producers, queue_capacity);
-        WorkerPool::BindTasks binder(workers, task_pool);
+        // Create the executors/task pool.
+        typename TestType::Executors executors(thread_pool, num_producers, queue_capacity);
 
         // Make some infinitely generating producers.
         std::vector<dorado::utils::jthread> threads(num_producers);
         for (std::size_t idx = 0; idx < num_producers; idx++) {
             threads[idx] = dorado::utils::jthread(
-                    [&finished, producer_mode, &counter, &task_pool, idx]() mutable {
-                        producer_thread(finished, producer_mode, AsyncExecutor(task_pool, idx), idx,
-                                        counter);
+                    [&finished, producer_mode, &counter, &executors, idx]() mutable {
+                        producer_thread(finished, producer_mode, executors.get(idx), idx, counter);
                     });
         }
 
@@ -294,10 +342,11 @@ DEFINE_TEST("Benchmarking") {
         finished.store(true, std::memory_order_relaxed);
         threads.clear();
 
-        spdlog::info("[SPEED] mode={}, workers={}, producers={}: {}",
+        spdlog::info("[SPEED] [{}] mode={}, workers={}, producers={}: {}", TestType::name(),
                      fmt::underlying(producer_mode), num_workers, num_producers, processed);
     }
 }
+
 #endif
 
 }  // namespace
