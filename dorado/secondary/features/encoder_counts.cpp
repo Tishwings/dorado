@@ -369,8 +369,12 @@ secondary::Sample EncoderCounts::encode_region(
     return sample;
 }
 
-at::Tensor EncoderCounts::collate(std::vector<at::Tensor> batch) const {
-    return torch::stack(batch);
+at::Tensor EncoderCounts::collate(std::vector<at::Tensor> batch, const bool pinned_memory) const {
+    at::Tensor out = torch::stack(batch);
+    if (pinned_memory) {
+        out = out.pin_memory();
+    }
+    return out;
 }
 
 std::vector<secondary::Sample> EncoderCounts::merge_adjacent_samples(

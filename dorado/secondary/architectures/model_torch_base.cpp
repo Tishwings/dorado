@@ -37,12 +37,22 @@ void ModelTorchBase::to_device(torch::Device device) {
 
 // Predict on a batch with device and precision handling.
 torch::Tensor ModelTorchBase::predict_on_batch(torch::Tensor x) {
-    std::lock_guard<std::mutex> lock(m_mutex_write);
+    x = prepare_batch_input(std::move(x), false);
+    x = predict_on_device_batch(std::move(x));
+    x = x.cpu();
+    return x;
+}
 
-    x = x.to(get_device());
+torch::Tensor ModelTorchBase::prepare_batch_input(torch::Tensor x, const bool non_blocking) const {
+    x = x.to(get_device(), non_blocking);
     if (m_half_precision) {
-        x = x.to(torch::kHalf);
+        x = x.to(torch::kHalf, non_blocking);
     }
+    return x;
+}
+
+torch::Tensor ModelTorchBase::predict_on_device_batch(torch::Tensor x) {
+    std::lock_guard<std::mutex> lock(m_mutex_write);
     x = forward(std::move(x));
     if (m_half_precision) {
         x = x.to(torch::kFloat);
@@ -50,7 +60,6 @@ torch::Tensor ModelTorchBase::predict_on_batch(torch::Tensor x) {
     if (m_normalise) {
         x = torch::softmax(x, -1);
     }
-    x = x.cpu();
     return x;
 }
 

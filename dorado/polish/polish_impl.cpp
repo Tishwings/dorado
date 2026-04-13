@@ -1036,7 +1036,7 @@ void infer_samples_in_parallel(
             for (const auto& sample : batch.samples) {
                 batch_features.emplace_back(sample.features);
             }
-            batch_features_tensor = encoders[tid]->collate(std::move(batch_features));
+            batch_features_tensor = encoders[tid]->collate(std::move(batch_features), false);
             time_collate = timer_collate.GetElapsedMilliseconds();
         }
 
