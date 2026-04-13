@@ -3,6 +3,13 @@
 #include <cstddef>
 #include <new>
 
+// We're intentionally using these in a header, but they don't affect
+// our ABI, which is what this warning warns about.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winterference-size"
+#endif
+
 namespace dorado::utils {
 
 // Some stdlibs don't have this C++17 feature yet.
@@ -22,3 +29,7 @@ constexpr std::size_t hardware_constructive_interference_size = 64;
 #endif
 
 }  // namespace dorado::utils
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
