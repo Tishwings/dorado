@@ -81,8 +81,6 @@ TaskPool::~TaskPool() = default;
 
 void TaskPool::run_task(size_t worker_idx) {
     Task task;
-    // We can only pop and execute 1 task at a time since the current flushing
-    // approach relies on all of the pushed tasks going to separate workers.
     if (pop_task(task, worker_idx)) {
         task();
     }
