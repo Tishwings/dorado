@@ -56,7 +56,6 @@ bool TaskPool::pop_task(Task& task, size_t worker_idx) {
 
         // If we couldn't find anything then yield to give the producers a chance
         // to push an item into one of the queues.
-        // TODO: benchmark with and without this to check that it helps
         std::this_thread::yield();
     }
 
