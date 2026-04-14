@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <stdexcept>
 #include <utility>
 
 namespace dorado::utils::concurrency {
@@ -18,8 +19,11 @@ private:
     AsyncExecutor& operator=(const AsyncExecutor&) = delete;
 
 public:
-    explicit AsyncExecutor(TaskPool& tasks, std::size_t q_idx) noexcept
-            : m_tasks(&tasks), m_q_idx(q_idx) {}
+    explicit AsyncExecutor(TaskPool& tasks, std::size_t q_idx) : m_tasks(&tasks), m_q_idx(q_idx) {
+        if (q_idx >= m_tasks->num_queues()) {
+            throw std::logic_error("Invalid queue index for pool");
+        }
+    }
 
     explicit AsyncExecutor() noexcept = default;
     AsyncExecutor(AsyncExecutor&& o) noexcept : AsyncExecutor() {

@@ -211,6 +211,18 @@ DEFINE_TEST("Per-producer flushing works") {
     }
 }
 
+DEFINE_TEST("Bad queue index") {
+    const std::size_t num_producers = 2;
+    const std::size_t queue_capacity = 10;
+    TaskPool tasks(num_producers, queue_capacity);
+
+    auto make_executor = [&tasks](std::size_t q_idx) { return AsyncExecutor(tasks, q_idx); };
+
+    CATCH_CHECK_NOTHROW(make_executor(0));
+    CATCH_CHECK_NOTHROW(make_executor(1));
+    CATCH_CHECK_THROWS_AS(make_executor(2), std::logic_error);
+}
+
 #if DORADO_ENABLE_BENCHMARK_TESTS
 
 }  // namespace
