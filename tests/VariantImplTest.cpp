@@ -69,6 +69,11 @@ public:
         return {};
     }
 
+    at::Tensor populate_refseq_tensor([[maybe_unused]] const secondary::Sample& sample,
+                                      [[maybe_unused]] const std::string_view& refseq) override {
+        return at::empty({});
+    }
+
     at::Tensor collate(std::vector<at::Tensor> batch, const bool /*pinned_memory*/) const override {
         return std::empty(batch) ? at::empty({0}) : std::move(batch.front());
     }
@@ -100,6 +105,11 @@ public:
                                     const int32_t,
                                     const std::unordered_map<std::string, int32_t>&) override {
         throw std::runtime_error{"Unexpected encode_region call."};
+    }
+
+    at::Tensor populate_refseq_tensor([[maybe_unused]] const secondary::Sample& sample,
+                                      [[maybe_unused]] const std::string_view& refseq) override {
+        return at::empty({});
     }
 
     at::Tensor collate(std::vector<at::Tensor> batch, const bool /*pinned_memory*/) const override {
@@ -504,7 +514,7 @@ CATCH_TEST_CASE("batch and inference workflow functions operate on synthetic sam
         /// Run the unit under test.         ///
         ////////////////////////////////////////
         worker_infer_samples_in_parallel(batch_queue, decode_queue, models, worker_terminate,
-                                         ret_status, streams, encoders, draft_lens, false);
+                                         ret_status, streams, encoders, draft_lens, {}, false);
 
         ////////////////////////////////////////
         /// Eval.                            ///

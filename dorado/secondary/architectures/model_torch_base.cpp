@@ -43,12 +43,27 @@ torch::Tensor ModelTorchBase::predict_on_batch(torch::Tensor x) {
     return x;
 }
 
+// Ignore reference data input unless the specific model overloads this.
+torch::Tensor ModelTorchBase::predict_on_batch(dorado::variant::BatchedData batched_data) {
+    return predict_on_batch(batched_data.features);
+}
+
 torch::Tensor ModelTorchBase::prepare_batch_input(torch::Tensor x, const bool non_blocking) const {
     x = x.to(get_device(), non_blocking);
     if (m_half_precision) {
         x = x.to(torch::kHalf, non_blocking);
     }
     return x;
+}
+
+dorado::variant::BatchedData ModelTorchBase::prepare_batch_input(
+        dorado::variant::BatchedData batched_data,
+        const bool non_blocking) const {
+    batched_data.features = prepare_batch_input(batched_data.features, non_blocking);
+    if (batched_data.refseqs) {
+        batched_data.refseqs = {batched_data.refseqs->to(get_device(), non_blocking)};
+    }
+    return batched_data;
 }
 
 torch::Tensor ModelTorchBase::predict_on_device_batch(torch::Tensor x) {
@@ -63,6 +78,10 @@ torch::Tensor ModelTorchBase::predict_on_device_batch(torch::Tensor x) {
     return x;
 }
 
+torch::Tensor ModelTorchBase::predict_on_device_batch(dorado::variant::BatchedData batched_data) {
+    return predict_on_device_batch(batched_data.features);
+}
+
 std::unordered_set<std::string> ModelTorchBase::get_non_persistent_buffers() const {
     std::lock_guard<std::mutex> lock(m_mutex_write);
     return m_non_persistent_buffers;
@@ -72,5 +91,7 @@ void ModelTorchBase::add_nonpersistent_buffer(std::string name) {
     std::lock_guard<std::mutex> lock(m_mutex_write);
     m_non_persistent_buffers.emplace(std::move(name));
 }
+
+bool ModelTorchBase::requires_ref() const { return false; }
 
 }  // namespace dorado::secondary

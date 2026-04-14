@@ -8,6 +8,7 @@
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
 
+#include <htslib/hts.h>
 #include <spdlog/spdlog.h>
 
 #include <cassert>
@@ -395,6 +396,47 @@ secondary::Sample EncoderReadAlignment::encode_region(
     }
 
     return sample;
+}
+
+at::Tensor EncoderReadAlignment::populate_refseq_tensor(const secondary::Sample& sample,
+                                                        const std::string_view& refseq) {
+    const auto opts = at::TensorOptions().dtype(at::kInt);
+    const int64_t sample_size = std::ssize(sample.positions_major);
+    int64_t ref_pos =
+            sample.positions_major[0] +
+            (sample.positions_minor[0] == 0
+                     ? 0
+                     : 1);  // if first position is minor, the first base we need to include in the following one
+    const int64_t ref_end = sample.positions_major[sample_size - 1] + 1;  // end-exclusive
+
+    at::Tensor refseq_tensor = at::full({sample_size}, DEL_VAL, opts);
+
+    if (ref_end > std::ssize(refseq)) {
+        throw std::runtime_error{
+                "Sample coordinates (seq_id=" + std::to_string(sample.seq_id) + " " +
+                std::to_string(ref_pos) + "-" + std::to_string(ref_end) +
+                ") extend beyond the provided reference (length " std::to_string(refseq.length()) +
+                ")."};
+    }
+    if (ref_pos == ref_end) {
+        // Entire chunk is in an insertion, nothing to do
+        return refseq_tensor;
+    }
+    // spdlog::debug("Reference sequence: {}", this_ref);
+    for (int64_t idx = 0; idx < sample_size; ++idx) {
+        if (sample.positions_minor[idx] == 0) {
+            const auto base_encoding =
+                    NUM_TO_COUNT_BASE_SYMM[seq_nt16_table[(uint8_t)refseq[ref_pos++]]];
+            // spdlog::debug("pos {} iupac {} encoding {}", idx,
+            //               seq_nt16_table[(uint8_t)*this_ref_iter], base_encoding);
+            if (base_encoding >= 1) {
+                refseq_tensor.index({idx}) = base_encoding;
+            }
+        }
+    }
+    // std::cerr << refseq_tensor << std::endl;
+    // spdlog::debug("Tensor: {}", std::to_string(refseq_tensor));
+    return refseq_tensor;
 }
 
 at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch,

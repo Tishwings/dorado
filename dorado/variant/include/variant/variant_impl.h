@@ -187,6 +187,7 @@ void worker_batch_producer(utils::AsyncQueue<InferenceData>& input_queue,
  * \param streams Optional device streams used to overlap inference work.
  * \param encoders Encoders associated with the models, used for shape and metadata handling.
  * \param draft_lens Draft/reference names and lengths in seq_id order.
+ * \param draft_seqs Draft/reference sequences in seq_id order.
  * \param continue_on_exception Whether worker exceptions should be logged and skipped.
  */
 void worker_infer_samples_in_parallel(
@@ -198,6 +199,7 @@ void worker_infer_samples_in_parallel(
         const std::vector<c10::optional<c10::Stream>>& streams,
         const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        const std::vector<std::string>& draft_seqs,
         const bool continue_on_exception);
 
 /**

@@ -795,6 +795,7 @@ void worker_infer_samples_in_parallel(
         const std::vector<c10::optional<c10::Stream>>& streams,
         const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
         [[maybe_unused]] const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        const std::vector<std::string>& draft_seqs,
         const bool continue_on_exception) {
     utils::ScopedProfileRange spr1("infer_samples_in_parallel", 2);
 
@@ -802,8 +803,9 @@ void worker_infer_samples_in_parallel(
         throw std::runtime_error("No models have been initialized, cannot run inference.");
     }
 
-    auto batch_infer = [&encoders, &draft_lens](secondary::ModelTorchBase& model,
-                                                const InferenceData& batch, const int32_t tid) {
+    auto batch_infer = [&encoders, &draft_lens, &draft_seqs](secondary::ModelTorchBase& model,
+                                                             const InferenceData& batch,
+                                                             const int32_t tid) {
         utils::ScopedProfileRange spr2("infer_samples_in_parallel-batch_infer", 3);
         timer::TimerHighRes timer_total;
 
@@ -825,9 +827,10 @@ void worker_infer_samples_in_parallel(
 #endif
 
         // We can simply stack these since all windows are of the same size. (Smaller windows are set aside.)
-        torch::Tensor batch_features_tensor;
+        dorado::variant::BatchedData batched_data;
         int64_t time_collate = 0;
         int64_t time_move_to_device = 0;
+
         {
             utils::ScopedProfileRange spr3("infer_samples_in_parallel-collate", 4);
             timer::TimerHighRes timer_collate;
@@ -837,8 +840,32 @@ void worker_infer_samples_in_parallel(
                 batch_features.emplace_back(sample.features);
             }
             const bool use_pinned_memory = (model.get_device().type() == torch::kCUDA);
-            batch_features_tensor =
+            batched_data.features =
                     encoders[tid]->collate(std::move(batch_features), use_pinned_memory);
+
+            spdlog::trace("In batching, model requires ref: {}", model.requires_ref());
+            if (model.requires_ref()) {
+                std::vector<torch::Tensor> refseqs;
+                refseqs.reserve(std::ssize(batch.samples));
+                for (const auto& sample : batch.samples) {
+                    if (sample.seq_id > std::ssize(draft_seqs)) {
+                        throw std::runtime_error{"Sample sequence id " +
+                                                 std::to_string(sample.seq_id) +
+                                                 "is out of range for the number of provided "
+                                                 "reference sequences (" +
+                                                 std::to_string(std::ssize(draft_seqs)) + ")"};
+                    }
+                    refseqs.emplace_back(
+                            encoders[tid]
+                                    ->populate_refseq_tensor(sample, draft_seqs[sample.seq_id])
+                                    .view({-1, 1, 1}));
+                }
+                batched_data.refseqs = {encoders[tid]
+                                                ->collate(std::move(refseqs), use_pinned_memory)
+                                                .view({std::ssize(batch.samples), -1})};
+            }
+            spdlog::trace("Post-batching, batch has refs: {}", batched_data.refseqs ? true : false);
+
             time_collate = timer_collate.GetElapsedMilliseconds();
         }
 
@@ -846,22 +873,22 @@ void worker_infer_samples_in_parallel(
             utils::ScopedProfileRange spr3("infer_samples_in_parallel-move_to_device", 4);
             timer::TimerHighRes timer_move_to_device;
             const bool non_blocking = (model.get_device().type() == torch::kCUDA);
-            batch_features_tensor =
-                    model.prepare_batch_input(std::move(batch_features_tensor), non_blocking);
+            batched_data = model.prepare_batch_input(std::move(batched_data), non_blocking);
             time_move_to_device = timer_move_to_device.GetElapsedMilliseconds();
+            spdlog::trace("Post-move, batch has refs: {}", batched_data.refseqs ? true : false);
         }
 
         const std::string input_batch_tensor_shape =
-                utils::tensor_shape_as_string(batch_features_tensor);
+                utils::tensor_shape_as_string(batched_data.features);
 
         // Debug output.
         {
             spdlog::trace(
-                    "[consumer {}] About to call forward(): batch_features_tensor.size() = [{}], "
+                    "[consumer {}] About to call forward(): batched_data.features.size() = [{}], "
                     "approx "
                     "size: {} MB.",
                     tid, input_batch_tensor_shape,
-                    batch_features_tensor.numel() * batch_features_tensor.element_size() /
+                    batched_data.features.numel() * batched_data.features.element_size() /
                             (1024.0 * 1024.0));
         }
 
@@ -884,18 +911,18 @@ void worker_infer_samples_in_parallel(
 
 #ifdef DEBUG_INFERENCE_DATA
             {
-                std::cout << "[infer] input: batch_features_tensor.shape = "
-                          << utils::tensor_shape_as_string(batch_features_tensor) << "\n";
-                std::cout << "[infer] input: batch_features_tensor =\n"
-                          << batch_features_tensor << "\n";
-                utils::save_tensor(batch_features_tensor, "debug.tensor.in.pt");
+                std::cout << "[infer] input: batched_data.features.shape = "
+                          << utils::tensor_shape_as_string(batched_data.features) << "\n";
+                std::cout << "[infer] input: batched_data.features =\n"
+                          << batched_data.features << "\n";
+                utils::save_tensor(batched_data.features, "debug.tensor.in.pt");
             }
 #endif
 
             timer::TimerHighRes timer_forward;
 
             try {
-                output_on_device = model.predict_on_device_batch(std::move(batch_features_tensor));
+                output_on_device = model.predict_on_device_batch(batched_data);
             } catch (const std::exception& e) {
                 spdlog::error("Exception caught: {}", e.what());
                 throw;
@@ -942,7 +969,7 @@ void worker_infer_samples_in_parallel(
             spdlog::trace(
                     "[consumer {}] Computed batch inference. Timings - collate: {} ms, "
                     "move_to_device: {} ms, forward: {} ms, move_to_host: {} ms, "
-                    "total = {}, batch_features_tensor.shape = [{}]",
+                    "total = {}, batched_data.features.shape = [{}]",
                     tid, time_collate, time_move_to_device, time_forward, time_move_to_host,
                     time_total, input_batch_tensor_shape);
         }

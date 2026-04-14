@@ -24,4 +24,5 @@ target_sources(dorado_secondary
 target_include_directories(dorado_secondary
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../variant/include
 )

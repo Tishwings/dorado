@@ -1691,4 +1691,161 @@ CATCH_TEST_CASE("synthetic_test_06-calculate_read_alignment_fix_for_high_coverag
     }
 }
 
+CATCH_TEST_CASE("synthetic_test_07-populate_refseq_tensor", TEST_GROUP) {
+    // clang-format off
+    const std::vector<std::string> reference_sequences{
+        "ACTGAACTGA",
+        "ACTgaacTGA",
+        "AGGATTCNNNGABACG",
+    };
+
+    // clang-format off
+    const std::vector<Sample> samples{
+        // All of sequence 0
+        {
+            .seq_id = 0,
+            .features = torch::empty({}),
+            .positions_major = {
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+            },
+            .positions_minor = {
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            },
+            .depth = torch::empty({}),
+            .read_ids_left = {},
+            .read_ids_right = {},
+        },
+        // Subsequence of sequence 0 with gaps
+        {
+            .seq_id = 0,
+            .features = torch::empty({}),
+            .positions_major = {
+                2, 3, 3, 3, 4, 5, 6, 7, 8,
+            },
+            .positions_minor = {
+                0, 0, 1, 2, 0, 0, 0, 0, 0,
+            },
+            .depth = torch::empty({}),
+            .read_ids_left = {},
+            .read_ids_right = {},
+        },
+        // Subsequence of sequence 1 with gaps with lower case characters
+        {
+            .seq_id = 1,
+            .features = torch::empty({}),
+            .positions_major = {
+                2, 3, 3, 3, 4, 5, 6, 7, 8,
+            },
+            .positions_minor = {
+                0, 0, 1, 2, 0, 0, 0, 0, 0,
+            },
+            .depth = torch::empty({}),
+            .read_ids_left = {},
+            .read_ids_right = {},
+        },
+        // Subsequence of sequence 2 with gaps and ambiguity characters
+        {
+            .seq_id = 2,
+            .features = torch::empty({}),
+            .positions_major = {
+                6, 6, 7, 8, 8, 8, 8, 9, 10, 11, 12, 13, 14, 15
+            },
+            .positions_minor = {
+                0, 1, 0, 0, 1, 2, 3, 0,  0,  0,  0,  0,  0,  0
+            },
+            .depth = torch::empty({}),
+            .read_ids_left = {},
+            .read_ids_right = {},
+        },
+        // Subsequence of sequence 2 starting on a minor position
+        {
+            .seq_id = 2,
+            .features = torch::empty({}),
+            .positions_major = {
+                1, 1, 2, 3, 4
+            },
+            .positions_minor = {
+                1, 2, 0, 0, 0
+            },
+            .depth = torch::empty({}),
+            .read_ids_left = {},
+            .read_ids_right = {},
+        },
+        // Entire sample is in an insertion
+        {
+            .seq_id = 2,
+            .features = torch::empty({}),
+            .positions_major = {
+                1, 1, 1, 1, 1, 1
+            },
+            .positions_minor = {
+                2, 3, 4, 5, 6, 7
+            },
+            .depth = torch::empty({}),
+            .read_ids_left = {},
+            .read_ids_right = {},
+        }
+    };
+
+    // Expected results.
+    const std::vector<torch::Tensor> expected_results{
+        torch::tensor(
+            // A  C  T  G  A  A  C  T  G  A
+            {  1, 2, 4, 3, 1, 1, 2, 4, 3, 1}, torch::kInt8),
+        torch::tensor(
+            // T  G  -  -  A  A  C  T  G
+            {  4, 3, 5, 5, 1, 1, 2, 4, 3}, torch::kInt8),
+        torch::tensor(
+            // T  G  -  -  A  A  C  T  G
+            {  4, 3, 5, 5, 1, 1, 2, 4, 3}, torch::kInt8),
+        torch::tensor(
+            // C  -  N  N  -  -  -  N  G  A  B  A  C  G
+            {  2, 5, 5, 5, 5, 5, 5, 5, 3, 1, 5, 1, 2, 3}, torch::kInt8),
+        torch::tensor(
+            // -  -  G  A  T
+            {  5, 5, 3, 1, 4}, torch::kInt8),
+        torch::tensor(
+            // -  -  -  -  -  -
+            {  5, 5, 5, 5, 5, 5}, torch::kInt8)
+    };
+    // clang-format on
+
+    // Create a dummpy encoder
+    const std::filesystem::path test_data_dir = get_data_dir("polish") / "test-01-supertiny";
+    const std::filesystem::path in_ref_fn{test_data_dir / "draft.fasta.gz"};
+    const std::filesystem::path in_bam_aln_fn{test_data_dir / "calls_to_draft.bam"};
+    const std::vector<std::string> dtypes{};
+    const std::string tag_name{};
+    const int32_t tag_value{0};
+    const bool tag_keep_missing{false};
+    const std::string read_group{};
+    const int32_t min_mapq{1};
+    const int32_t max_reads{100};
+    const bool row_per_read{false};
+    const bool include_dwells{true};
+    const bool clip_to_zero{true};
+    const bool right_align_insertions{false};
+    const bool include_haplotype_column{false};
+    const bool include_snp_qv_column{false};
+    const double min_snp_accuracy{0.0};
+    const HaplotagSource hap_source{HaplotagSource::UNPHASED};
+    const std::optional<std::filesystem::path> phasing_bin{};
+    const std::unordered_map<std::string, int32_t> haplotags{};
+    const secondary::KadayashiOptions kadayashi_opt;
+
+    EncoderReadAlignment encoder(in_ref_fn, in_bam_aln_fn, dtypes, tag_name, tag_value,
+                                 tag_keep_missing, read_group, min_mapq, max_reads,
+                                 min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
+                                 right_align_insertions, include_haplotype_column, hap_source,
+                                 phasing_bin, include_snp_qv_column, kadayashi_opt);
+
+    for (size_t i = 0; i < samples.size(); ++i) {
+        CATCH_SECTION("Example " + std::to_string(i)) {
+            torch::Tensor result = encoder.populate_refseq_tensor(
+                    samples[i], reference_sequences[samples[i].seq_id]);
+            CATCH_CHECK(result.equal(expected_results[i]));
+        }
+    }
+}
+
 }  // namespace dorado::secondary::tests

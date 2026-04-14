@@ -90,6 +90,13 @@ Sample slice_sample(const Sample& sample,
         ret.depth = ret.depth.clone();
     }
 
+    // if (sample.ref_seq) {
+    //     ret.ref_seq = {sample.ref_seq->index({at::indexing::Slice(idx_start, idx_end)})};
+    //     if (clone) {
+    //         ret.ref_seq = {ret.ref_seq->clone()};
+    //     }
+    // }
+
     return ret;
 }
 

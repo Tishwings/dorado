@@ -369,6 +369,12 @@ secondary::Sample EncoderCounts::encode_region(
     return sample;
 }
 
+at::Tensor EncoderCounts::populate_refseq_tensor([[maybe_unused]] const secondary::Sample& sample,
+                                                 [[maybe_unused]] const std::string_view& ref_seq) {
+    throw std::runtime_error{"Reference sequence being requested for an unsupported Encoder"};
+    // return at::empty({});
+}
+
 at::Tensor EncoderCounts::collate(std::vector<at::Tensor> batch, const bool pinned_memory) const {
     at::Tensor out = torch::stack(batch);
     if (pinned_memory) {

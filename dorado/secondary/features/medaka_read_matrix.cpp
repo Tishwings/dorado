@@ -35,14 +35,7 @@
 namespace {
 
 static constexpr int32_t BASE_FEATLEN = 4;  // Minimal number of feature channels.
-static constexpr int8_t DEL_VAL = 5;        // Value representing deletion in base channel.
 static constexpr std::string_view DATATYPE_TAG{"DT", 2};
-
-// convert 16bit IUPAC (+16 for strand) to plp_bases index
-static constexpr std::array<int8_t, 32> NUM_TO_COUNT_BASE_SYMM{
-        -1, 1, 2, -1, 3, -1, -1, -1, 4, -1, -1, -1, -1, -1, -1, -1,
-        -1, 1, 2, -1, 3, -1, -1, -1, 4, -1, -1, -1, -1, -1, -1, -1,
-};
 
 struct Read {
     int64_t ref_start{};
