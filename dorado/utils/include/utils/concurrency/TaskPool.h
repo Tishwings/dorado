@@ -48,8 +48,11 @@ public:
         q.try_push([task = std::forward<Func>(func), &counter] {
             task();
 
-            counter.fetch_sub(1, std::memory_order_release);
-            counter.notify_one();
+            // We only need to wake waiters when this value hits 0, so avoid unnecessary notifies.
+            const std::size_t old_value = counter.fetch_sub(1, std::memory_order_release);
+            if (old_value == 1) {
+                counter.notify_one();
+            }
         });
     }
 

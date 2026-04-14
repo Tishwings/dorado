@@ -92,6 +92,7 @@ void TaskPool::run_task(size_t worker_idx) {
 void TaskPool::wait_for_queue_to_complete(std::size_t q_idx) {
     auto& counter = m_q_counters.at(q_idx).value;
 
+    // Wait for the final task to signal that it's done.
     while (true) {
         const std::size_t current_count = counter.load(std::memory_order_acquire);
         if (current_count == 0) {
