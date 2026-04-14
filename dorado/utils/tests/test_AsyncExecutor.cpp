@@ -230,7 +230,26 @@ DEFINE_TEST("Bad queue index") {
 #include "utils/concurrency/async_task_executor.h"
 #include "utils/concurrency/multi_queue_thread_pool.h"
 
+#ifndef _WIN32
+#include <sys/resource.h>
+#include <sys/time.h>
+#endif
+
 namespace {
+
+// Helper to determine how much CPU has been used.
+double cpu_rusage() {
+#ifdef _WIN32
+    return 0;
+#else
+    rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) != 0) {
+        return 0;
+    }
+    auto to_seconds = [](const timeval &tv) { return tv.tv_sec + tv.tv_usec * 1e-6; };
+    return to_seconds(usage.ru_utime) + to_seconds(usage.ru_stime);
+#endif
+}
 
 // Old style thread pool.
 struct OldThreadPool {
@@ -332,6 +351,7 @@ DEFINE_TEMPLATE_TEST("Benchmarking", NewThreadPool, OldThreadPool) {
     for (std::size_t num_producers : {1, 2, 4}) {
         std::atomic_size_t counter = 0;
         std::atomic_bool finished = false;  // TODO: remove and use jthread's stop_token
+        const auto rusage_before = cpu_rusage();
 
         // Create the executors/task pool.
         typename TestType::Executors executors(thread_pool, num_producers, queue_capacity);
@@ -354,8 +374,13 @@ DEFINE_TEMPLATE_TEST("Benchmarking", NewThreadPool, OldThreadPool) {
         finished.store(true, std::memory_order_relaxed);
         threads.clear();
 
-        spdlog::info("[SPEED] [{}] mode={}, workers={}, producers={}: {}", TestType::name(),
-                     fmt::underlying(producer_mode), num_workers, num_producers, processed);
+        // Determine how much CPU we consumed during that run.
+        const auto rusage_after = cpu_rusage();
+        const auto cpu_used = rusage_after - rusage_before;
+
+        spdlog::info("[SPEED] [{}] mode={}, workers={}, producers={}: {} ({} CPU)",
+                     TestType::name(), fmt::underlying(producer_mode), num_workers, num_producers,
+                     processed, cpu_used);
     }
 }
 
