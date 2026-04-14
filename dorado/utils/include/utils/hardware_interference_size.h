@@ -5,7 +5,7 @@
 
 // We're intentionally using these in a header, but they don't affect
 // our ABI, which is what this warning warns about.
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__) && (__GNUC__ >= 12)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Winterference-size"
 #endif
@@ -30,6 +30,6 @@ constexpr std::size_t hardware_constructive_interference_size = 64;
 
 }  // namespace dorado::utils
 
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__) && (__GNUC__ >= 12)
 #pragma GCC diagnostic pop
 #endif
