@@ -4,7 +4,9 @@
 #include "blocked_bloom_filter.h"
 #include "faidx_utils.h"
 #include "hts_types.h"
+#include "hts_utils/bam_utils.h"
 #include "sequence_utility.h"
+#include "string_utils.h"
 #include "variant_graph.h"
 
 #include <htslib/bgzf.h>
@@ -12,6 +14,7 @@
 #include <htslib/hts.h>
 #include <htslib/kfunc.h>
 #include <htslib/sam.h>
+#include <spdlog/fmt/bundled/format.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -22,9 +25,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <iterator>
 #include <limits>
 #include <numeric>
+#include <ostream>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -48,6 +53,10 @@ constexpr int TRF_CLOSE_GAP_THRESHOLD = 50;
 
 constexpr char SENTINEL_REF_ALLELE[] = "M";
 constexpr int SENTINEL_REF_ALLELE_L = 1;
+
+constexpr int DORADO_FEATURE_MAT_READ_SENTINAL_LEN = 5;
+
+constexpr int MEDAKA_FEATURE_MATRIX_MAX_VAR_LEN = 16777216;  // 1<<24
 
 namespace {
 
@@ -87,7 +96,7 @@ void filter_lift_qa_v_given_conf_list(const std::vector<qa_t> &src,
             kadayashi::add_allele_qa_v(dst, h.pos, sentinel_ref_allele, VAR_OP_X);
 
             // copy over the actual allele sequence
-            auto &a = dst.back().allele;
+            std::vector<uint8_t> &a = dst.back().allele;
             a.clear();
             a.reserve(h.allele.size());
             for (size_t j = 0; j < h.allele.size(); j++) {
@@ -161,7 +170,7 @@ std::vector<uint64_t> TRF_heuristic(std::string_view seq, const int ref_start) {
             int ok = 0;
             int new_ = 1;
             for (int j = 2; j < l; j++) {
-                if (dists[i][j] == dists[i][j - 1] && dists[i][j] == dists[i][j - 2]) {
+                if ((dists[i][j] == dists[i][j - 1]) && (dists[i][j] == dists[i][j - 2])) {
                     if (new_) {
                         ok = 1;
                         new_ = 0;
@@ -250,14 +259,14 @@ std::vector<uint64_t> TRF_heuristic(std::string_view seq, const int ref_start) {
                         if (ok) {
                             poss.push_back(static_cast<uint32_t>(i));
                         }
-                    } else if (i + 2 == std::ssize(idx[i_mer]) - 1) {
-                        if (dists[i_mer][i + 1] == d || dists[i_mer][i + 2] == d) {
+                    } else if (i + 2 == (std::ssize(idx[i_mer]) - 1)) {
+                        if ((dists[i_mer][i + 1] == d) || (dists[i_mer][i + 2] == d)) {
                             poss.push_back(static_cast<uint32_t>(i));
                             ok = 1;
                         } else {
                             ok = 0;
                         }
-                    } else if (i + 1 == std::ssize(idx[i_mer]) - 1) {
+                    } else if (i + 1 == (std::ssize(idx[i_mer]) - 1)) {
                         if (dists[i_mer][i + 1] == d) {
                             poss.push_back(static_cast<uint32_t>(i));
                             poss.push_back(static_cast<uint32_t>(i) + 1);
@@ -568,7 +577,7 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
         float tot_cov_alt = 0;
         float tot_cov_any = 0;
         int suf_alt = 0;
-        for (auto allele : var.alleles) {
+        for (const vc_allele_t &allele : var.alleles) {
             int tmp = allele.cov.cov_hap0 + allele.cov.cov_hap1 + allele.cov.cov_unphased;
             tot_cov_any += static_cast<float>(tmp);
             if (allele.allele[0] != SENTINEL_REF_ALLELE_INT) {
@@ -640,8 +649,8 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
         }
 
         // first 2 are both REF sentinel
-        if (var.alleles[0].allele[0] == SENTINEL_REF_ALLELE_INT &&
-            var.alleles[1].allele[0] == SENTINEL_REF_ALLELE_INT) {
+        if ((var.alleles[0].allele[0] == SENTINEL_REF_ALLELE_INT) &&
+            (var.alleles[1].allele[0] == SENTINEL_REF_ALLELE_INT)) {
             var.is_accepted = FLAG_VARSTAT_REJECTED;
             var.type = FLAG_VAR_NA;
             if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
@@ -705,20 +714,22 @@ bool classify_variant_prefilter(vc_variants1_val_t &var,
                     }
                 }
             } else {
-                const float hap0_tot = std::accumulate(var.alleles.begin(), var.alleles.end(), 0.0f,
-                                                       [](float acc, const auto &allele) -> float {
-                                                           return acc + (float)allele.cov.cov_hap0;
-                                                       });
-                const float hap1_tot = std::accumulate(var.alleles.begin(), var.alleles.end(), 0.0f,
-                                                       [](float acc, const auto &allele) -> float {
-                                                           return acc + (float)allele.cov.cov_hap1;
-                                                       });
-                const float tot_cov2 = std::accumulate(var.alleles.begin(), var.alleles.end(), 0.0f,
-                                                       [](float acc, const auto &allele) -> float {
-                                                           return acc + (float)allele.cov.cov_hap0 +
-                                                                  (float)allele.cov.cov_hap1 +
-                                                                  (float)allele.cov.cov_unphased;
-                                                       });
+                const float hap0_tot =
+                        std::accumulate(var.alleles.begin(), var.alleles.end(), 0.0f,
+                                        [](float acc, const vc_allele_t &allele) -> float {
+                                            return acc + (float)allele.cov.cov_hap0;
+                                        });
+                const float hap1_tot =
+                        std::accumulate(var.alleles.begin(), var.alleles.end(), 0.0f,
+                                        [](float acc, const vc_allele_t &allele) -> float {
+                                            return acc + (float)allele.cov.cov_hap1;
+                                        });
+                const float tot_cov2 = std::accumulate(
+                        var.alleles.begin(), var.alleles.end(), 0.0f,
+                        [](float acc, const vc_allele_t &allele) -> float {
+                            return acc + (float)allele.cov.cov_hap0 + (float)allele.cov.cov_hap1 +
+                                   (float)allele.cov.cov_unphased;
+                        });
                 const float hap0 = static_cast<float>(var.alleles[0].cov.cov_hap0);
                 const float hap1 = static_cast<float>(var.alleles[0].cov.cov_hap1);
                 const float hap_unphased = static_cast<float>(var.alleles[0].cov.cov_unphased);
@@ -847,7 +858,7 @@ struct cov_extended_t {
     const int min_len_long_alt = 5;
 };
 void variant_fill_cov_tot(vc_variants1_val_t &var) {
-    for (auto &allele : var.alleles) {
+    for (vc_allele_t &allele : var.alleles) {
         allele.cov.cov_tot_phased = allele.cov.cov_hap0 + allele.cov.cov_hap1;
         allele.cov.cov_tot_all = allele.cov.cov_tot_phased + allele.cov.cov_unphased;
     }
@@ -855,7 +866,7 @@ void variant_fill_cov_tot(vc_variants1_val_t &var) {
 cov_extended_t variant_get_all_allele_coverage(const vc_variants1_val_t &var) {
     cov_extended_t ret{};
 
-    for (const auto &allele : var.alleles) {
+    for (const vc_allele_t &allele : var.alleles) {
         ret.cov.cov_hap0 += allele.cov.cov_hap0;
         ret.cov.cov_hap1 += allele.cov.cov_hap1;
         ret.cov.cov_unphased += allele.cov.cov_unphased;
@@ -1025,8 +1036,8 @@ var_classify_t classify_variant_phased(vc_variants1_val_t &var,
     }
 
     // not clean het, and top two are ref(substitution) and ref(del), ignore
-    if (!has_decided && var.alleles[0].allele[0] == SENTINEL_REF_ALLELE_INT &&
-        var.alleles[1].allele[0] == SENTINEL_REF_ALLELE_INT) {
+    if (!has_decided && (var.alleles[0].allele[0] == SENTINEL_REF_ALLELE_INT) &&
+        (var.alleles[1].allele[0] == SENTINEL_REF_ALLELE_INT)) {
         ret.is_accepted = FLAG_VARSTAT_REJECTED;
         ret.type = FLAG_VAR_NA;
         ret.code = REJECT_REFREF;
@@ -1050,7 +1061,7 @@ var_classify_t classify_variant_phased(vc_variants1_val_t &var,
         }
     }
     if (!has_decided) {
-        for (auto &allele : var.alleles) {
+        for (const vc_allele_t &allele : var.alleles) {
             if (allele.allele[0] != SENTINEL_REF_ALLELE_INT &&
                 static_cast<float>(allele.cov.cov_tot_all) >= 0.3f * varcov.cov.cov_tot_all) {
                 ret.is_accepted = FLAG_VARSTAT_UNSURE;
@@ -1068,7 +1079,7 @@ var_classify_t classify_variant_phased(vc_variants1_val_t &var,
             ret.code = SUS_LONG_ALT;
         } else if (var.alleles.size() > 4) {  // many alts; 4:ref/ref/alt/alt
             int n_allele_with_suf_cov = 0;
-            for (auto &allele : var.alleles) {
+            for (const vc_allele_t &allele : var.alleles) {
                 if (allele.allele[0] != SENTINEL_REF_ALLELE_INT &&
                     allele.cov.cov_tot_all >= MIN_SUF_COV_ALLELE) {
                     n_allele_with_suf_cov++;
@@ -1088,14 +1099,14 @@ var_classify_t classify_variant_phased(vc_variants1_val_t &var,
             var.alleles.size() > 1 &&
             static_cast<float>(varcov.cov_any_alt) >=
                     (0.15f * static_cast<float>(varcov.cov.cov_tot_all)) &&
-            (!(a0.allele.back() == VAR_OP_X && a0.allele[0] == SENTINEL_REF_ALLELE_INT) ||
-             !(a1.allele.back() != VAR_OP_X && a1.allele[0] == SENTINEL_REF_ALLELE_INT));
-    const int is_rejected_non_ref = is_non_ref && var.is_accepted == FLAG_VARSTAT_REJECTED;
+            (!((a0.allele.back() == VAR_OP_X) && (a0.allele[0] == SENTINEL_REF_ALLELE_INT)) ||
+             !((a1.allele.back() != VAR_OP_X) && (a1.allele[0] == SENTINEL_REF_ALLELE_INT)));
+    const int is_rejected_non_ref = is_non_ref && (var.is_accepted == FLAG_VARSTAT_REJECTED);
     int is_indel = 0;
     int n_long_indel = 0;
     if (var.alleles.size() > 1) {
-        is_indel = (a0.allele.back() == VAR_OP_I || a1.allele.back() == VAR_OP_I ||
-                    a0.allele.back() == VAR_OP_D || a1.allele.back() == VAR_OP_D);
+        is_indel = ((a0.allele.back() == VAR_OP_I) || (a1.allele.back() == VAR_OP_I) ||
+                    (a0.allele.back() == VAR_OP_D) || (a1.allele.back() == VAR_OP_D));
         for (uint32_t i = 0; i < var.alleles.size(); i++) {
             if (var.alleles[i].allele[0] != SENTINEL_REF_ALLELE_INT &&
                 var.alleles[i].allele.size() > 10) {
@@ -1116,7 +1127,7 @@ var_classify_t classify_variant_phased(vc_variants1_val_t &var,
             }
         }
     }
-    if (ret.is_accepted == FLAG_VARSTAT_ACCEPTED &&
+    if ((ret.is_accepted == FLAG_VARSTAT_ACCEPTED) &&
         (varcov.cov.cov_tot_all - varcov.cov.cov_tot_phased) >
                 (varcov.cov.cov_hap0 + varcov.cov.cov_hap1)) {
         ret.is_accepted = FLAG_VARSTAT_UNSURE;
@@ -1344,8 +1355,8 @@ variant_fullinfo_t derive_variant_fullinfo_from_varcall(const ta_t &var,
     } else {
         const int tmppos = var.pos - ref_start;  // 0-index
         if (!allow_N_base) {
-            if (refseq_s[tmppos - 1] == 'N' || refseq_s[tmppos] == 'N' ||
-                refseq_s[tmppos - 1] == 'n' || refseq_s[tmppos] == 'n') {
+            if ((refseq_s[tmppos - 1] == 'N') || (refseq_s[tmppos] == 'N') ||
+                (refseq_s[tmppos - 1] == 'n') || (refseq_s[tmppos] == 'n')) {
                 ret.is_valid = false;
                 ret.is_confident = false;
                 return ret;
@@ -1460,8 +1471,8 @@ void fix_variant_fullinfo_genotype_snp_in_del(std::vector<variant_fullinfo_t> &v
     //    because the other hap doesn't have the ref base and thus is different.
     //    Let's convert it to hom here.
     for (int64_t i = 1; i < std::ssize(vars); i++) {
-        const auto &prev_var = vars[i - 1];
-        auto &var = vars[i];
+        const variant_fullinfo_t &prev_var = vars[i - 1];
+        variant_fullinfo_t &var = vars[i];
         bool should_set_to_hom = false;
 
         if (var.genotype0[0] == var.genotype0[2]) {
@@ -1511,18 +1522,53 @@ void fix_variant_fullinfo_genotype_snp_in_del(std::vector<variant_fullinfo_t> &v
         }
     }
 }
-}  // namespace
 
-std::string create_region_string(const std::string_view ref_name,
-                                 const uint32_t start,
-                                 const uint32_t end) {
-    std::string ret(ref_name);
-    ret.append(":");
-    ret.append(std::to_string(start + 1));
-    ret.append("-");
-    ret.append(std::to_string(end));
-    return ret;
+enum read_downsampling_rw { READ_DOWNSAMPLING_QUERY_ONLY, READ_DOWNSAMPLING_QUERY_AND_UPDATE };
+bool read_downsampling_query_or_update_counter(read_downsampling_rw rw,
+                                               uint32_t r_start_pos,
+                                               uint32_t r_end_pos,
+                                               uint32_t itvl_start,
+                                               uint32_t itvl_end,
+                                               std::vector<int> &downsample_counter,
+                                               int downsample_window,
+                                               int downsample_readcap) {
+    // Used by pileup_ht and feature matrix generator.
+    // If rw is set to READ_DOWNSAMPLING_QUERY_ONLY, return true when read
+    //  can be accepted (i.e. not filtered out based on the downsample counter),
+    //  false otherwise, and does not update the counter.
+    // If rw is set to READ_DOWNSAMPLING_QUERY_AND_UPDATE, return under the same
+    //  rules but the counter will be updated.
+    // The query is cheap under the current heuristic, where we only check whether
+    //  the first slot is overflowing or not. This works reasonably ok when
+    //  downsample_window is small (e.g. 1000).
+
+    bool read_may_be_accepted = true;
+
+    const uint32_t effective_r_start = (r_start_pos > itvl_start ? r_start_pos - itvl_start : 0);
+    const uint32_t iw_s = effective_r_start / downsample_window;
+
+    if (downsample_counter[iw_s] < downsample_readcap) {  // update the counter of downsampling
+        read_may_be_accepted = true;
+
+        if (rw == READ_DOWNSAMPLING_QUERY_AND_UPDATE) {
+            const uint32_t effective_r_end = (r_end_pos > itvl_end ? itvl_end : r_end_pos) -
+                                             (r_start_pos > itvl_start ? r_start_pos : itvl_start);
+            const size_t n_counter = downsample_counter.size();
+            uint32_t iw_n = effective_r_end / downsample_window;
+            iw_n = iw_n == 0 ? 1 : iw_n;
+            iw_n = (iw_s + iw_n) > (uint32_t)n_counter ? n_counter - iw_s : iw_n;
+            for (uint32_t tmpi = iw_s; tmpi < iw_s + iw_n; tmpi++) {
+                downsample_counter[tmpi] = downsample_counter[tmpi] < INT_MAX
+                                                   ? downsample_counter[tmpi] + 1
+                                                   : downsample_counter[tmpi];
+            }
+        }
+    } else {
+        read_may_be_accepted = false;
+    }
+    return read_may_be_accepted;
 }
+}  // namespace
 
 chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                           const variants_t &ht_refvars,
@@ -1540,7 +1586,7 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
     const int downsample_readcap = 150;  // 10k window 30x has ~50 reads
 
     if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
-        LOG_DEBUG("[kdys::{}] pileup at {}:{}-{} (1-index, close-open)", __func__, refname.data(),
+        LOG_DEBUG("[kdys::{}] pileup at {}:{}-{} (1-index, close-open)", __func__, refname,
                   itvl_start + 1, itvl_end);
     }
     vc_variants1_t ht;
@@ -1608,14 +1654,6 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
             }
         }
 
-        const int flag = aln.get()->core.flag;
-        const int mapq = (int)aln->core.qual;
-        float de = 0;
-        uint8_t *tmp = bam_aux_get(aln.get(), "de");
-        if (tmp) {
-            de = static_cast<float>(bam_aux2f(tmp));
-        }
-
         const bool md_is_ok = sancheck_MD_tag_exists_and_is_valid(aln.get());
         if (!md_is_ok) {
             continue;
@@ -1623,15 +1661,16 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
         if (aln.get()->core.n_cigar == 0) {
             continue;
         }
-        if ((flag & 4) || (flag & 256) || (flag & 2048)) {
+        if (to_exclude_by_flags(aln.get(), 4 | 256 | 2048)) {
             continue;
         }
-        if (mapq < pp.min_mapq) {
+        if (to_exclude_by_low_mapq(aln.get(), pp.min_mapq)) {
             continue;
         }
-        if (de > pp.max_gapcompressed_seqdiv) {
+        if (to_exlucde_by_high_de_tag(aln.get(), pp.max_gapcompressed_seqdiv)) {
             continue;
         }
+
         uint8_t hp = HAPTAG_UNPHASED;
         if (qname2hp) {
             const auto it = qname2hp->find(qn);
@@ -1641,25 +1680,15 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                 hp = static_cast<uint8_t>(it->second);
             }
         }
+
         const uint32_t r_start_pos = static_cast<uint32_t>(aln.get()->core.pos);
         const uint32_t r_end_pos = static_cast<uint32_t>(bam_endpos(aln.get()));
 
         if (enable_downsample) {
-            const uint32_t effective_r_start =
-                    (r_start_pos > abs_start ? r_start_pos - abs_start : 0);
-            const uint32_t effective_r_end = (r_end_pos > abs_end ? abs_end : r_end_pos) -
-                                             (r_start_pos > abs_start ? r_start_pos : abs_start);
-            const uint32_t iw_s = effective_r_start /
-                                  downsample_window;  // itvl was 1-index while bam itr is 0 index..
-            if (downsample_counter[iw_s] < downsample_readcap) {
-                // update the counter of downsampling
-                uint32_t iw_n = effective_r_end / downsample_window;
-                for (uint32_t tmpi = iw_s; tmpi < iw_s + iw_n; tmpi++) {
-                    downsample_counter[tmpi] = downsample_counter[tmpi] < INT_MAX
-                                                       ? downsample_counter[tmpi] + 1
-                                                       : downsample_counter[tmpi];
-                }
-            } else {
+            const bool read_may_be_accepted = read_downsampling_query_or_update_counter(
+                    READ_DOWNSAMPLING_QUERY_AND_UPDATE, r_start_pos, r_end_pos, itvl_start,
+                    itvl_end, downsample_counter, downsample_window, downsample_readcap);
+            if (!read_may_be_accepted) {
                 downsample_filtered++;
                 continue;  // go parse the next read
             }
@@ -1668,14 +1697,14 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
         n_reads++;
         // collect variants of the read
         read_t r{
-                .start_pos = static_cast<uint32_t>(aln.get()->core.pos),
-                .end_pos = static_cast<uint32_t>(bam_endpos(aln.get())),
+                .start_pos = r_start_pos,
+                .end_pos = r_end_pos,
                 .ID = n_reads,
                 .vars = {},
                 .hp = hp,
                 .votes_diploid = {0, 0},
-                .strand = !!(flag & 16),
-                .de = de,
+                .strand = !!(aln.get()->core.flag & 16),
+                .de = get_tag_de_f(aln.get()),
                 .left_clip_len = 0,
                 .right_clip_len = 0,
         };
@@ -1775,7 +1804,7 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
     if (pileup_failed) {
         spdlog::error(
                 "[kdys::{}] query {}:{}-{} (1-index [) ]) pileup's initial collection failed.",
-                __func__, refname.data(), itvl_start + 1, itvl_end);
+                __func__, refname, itvl_start + 1, itvl_end);
         return {};
     }
 
@@ -1901,7 +1930,8 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
             if (candidate_poss[i] >= aln_end || i >= i_higher) {
                 break;
             }
-            const int read_prev_var_was_del = (j > 0 && read.vars[j - 1].allele.back() == VAR_OP_D);
+            const int read_prev_var_was_del =
+                    (j > 0 && (read.vars[j - 1].allele.back() == VAR_OP_D));
             const int last_del_size =
                     read_prev_var_was_del ? (int)std::ssize(read.vars[j - 1].allele) - 1 : 0;
             while (candidate_poss[i] < read.vars[j].pos) {
@@ -1995,8 +2025,8 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
 
             if (c0 >= threshold && c1 >= threshold && ratio >= pp.min_varcall_fraction) {
                 q.is_accepted = FLAG_VARSTAT_ACCEPTED;
-                if (q.alleles[0].allele[0] == SENTINEL_REF_ALLELE_INT ||
-                    q.alleles[1].allele[0] == SENTINEL_REF_ALLELE_INT) {
+                if ((q.alleles[0].allele[0] == SENTINEL_REF_ALLELE_INT) ||
+                    (q.alleles[1].allele[0] == SENTINEL_REF_ALLELE_INT)) {
                     q.type = FLAG_VAR_HET;
                 } else {
                     q.type = FLAG_VAR_MULTHET;
@@ -2031,13 +2061,13 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
     std::sort(tmp_sorted_poss.begin(), tmp_sorted_poss.end());
     for (size_t i_pos = 0; i_pos < tmp_sorted_poss.size(); i_pos++) {
         const uint32_t pos = tmp_sorted_poss[i_pos];
-        const auto &q = ht[pos];
+        const vc_variants1_val_t &q = ht[pos];
         const uint8_t var_stat = q.is_accepted;
         if ((var_stat & (FLAG_VARSTAT_ACCEPTED | FLAG_VARSTAT_UNSURE))) {
             if (pp.retain_het_only && q.type != FLAG_VAR_HET) {
                 continue;
             }
-            if (valid_poss.size() > 0 && pos == valid_poss.back().pos) {
+            if (valid_poss.size() > 0 && (pos == valid_poss.back().pos)) {
                 // TODO: handle multiple variants at one spot here after the variant
                 // filtering impl above becomes able to handle them.
                 continue;
@@ -2048,7 +2078,7 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
     for (size_t i = 0; i < valid_poss.size(); i++) {
         valid_poss_set[valid_poss[i].pos] = static_cast<uint32_t>(i);
     }
-    for (const auto pos_stat : valid_poss) {
+    for (const valid_pos_t pos_stat : valid_poss) {
         const uint32_t pos = pos_stat.pos;
         const uint8_t var_stat = pos_stat.stat;
         const uint8_t var_type = ht[pos].type;
@@ -2066,7 +2096,7 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
         }
 
         if (var_stat == FLAG_VARSTAT_UNSURE) {  // save all alleles
-            for (auto &_ : ht[pos].alleles) {
+            for (const vc_allele_t &_ : ht[pos].alleles) {
                 ck.varcalls.back().alleles.push_back(_.allele);
             }
             if (var_type == FLAG_VAR_MULTHET) {
@@ -2103,7 +2133,6 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
     // store: variants on reads and reads of a given variants
     std::vector<qa_t> new_;
     for (uint32_t i_read = 0; i_read < ck.reads.size(); i_read++) {
-        //auto &r = reads_seen_positions[i_read];
         read_t &read = ck.reads[i_read];
         new_.clear();
         for (uint32_t i = 0; i < read.vars.size(); i++) {
@@ -2116,7 +2145,7 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                 int allele_idx = -1;
                 if (ta.alleles[0] == allele) {
                     allele_idx = 0;
-                } else if (ta.alleles.size() > 1 && ta.alleles[1] == allele) {
+                } else if (ta.alleles.size() > 1 && (ta.alleles[1] == allele)) {
                     allele_idx = 1;
                 }
                 if (allele_idx >= 0) {
@@ -2245,7 +2274,7 @@ phase_return_t kadayashi_local_haptagging_simple_single_region(samFile *fp_bam,
 
         uint32_t phased_until = 0;
         for (uint32_t readID = 0; readID < ck.reads.size(); readID++) {
-            const auto &read = ck.reads[readID];
+            const read_t &read = ck.reads[readID];
             if (read.vars.size() == 0) {
                 continue;
             }
@@ -2292,7 +2321,7 @@ std::unordered_map<std::string, int> kadayashi_dvr_single_region_wrapper(
         const int min_strand_cov,
         const float min_strand_cov_frac,
         const float max_gapcompressed_seqdiv) {
-    auto result = kadayashi_dvr_single_region_wrapper1(
+    phase_return_t result = kadayashi_dvr_single_region_wrapper1(
             fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end,
             disable_interval_expansion, min_base_quality, min_varcall_coverage,
             min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
@@ -2384,7 +2413,8 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
     const std::string refseq_s = kadayashi::hts_utils::fetch_seq(fai, span_s);
 
     for (const ta_t &varcall : ck.varcalls) {
-        const auto var = derive_variant_fullinfo_from_varcall(varcall, refseq_s, ref_start, true);
+        const variant_fullinfo_t var =
+                derive_variant_fullinfo_from_varcall(varcall, refseq_s, ref_start, true);
         if (var.is_valid) {
             vr.variants.push_back(var);
         }
@@ -2428,13 +2458,1059 @@ varcall_result_t kadayashi_phase_and_varcall_wrapper(samFile *fp_bam,
                          .variants = {},
                          .phasing_breakpoints = ck_and_vr.vr.phasing_breakpoints};
 
-    for (const auto &var : ck_and_vr.vr.variants) {  // return variants in dorado style
+    for (const variant_fullinfo_t &var :
+         ck_and_vr.vr.variants) {  // return variants in dorado style
         if (var.is_valid) {
             ret.variants.push_back(convert_fullinfo_var_to_dorado_style(var));
         }
     }
 
     return ret;
+}
+
+struct medaka_feature_matrix_features_t {
+    std::string qn;
+    uint16_t flag;
+    uint8_t mapq;
+};
+
+struct medaka_feature_matrix_expansion_entry_t {
+    uint32_t pos;
+    uint32_t len;
+};
+
+struct medaka_feature_matrix_lane_tracker_t {
+    int32_t laneID;
+    uint32_t last_pos;
+};
+
+struct medaka_feature_matrix_lane_tracker_compare_t {
+    bool operator()(const medaka_feature_matrix_lane_tracker_t &a,
+                    const medaka_feature_matrix_lane_tracker_t &b) const {
+        return a.last_pos > b.last_pos;
+    }
+};
+
+static medaka_feature_matrix_features_t gen_medaka_feature_matrix_parse_features_aln_record(
+        BamPtr &aln) {
+    return medaka_feature_matrix_features_t{
+            .qn = bam_get_qname(aln.get()), .flag = aln.get()->core.flag, .mapq = aln->core.qual};
+}
+
+static inline bool sort_qa_t_ins_last(const qa_t &a, const qa_t &b) {
+    if (a.pos != b.pos) {
+        return a.pos < b.pos;
+    } else {  // DEL<SNP<INS
+        if (a.allele.back() == VAR_OP_I) {
+            return false;
+        } else if (b.allele.back() == VAR_OP_I) {
+            return true;
+        } else {
+            return a.allele.back() < b.allele.back();
+        }
+    }
+}
+
+static int8_t get_snp_qv_medaka_style(const read_t &read) {
+    int n_mismatches = 0;
+    int n_ins = 0;
+    for (const qa_t &var : read.vars) {
+        if (var.allele.back() == VAR_OP_X) {
+            n_mismatches++;
+        } else if (var.allele.back() == VAR_OP_I) {
+            n_ins += var.allele.size() - 1;
+        }
+    }
+
+    // adapted from dorado util's `compute_accuracy_from_cigar`
+    const int n_MX = read.end_pos <= read.start_pos ? 0 : read.end_pos - read.start_pos + n_ins;
+    const double acc_x =
+            n_MX == 0 ? 0.0
+                      : std::clamp((1.0 - (static_cast<double>(n_mismatches)) / n_MX), 0.0, 1.0);
+    const double err_prob = 1.0 - acc_x;
+    const double quality_score = dorado::utils::compute_quality_score(err_prob);
+
+    return static_cast<int8_t>(nearbyint(quality_score));
+}
+
+static double get_snp_accuracy_dorado_style(const read_t &read, const char *qn) {
+    // ref: dorado::utils::compute_accuracy_from_cigar
+    if (read.vars.empty() || read.end_pos <= read.start_pos) {
+        return 0.0f;
+    }
+    int n_mismatches = 0;
+    int n_ins = 0;
+    int n_del = 0;
+    for (const qa_t &var : read.vars) {
+        const uint8_t cigar_op = var.allele.back();
+        const int cigar_size = static_cast<int>(var.allele.size() - 1);
+        if (cigar_op == VAR_OP_I) {
+            n_ins += cigar_size;
+        } else if (cigar_op == VAR_OP_D) {
+            n_del += cigar_size;
+        } else if (cigar_op == VAR_OP_X) {
+            n_mismatches++;
+        }
+    }
+    const int span = static_cast<int>(read.end_pos - read.start_pos);
+    if (span <= n_del) {
+        spdlog::warn("[kdys::{}] read {} abnormal deletion length? aln start {} end {} del {}",
+                     __func__, qn, read.start_pos, read.end_pos, n_del);
+    }
+    const int tot = span - n_del + n_ins;
+    return static_cast<double>(n_mismatches) / tot;
+}
+
+medaka_feature_matrix_t gen_medaka_feature_matrix(
+        dorado::secondary::BamFileView &hf,
+        std::string_view refname,
+        const uint32_t itvl_start,
+        const uint32_t itvl_end,
+        const std::unordered_map<std::string, int32_t> &qname2hp,
+        const medaka_feature_matrix_options_t &options) {
+    // This function goes through the bam region once to collect the variants of the reads.
+    // After that we pack the reads into lanes (like pseudo reads), where each lane contain
+    // at least one non-overlapping reads. Since all variants in the query intervals
+    // are known, we know the lengths and the locations of minor columns.
+    // Feature matrix is then allocated.
+    // The feature matrix is in shape [n_pos, n_reads, n_features] and we stored
+    // the alignment as individual aligned reads, thus there will an implicit transposition.
+    // We iterate through reads. For each read we first store its info into
+    // a 1D array `expanded_read`, which in then inserted into the matrix in the transposed order.
+
+    constexpr bool WUT_VERBOSE = false;
+    if (itvl_end <= itvl_start) {
+        spdlog::error("[kdys::{}] invalid query region: ref {} start {} end {}. Skipping.",
+                      __func__, refname, itvl_start, itvl_end);
+        medaka_feature_matrix_t ret(0, 0, 0, 0, 1, 0);
+        return ret;
+    }
+
+    // input files
+    const std::string itvl = create_region_string(refname, itvl_start, itvl_end);
+    HtsItrPtr bamitr = HtsItrPtr(sam_itr_querys(hf.idx, hf.hdr, itvl.c_str()), HtsItrDestructor());
+    BamPtr aln = BamPtr(bam_init1(), BamDestructor());
+
+    // input parameters
+    const int n_feature = 4 + (options.include_dwells ? 1 : 0) +
+                          (options.include_haplotype_column ? 1 : 0) +
+                          (options.include_snp_qv ? 1 : 0) + (options.num_dtypes > 1);
+
+    // helpers for collecting refseq from read pileup
+    std::vector<uint8_t> refseq_substring(itvl_end - itvl_start, 0);
+    std::vector<uint8_t> read_seqi;  // temp buffer to be used by bam_seqi
+    const uint8_t seqi2int[16] = {0,        1 /*A1*/, 2 /*C2*/, 0, 3 /*G4*/, 0, 0, 0,
+                                  4 /*T8*/, 0,        0,        0, 0,        0, 0, 5 /*N15*/};
+
+    // helpers for read downsampling (adapted from pileup_ht)
+    const bool enable_downsample = true;
+    const int downsample_window = 1000;
+    const int downsample_readcap = 60;
+    int downsample_filtered = 0;
+    std::vector<int> downsample_counter;
+    const int n_counter = (itvl_end - itvl_start) / downsample_window + 1;
+    if (enable_downsample) {
+        downsample_counter.resize(n_counter, 0);
+    }
+
+    // helper declaration: depending on the flags, we might load haptag
+    // from bam rather than the ht from input.
+    str2int_t qname2hp_bam;
+
+    // helper for collecting variants of the read
+    std::vector<read_t> all_reads{};
+    std::vector<int8_t> all_mapq{};    // can be put into read_t
+    std::vector<int8_t> all_snp_qv{};  // can be put into read_t
+    std::unordered_map<uint32_t, uint32_t> all_ins{};
+    std::unordered_map<uint32_t, std::string> readID2qn;
+    std::vector<std::vector<uint8_t>> all_reads_quals{};
+    std::vector<std::vector<int8_t>> all_dwells{};
+
+    uint32_t n_reads = 0;
+    uint32_t n_reads_unfiltered = 0;
+    while (sam_itr_next(hf.fp, bamitr.get(), aln.get()) >= 0) {
+        n_reads_unfiltered++;
+
+        const char *qn = bam_get_qname(aln.get());
+        const uint32_t r_start_pos = static_cast<uint32_t>(aln.get()->core.pos);
+        const uint32_t r_end_pos = static_cast<uint32_t>(bam_endpos(aln.get()));
+
+        const bool md_is_ok = sancheck_MD_tag_exists_and_is_valid(aln.get());
+        if (!md_is_ok) {  // TODO: remove the requirement on MD tags
+            spdlog::error("[kdys::{}] skipped a read without MD tag", __func__);
+            continue;
+        }
+
+        if (to_exclude_by_flags(aln.get(), 4 | 256 | 2048)) {
+            continue;
+        }
+        if (to_exclude_by_low_mapq(aln.get(), options.min_mapq)) {
+            continue;
+        }
+
+        // filter by readgroup (adapted from medaka_bamiter.cpp)
+        if (!options.readgroup.empty()) {
+            const uint8_t *rg = bam_aux_get(aln.get(), "RG");
+            if (rg) {
+                const char *rg_val = bam_aux2Z(rg);
+                if (errno == EINVAL) {
+                    continue;
+                }
+                if (strcmp(options.readgroup.c_str(), rg_val) != 0) {
+                    continue;
+                }
+            }
+        }
+
+        // filter by one specified tag (adapted from medaka_bamiter.cpp)
+        if (!options.tag_name.empty()) {
+            const uint8_t *tag = bam_aux_get(aln.get(), options.tag_name.c_str());
+            if (tag == nullptr) {
+                if (options.tag_keep_missing) {
+                    break;
+                } else {
+                    continue;
+                }
+            }
+            const int32_t tag_value = static_cast<int32_t>(bam_aux2i(tag));
+            if (errno == EINVAL) {
+                continue;
+            }
+            if (tag_value != options.tag_value) {
+                continue;
+            }
+        }
+
+        // Consider depth-based filtering.
+        // Don't update the counter yet, we might want to ignore the read
+        // based on other criteria.
+        if (enable_downsample) {
+            const bool read_may_be_accepted = read_downsampling_query_or_update_counter(
+                    READ_DOWNSAMPLING_QUERY_ONLY, r_start_pos, r_end_pos, itvl_start, itvl_end,
+                    downsample_counter, downsample_window, downsample_readcap);
+            if (!read_may_be_accepted) {
+                downsample_filtered++;
+                continue;  // go parse the next read
+            }
+        }
+
+        // Parse the alignment record to collect variants of the read;
+        // consider to filter based on mismatch seq identity.
+        medaka_feature_matrix_features_t features =
+                gen_medaka_feature_matrix_parse_features_aln_record(aln);
+        read_t r{
+                .start_pos = static_cast<uint32_t>(aln.get()->core.pos),
+                .end_pos = static_cast<uint32_t>(bam_endpos(aln.get())),
+                .ID = n_reads,
+                .vars = {},
+                .hp = HAPTAG_UNPHASED,
+                .votes_diploid = {0, 0},
+                .strand = !!(features.flag & 16),
+                .de = 0.0f,
+                .left_clip_len = 0,
+                .right_clip_len = 0,
+        };
+        const bool parse_ok = parse_variants_for_one_read(
+                aln.get(), r.vars, 0 /*pp.min_base_quality*/, &r.left_clip_len, &r.right_clip_len,
+                false /*retain_SNP_only*/, nullptr);
+        const double seqdiv_mismatch_only = get_snp_accuracy_dorado_style(r, qn);
+        if ((seqdiv_mismatch_only < options.min_snp_accuracy) || !parse_ok) {
+            continue;
+        }
+
+        // Read is accepted. Update the downsampling counter.
+        read_downsampling_query_or_update_counter(
+                READ_DOWNSAMPLING_QUERY_AND_UPDATE, r_start_pos, r_end_pos, itvl_start, itvl_end,
+                downsample_counter, downsample_window, downsample_readcap);
+
+        // save haptag from the alignment record if requested.
+        if (options.include_haplotype_column && ((options.hap_source == USE_BAM_HAP_TAG))) {
+            const uint8_t *const tag = bam_aux_get(aln.get(), "HP");
+            if (tag) {
+                qname2hp_bam[qn] = static_cast<int>(bam_aux2i(tag));
+            }
+        }
+
+        // calculate snp qv now, because we will adjust start_pos and
+        // end_pos of read later.
+        all_snp_qv.push_back(get_snp_qv_medaka_style(r));
+
+        // adjust insertion position
+        for (qa_t &var : r.vars) {
+            if (var.allele.back() == VAR_OP_I) {
+                var.pos--;
+            }
+        }
+
+        // (workaround for lack of refseq)
+        const uint8_t *seqdata = bam_get_seq(aln.get());
+        read_seqi.clear();
+        const int seq_len = aln.get()->core.l_qseq;
+        for (int i = r.left_clip_len; i < seq_len; i++) {
+            read_seqi.push_back(seqi2int[bam_seqi(seqdata, i)]);  // unset0; ACGTN 12345
+        }
+
+        // Go through the read variants,
+        // collect insertions, also drop the variants outside of
+        // the query region (adjust read start and end position accordingly).
+        uint32_t readadj_offset_from_ins = 0;  // Accumulate the #bases from insertions on the read
+                                               // to the left of the query region.
+        uint32_t readadj_offset_from_del = 0;  // (Similar to above but for deletions.)
+        uint32_t readadj_first_del_shift = 0;  // If read aln start is to the left of query, and
+                                               // a deletion overlaps with that left edge, we need
+                                               // to record the length of [left edge, end of del)
+                                               // in order to adjust the read's start position
+                                               // correctly.
+        if (!r.vars.empty()) {
+            int32_t first_viable_i = -1;
+            int32_t last_viable_i = -1;
+            std::sort(r.vars.begin(), r.vars.end(), sort_qa_t_ins_last);
+
+            for (int i = 0; i < static_cast<int32_t>(r.vars.size()); i++) {
+                const qa_t &var = r.vars[i];
+                const uint32_t var_len = var.allele.size() - 1;
+                const uint8_t cigar = var.allele.back();
+                if (var.pos < itvl_start) {
+                    if (cigar == VAR_OP_I) {
+                        readadj_offset_from_ins += var_len;
+                    } else if (cigar == VAR_OP_D) {
+                        if (var.pos + var_len >= itvl_start) {
+                            readadj_first_del_shift = var.pos + var_len - itvl_start;
+                            readadj_offset_from_del += var_len;
+                        } else {
+                            readadj_offset_from_del += var_len;
+                        }
+                    }
+                    continue;
+                }
+                if (var.pos >= itvl_end) {
+                    break;
+                }
+
+                if (first_viable_i < 0) {
+                    first_viable_i = i;
+                }
+                last_viable_i = i;
+
+                if (var_len >= MEDAKA_FEATURE_MATRIX_MAX_VAR_LEN) {
+                    spdlog::error("[kdys::{}] variant too long ({}-1) read qn {} var pos {}",
+                                  __func__, var.allele.size(), features.qn, var.pos);
+                    break;
+                }
+
+                if (cigar == VAR_OP_I) {
+                    auto [it, inserted] = all_ins.emplace(var.pos, var_len);
+                    if (!inserted && var_len > it->second) {
+                        it->second = var_len;
+                    }
+                }
+            }
+
+            // (remove variants whose start position is
+            // outside of the query region.)
+            if (!r.vars.empty()) {
+                if (first_viable_i < 0 || last_viable_i < 0) {
+                    r.vars.clear();
+                } else {
+                    if (first_viable_i < 0 || last_viable_i < 0) {
+                        spdlog::error(
+                                "[kdys::{}] removing oob variants from read failed: first_viable_i "
+                                "{} , last_viable_i {}. Check code. Nothing done, matrix may be "
+                                "incorrect.",
+                                __func__, first_viable_i, last_viable_i);
+                    } else {
+                        const uint32_t right = r.vars.size() - last_viable_i + 1;
+                        if (first_viable_i > 0) {
+                            r.vars.erase(r.vars.begin(), r.vars.begin() + first_viable_i);
+                        }
+                        if (right > 0) {
+                            r.vars.erase(r.vars.end() - right + 2, r.vars.end());
+                        }
+                    }
+                }
+            }
+        }  // (drop read variants that are outside of the query region)
+
+        // consider adjust read start and end position (read vars were truncated like so above)
+        const uint32_t r_raw_start_pos = r.start_pos;
+        r.start_pos = itvl_start > r.start_pos ? itvl_start + readadj_first_del_shift : r.start_pos;
+        r.end_pos = std::min<uint32_t>(r.end_pos, itvl_end);
+
+        // (workaround for refseq: fill the substring refseq)
+        // (we also need the `offset_on_read` to slice base qualities and dwells, though we don't
+        //  need the block figuring out where to skip the variants - only bases that aren't val5 and val0
+        //  in the expanded read will have base quality anyways. As a result, this way we
+        //   do not get the the exact on-read end position of them, which is fine.)
+        uint32_t end_pos = r.vars.empty() ? r.end_pos : r.vars[0].pos;
+        uint32_t offset_on_ref = r.start_pos - itvl_start;
+        uint32_t offset_on_read =
+                r.start_pos - r_raw_start_pos + readadj_offset_from_ins - readadj_offset_from_del;
+
+        const uint8_t *quals = bam_get_qual(aln.get());
+        all_reads_quals.emplace_back(quals + offset_on_read + r.left_clip_len,
+                                     quals + aln.get()->core.l_qseq);
+
+        // (calculate dwell and shift it too)
+        std::vector<int8_t> dwells;
+        dorado::secondary::calculate_dwells(aln.get(), dwells);
+        all_dwells.emplace_back(dwells.begin() + offset_on_read + r.left_clip_len, dwells.end());
+        // (first)
+        for (uint32_t i = r.start_pos; i < end_pos; i++) {
+            if (refseq_substring[offset_on_ref] != 0 &&
+                refseq_substring[offset_on_ref] != read_seqi[offset_on_read]) {
+                fprintf(stderr,
+                        "[wut][r %d %s] overwriting refseq substring (%d->%d) shouldn't "
+                        "happen#1 ; pos is %d\n",
+                        (int)n_reads, qn, (int)refseq_substring[offset_on_ref],
+                        (int)read_seqi[offset_on_read], (int)(offset_on_ref + itvl_start));
+            }
+            refseq_substring[offset_on_ref] = read_seqi[offset_on_read];
+            offset_on_ref++;
+            offset_on_read++;
+        }
+
+        // (rest: var-matches-var-matches...end)
+        for (uint32_t i = 0; i < r.vars.size(); i++) {
+            const qa_t &var = r.vars[i];
+            const uint32_t var_len = var.allele.size() - 1;
+            const uint8_t cigar = var.allele.back();
+
+            end_pos = (i + 1 >= r.vars.size()) ? r.end_pos : r.vars[i + 1].pos;
+            if (cigar == VAR_OP_D) {
+                offset_on_ref += var_len;
+            } else if (cigar == VAR_OP_X) {
+                offset_on_ref++;
+                offset_on_read++;
+            } else if (cigar == VAR_OP_I) {
+                refseq_substring[offset_on_ref] = read_seqi[offset_on_read];
+                offset_on_ref++;
+                offset_on_read++;
+                offset_on_read += var_len;
+            } else {
+                spdlog::error("[kdys::{}] r {} saw invalid cigar {}\n", __func__, qn, cigar);
+            }
+            for (uint32_t j = offset_on_ref + itvl_start; j < end_pos; j++) {
+                if (refseq_substring[offset_on_ref] != 0 &&
+                    refseq_substring[offset_on_ref] != read_seqi[offset_on_read]) {
+                    spdlog::error(
+                            "[kdys::{}] r {} overwriting refseq substring ({}->{}) "
+                            "shouldn't happen#2; pos is {}\n",
+                            __func__, qn, refseq_substring[offset_on_ref],
+                            read_seqi[offset_on_read], offset_on_ref + itvl_start);
+                }
+                refseq_substring[offset_on_ref] = read_seqi[offset_on_read];
+                offset_on_ref++;
+                offset_on_read++;
+            }
+        }
+        all_mapq.push_back(static_cast<int8_t>(aln.get()->core.qual));
+        all_reads.emplace_back(std::move(r));
+        readID2qn[n_reads] = bam_get_qname(aln.get());
+        n_reads++;
+    }  // iterate through all reads
+
+    if (n_reads == 0) {
+        spdlog::warn("[kdys::{}] requested interval {}:{}-{} inserted no reads", __func__, refname,
+                     itvl_start, itvl_end);
+        medaka_feature_matrix_t ret(0, 0, 0, 0, 1, 0);
+        return ret;
+    } else {
+        if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
+            spdlog::info(
+                    "[kdys::{}] requested interval {}:{}-{} inserted {} reads (unfiltered count "
+                    "{}; "
+                    "downsample filtered {})",
+                    __func__, refname, itvl_start, itvl_end, all_reads.size(), n_reads_unfiltered,
+                    downsample_filtered);
+        }
+    }
+
+    // figure out what columns need expansion, and the total size of column expansion
+    std::vector<medaka_feature_matrix_expansion_entry_t> expansions;
+    uint32_t tot_expansion = 0;
+    for (const auto &[pos, var_len] : all_ins) {
+        expansions.push_back({.pos = pos, .len = var_len});
+        tot_expansion += var_len;
+    }
+    std::sort(expansions.begin(), expansions.end(),
+              [](const medaka_feature_matrix_expansion_entry_t &a,
+                 const medaka_feature_matrix_expansion_entry_t &b) { return a.pos < b.pos; });
+
+    // Figure out how to pack the reads.
+    // This has to be done before allocating the matrix because we
+    // need to know the number of lanes.
+    // Reads that overlap with the left or the right boundary of
+    // the query interval also need to have their names stored.
+    int n_lanes = 0;
+    std::vector<int> read2lane(n_reads);
+    std::vector<std::string> left_qnames;
+    std::vector<std::string> right_qnames;
+    {
+        int laneID = 0;
+        std::vector<medaka_feature_matrix_lane_tracker_t> lane_lookup;
+        std::unordered_map<uint32_t, std::string> tmp_lane2rightqn;
+        // (first)
+        read2lane[0] = laneID;
+        lane_lookup.push_back(
+                {.laneID = laneID,
+                 .last_pos = all_reads[0].end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN});
+        if (all_reads[0].start_pos <= itvl_start) {
+            left_qnames.push_back(readID2qn[0]);
+        } else {
+            left_qnames.push_back("");
+        }
+        if (all_reads[0].end_pos >= itvl_end) {
+            tmp_lane2rightqn[0] = readID2qn[0];
+        }
+        // (all others)
+        for (size_t i = 1; i < all_reads.size(); i++) {
+            const read_t &read = all_reads[i];
+
+            bool need_new_lane = true;
+            int &read_laneID = read2lane[i];
+            if (!options.disable_read_packing) {  // then try to place read into an existing lane
+                for (medaka_feature_matrix_lane_tracker_t &record : lane_lookup) {
+                    if (record.last_pos < read.start_pos) {
+                        need_new_lane = false;
+                        read_laneID = record.laneID;
+                        record.last_pos = read.end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN;
+                        break;
+                    }
+                }
+            }
+
+            if (need_new_lane) {
+                laneID++;
+                read_laneID = laneID;
+                lane_lookup.push_back(medaka_feature_matrix_lane_tracker_t{
+                        .laneID = laneID,
+                        .last_pos = read.end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN});
+                if (read.start_pos <= itvl_start) {
+                    left_qnames.push_back(readID2qn[i]);
+                } else {
+                    left_qnames.push_back("");
+                }
+            }
+
+            if (read.end_pos >= itvl_end) {  // `>` is wrong because end_pos was capped at itvl_end.
+                tmp_lane2rightqn[read_laneID] = readID2qn[i];
+            }
+        }
+        n_lanes = laneID + 1;
+
+        // (consolidate qnames on the right)
+        for (int i_lane = 0; i_lane < n_lanes; i_lane++) {
+            right_qnames.push_back(tmp_lane2rightqn[i_lane]);  // the [] here is fine as
+                                                               // we do want an empty string when
+                                                               // there's no known read that
+                                                               // overlaps with the right edge.
+        }
+        spdlog::info("[kdys::{}] {}:{}-{} has {} lanes (subject to capping)", __func__, refname,
+                     itvl_start, itvl_end, n_lanes);
+    }
+
+    // Give placeholder names 1-index to empty entries in left and right qnames
+    // because of medaka convention.
+    for (uint32_t i = 0, j = 1; i < left_qnames.size(); i++) {
+        if (left_qnames[i].empty()) {
+            left_qnames[i] = "__blank_" + std::to_string(j++);
+        }
+    }
+    for (uint32_t i = 0, j = 1; i < right_qnames.size(); i++) {
+        if (right_qnames[i].empty()) {
+            right_qnames[i] = "__blank_" + std::to_string(j++);
+        }
+    }
+
+    // Allocate the matrix and major & minor positions.
+    uint32_t n_pos = tot_expansion + itvl_end - itvl_start;
+    n_lanes = std::min<int>({n_lanes, 100, options.max_reads});  // limit max depth
+    medaka_feature_matrix_t ret(n_pos, n_lanes, n_pos, n_lanes, n_feature - 4,
+                                0);  // medaka impl also hardcodes the last parameter to 0
+    ret.read_ids_left = std::move(left_qnames);
+    ret.read_ids_right = std::move(right_qnames);
+    std::vector<int8_t> &matrix = ret.matrix;
+    std::fill(matrix.begin(), matrix.end(), 0);
+    std::vector<int64_t> &majors = ret.major;
+    std::vector<int64_t> &minors = ret.minor;
+    if constexpr (WUT_VERBOSE) {
+        fprintf(stderr,
+                "[wut] alloc: n_pos=%d (tot_exp=%d) n_reads=%d n_lanes(clampped)=%d n_feature=%d; "
+                "mat and "
+                "poss sizes: %d %d %d\n",
+                (int)n_pos, (int)tot_expansion, (int)n_reads, (int)n_lanes, (int)n_feature,
+                (int)matrix.size(), (int)majors.size(), (int)minors.size());
+    }
+
+    // fill major and minor positions
+    {
+        uint32_t pos = itvl_start;
+        uint32_t i = 0;
+
+        // start ~ first expansion
+        {
+            uint32_t pos_right = expansions.empty() ? itvl_end : expansions[0].pos;
+            uint32_t tmp_pad = expansions.empty() ? 0 : 1;
+            while (pos < pos_right + tmp_pad) {
+                majors[i] = pos;
+                minors[i] = 0;
+                i++;
+                pos++;
+            }
+            if (tmp_pad > 0) {
+                pos--;
+            }
+        }
+
+        // from the first expansion
+        for (uint32_t j = 0; j < expansions.size(); j++) {
+            const medaka_feature_matrix_expansion_entry_t &exp = expansions[j];
+
+            // in the expansion (the minor cols)
+            for (uint32_t k = 1; k <= exp.len; k++) {
+                minors[i] = k;
+                majors[i] = pos;
+                i++;
+            }
+            pos++;
+
+            // after the expansion
+            uint32_t pos_right = (j + 1 >= expansions.size()) ? itvl_end : expansions[j + 1].pos;
+            uint32_t tmp_pad = (j + 1 >= expansions.size()) ? 0 : 1;
+            while (pos < pos_right + tmp_pad) {
+                majors[i] = pos;
+                minors[i] = 0;
+                i++;
+                pos++;
+            }
+            if (tmp_pad > 0) {
+                pos--;
+            }
+        }
+    }
+
+    // fill the feature matrix.
+    // note:
+    //   - when insertion co-exist with other types of variants, insertion goes last.
+    //   - within an insertion run, consider right-align the allele if it exists and
+    //     right-align was requested. (otherwise it's left align; there is no
+    //     "original" alignment configure of an insertion inside the minor columns.)
+    // For simplicity, fill a temporary buffer when we expand the read,
+    // then insert the buffer into the matrix afterward. Similarly,
+    // do this for base qualities and qvs. (note that there are several
+    // offset adjusts for the start coordinate on read: left soft clip,
+    // my clamping of read start position wrt query interval start,
+    // del on read, and ins expansion due to pileup.)
+    std::vector<int8_t> expanded_read(ret.buffer_pos, 0);
+    std::vector<int8_t> expanded_read_quals(ret.buffer_pos, 0);
+    std::vector<int8_t> expanded_read_dwells(ret.buffer_pos, 0);
+    for (size_t i_read = 0; i_read < all_reads.size(); i_read++) {
+        // Limit the max number of lanes.
+        const int laneID = read2lane[i_read];
+        if (laneID >= n_lanes) {
+            continue;
+        }
+
+        const read_t &read = all_reads[i_read];
+
+        // count expanded columns prior to the read's start position
+        uint32_t offset = read.start_pos - itvl_start;
+        for (const medaka_feature_matrix_expansion_entry_t &exp : expansions) {
+            if (exp.pos >= read.start_pos) {
+                break;
+            }
+            offset += exp.len;
+        }
+        if constexpr (WUT_VERBOSE) {
+            fprintf(stderr, "[wut][r %s] start %d , offset %d, offset-start %d\n",
+                    readID2qn[i_read].c_str(), (int)read.start_pos, (int)offset,
+                    (int)majors[offset]);
+        }
+        const uint32_t offset0 = offset;
+
+        // fill expanded_read
+        // (from start to the first variant)
+        {
+            const uint32_t pos_right = read.vars.empty() ? read.end_pos : read.vars[0].pos;
+            for (uint32_t pos = read.start_pos; pos < pos_right; pos++) {
+                expanded_read[offset] = 6;
+                offset++;
+                while (offset < minors.size() && minors[offset] != 0) {
+                    expanded_read[offset] = 5;
+                    offset++;
+                }
+            }
+        }
+        // (for each variant and matches after it)
+        for (uint32_t i_var = 0; i_var < read.vars.size();) {
+            const qa_t &var = read.vars[i_var];
+            uint32_t i_var_incre = 0;
+
+            // the variant
+            if (var.allele.back() == VAR_OP_X) {
+                if constexpr (WUT_VERBOSE) {
+                    fprintf(stderr, "[wut][r %s] pushing X: pos %d offset %d val %d\n",
+                            readID2qn[i_read].c_str(), (int)var.pos, (int)offset,
+                            var.allele[0] + 1);
+                }
+                expanded_read[offset] = var.allele[0] + 1;
+                offset++;
+                i_var_incre = 1;
+
+                // if next is col expansion and self doesn't have insertion at
+                // the same position, fastforward
+                if (i_var + 1 >= read.vars.size()) {
+                    while (offset < minors.size() && minors[offset] != 0) {
+                        expanded_read[offset] = 5;
+                        offset++;
+                    }
+                } else if (i_var + 1 < read.vars.size() &&
+                           !((read.vars[i_var + 1].allele.back() == VAR_OP_I) &&
+                             (read.vars[i_var + 1].pos == var.pos))) {
+                    while (offset < minors.size() && minors[offset] != 0) {
+                        expanded_read[offset] = 5;
+                        offset++;
+                    }
+                }
+            } else if (var.allele.back() == VAR_OP_D) {
+                if constexpr (WUT_VERBOSE) {
+                    fprintf(stderr, "[wut][r %s] pushing DEL: pos %d offset %d len %d\n",
+                            readID2qn[i_read].c_str(), (int)var.pos, (int)offset,
+                            (int)var.allele.size() - 1);
+                }
+                for (uint32_t i = 0; i < var.allele.size() - 1; i++) {
+                    if (offset >= expanded_read.size()) {
+                        break;
+                    }
+                    expanded_read[offset] = 5;
+                    offset++;
+                    // if next is col expansion and self doesn't have insertion at
+                    // each of the current position, fastforward
+                    if (i_var + 1 >= read.vars.size()) {
+                        while (offset < minors.size() && minors[offset] != 0) {
+                            expanded_read[offset] = 5;
+                            offset++;
+                        }
+                    } else if (i_var + 1 < read.vars.size() &&
+                               !((read.vars[i_var + 1].allele.back() == VAR_OP_I) &&
+                                 (read.vars[i_var + 1].pos == majors[offset - 1]))) {
+                        while (offset < minors.size() && minors[offset] != 0) {
+                            expanded_read[offset] = 5;
+                            offset++;
+                        }
+                    }
+                }
+                i_var_incre = 1;
+            } else if (var.allele.back() == VAR_OP_I) {
+                // fill in the ref base first , then the right-aligned insertion w/ col exp
+                if constexpr (WUT_VERBOSE) {
+                    fprintf(stderr, "[wut][r %s] insertion at %d (offset %d major %d) length %d\n",
+                            readID2qn[i_read].c_str(), (int)var.pos, (int)offset,
+                            (int)majors[offset], (int)var.allele.size() - 1);
+                }
+
+                //(ref base; need to check if we have a mismatch or a del previously)
+                bool skip_ref_base_before_ins = false;
+                uint8_t prev_cigar = 0;
+                uint32_t prev_len = 0;
+                uint32_t prev_pos = 0;
+                if (i_var > 0) {
+                    const qa_t &prev_var = read.vars[i_var - 1];
+                    prev_cigar = prev_var.allele.back();
+                    prev_len = prev_var.allele.size() - 1;
+                    prev_pos = prev_var.pos;
+                    if ((prev_cigar == VAR_OP_X) && (prev_pos == var.pos)) {
+                        skip_ref_base_before_ins = true;
+                    } else if ((prev_cigar == VAR_OP_D) && (prev_pos + prev_len > var.pos)) {
+                        skip_ref_base_before_ins = true;
+                    }
+                }
+                if (skip_ref_base_before_ins) {
+                    if constexpr (WUT_VERBOSE) {
+                        fprintf(stderr,
+                                "[wut][r %s] pushing INS(1) first: skipped ref base at offset %d "
+                                "(major pos %d; prev cigar %d; prev pos %d; prev var len %d)\n",
+                                readID2qn[i_read].c_str(), (int)offset, (int)majors[offset],
+                                (int)prev_cigar, (int)prev_pos, (int)prev_len);
+                    }
+                } else {
+                    if constexpr (WUT_VERBOSE) {
+                        fprintf(stderr,
+                                "[wut][r %s] pushing INS(1) first: filled ref base at offset %d "
+                                "(major pos %d)\n",
+                                readID2qn[i_read].c_str(), (int)offset, (int)majors[offset]);
+                    }
+                    if (offset < majors.size()) {
+                        expanded_read[offset] = 6;
+                        offset++;
+                    }
+                }
+                // (no need to touch i_var_incre)
+
+                // (insertion bases, right-align)
+                const uint32_t exp_size = all_ins[read.vars[i_var].pos];
+                if (options.right_align_insertions) {
+                    const uint32_t space_size = exp_size - (var.allele.size() - 1);
+                    for (uint32_t i = 0; i < space_size && offset < majors.size(); i++, offset++) {
+                        expanded_read[offset] = 5;
+                    }
+                    for (uint32_t i = space_size, j = 0; i < exp_size && offset < majors.size();
+                         i++, j++) {
+                        expanded_read[offset] = var.allele[j] + 1;
+                        offset++;
+                    }
+                } else {  // left-align
+                    const uint32_t var_size = var.allele.size() - 1;
+                    for (uint32_t i = 0, j = 0; i < var_size && offset < majors.size();
+                         i++, j++, offset++) {
+                        expanded_read[offset] = var.allele[j] + 1;
+                    }
+                    for (uint32_t i = var_size; i < exp_size && offset < majors.size();
+                         i++, offset++) {
+                        expanded_read[offset] = 5;
+                    }
+                }
+                i_var_incre = 1;
+            } else {
+                spdlog::error("[kdys::{}] r {} has unknown cigar (op {} var pos {})", __func__,
+                              readID2qn[i_read], var.allele.back(), var.pos);
+            }
+
+            // the matches after it
+            if (offset < majors.size()) {
+                const uint32_t pos_right = i_var + i_var_incre >= read.vars.size()
+                                                   ? read.end_pos
+                                                   : read.vars[i_var + i_var_incre].pos;
+                if constexpr (WUT_VERBOSE) {
+                    fprintf(stderr,
+                            "[wut][r %s] pushing match: pos %d - %d (read end pos is %d, itvl_end "
+                            "is "
+                            "%d)\n",
+                            readID2qn[i_read].c_str(), (int)majors[offset], (int)pos_right,
+                            (int)read.end_pos, (int)itvl_end);
+                }
+                for (uint32_t pos = majors[offset]; pos < pos_right; pos++) {
+                    if constexpr (WUT_VERBOSE) {
+                        fprintf(stderr,
+                                "[wut][r %s] push match (offset %d pos %d) (ref base should be "
+                                "%c)\n",
+                                readID2qn[i_read].c_str(), (int)offset, (int)majors[offset],
+                                "0ACGT-"[refseq_substring[pos - itvl_start]]);
+                    }
+                    expanded_read[offset] = 6;
+                    offset++;
+                    while (offset < minors.size() && minors[offset] != 0) {
+                        expanded_read[offset] = 5;
+                        offset++;
+                    }
+                }
+            }
+
+            // step forward
+            i_var += i_var_incre;
+        }
+
+        // We have collected the expanded read.
+
+        // Fill the base quals and dwells.
+        const std::vector<uint8_t> &quals = all_reads_quals[i_read];
+        const std::vector<int8_t> &dwells = all_dwells[i_read];
+        for (uint32_t i = offset0, j_qual = 0, j_dwell = 0;
+             i < offset && j_qual < quals.size() && j_dwell < dwells.size(); i++) {
+            if (expanded_read[i] != 0 && expanded_read[i] != 5) {
+                expanded_read_quals[i] = quals[j_qual];
+                expanded_read_dwells[i] = dwells[j_dwell];
+                j_qual++;
+                j_dwell++;
+            } else {
+                expanded_read_quals[i] = -1;
+                expanded_read_dwells[i] = -1;
+            }
+        }
+
+        // prep other scalar fields
+        const uint8_t strand = read.strand;
+        const int8_t mapq = all_mapq[i_read];
+        const int8_t snp_qv = all_snp_qv[i_read];
+        uint8_t haptag = HAPTAG_UNPHASED;
+        if (options.include_haplotype_column) {
+            if (options.hap_source == FORCE_UNPHASED) {
+                ;
+            } else if (options.hap_source == USE_BAM_HAP_TAG) {
+                const auto it_hp = qname2hp_bam.find(readID2qn[i_read]);
+                if (it_hp != qname2hp_bam.cend()) {
+                    haptag = static_cast<uint8_t>(it_hp->second);
+                }
+            } else {  // USE_TAG_FROM_HASHTABLE
+                const auto it_hp = qname2hp.find(readID2qn[i_read]);
+                if (it_hp != qname2hp.cend()) {
+                    haptag = static_cast<uint8_t>(it_hp->second);
+                }
+            }
+            haptag = haptag == HAPTAG_UNPHASED ? 0 : haptag;  // medaka convention
+        }
+
+        int32_t dtype = 0;
+        if (options.num_dtypes > 1) {  // adapted from medaka
+            bool failed = false;
+            if (options.num_dtypes > 1) {
+                char *tag_val = nullptr;
+                const uint8_t *tag = bam_aux_get(aln.get(), "DT");
+                if (tag == NULL) {  // tag isn't present
+                    failed = true;
+                } else {
+                    tag_val = bam_aux2Z(tag);
+                    failed = errno == EINVAL;
+                }
+                if (!failed) {
+                    bool found = false;
+                    for (dtype = 0; dtype < options.num_dtypes; ++dtype) {
+                        if (tag_val && ((options.dtypes[dtype] == tag_val))) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    failed = !found;
+                }
+                if (failed) {
+                    spdlog::error("[kdys::{}] Datatype not found for read {}", __func__,
+                                  readID2qn[i_read]);
+                }
+            }
+        }
+
+        // now migrate to the matrix
+        const uint32_t i_pos_left = offset0;
+        const uint32_t i_pos_right = std::min<uint32_t>(offset, expanded_read.size());
+        const uint32_t shift_step = ret.buffer_reads * ret.featlen;
+        uint32_t shift_base = shift_step * i_pos_left + ret.featlen * laneID;
+        uint32_t ref_pos = majors[i_pos_left] - itvl_start;
+        for (uint32_t i = i_pos_left; i < i_pos_right; i++) {
+            uint32_t shift = shift_base;
+
+            // the base
+            if (expanded_read[i] == 6) {
+                if (minors[i] != 0) {
+                    spdlog::error(
+                            "[kdys::{}] impossible: match is minor pos {} (minor={}) "
+                            "{}:{}-{} . Matrix will be incorrect .\n",
+                            __func__, majors[i], minors[i], refname, itvl_start, itvl_end);
+                }
+                matrix[shift] = refseq_substring[ref_pos];
+                shift++;
+                ref_pos++;
+            } else {
+                matrix[shift] = expanded_read[i];
+                shift++;
+                if ((minors[i] == 0) && (expanded_read[i] == 5)) {  // deletion
+                    ref_pos++;
+                } else if ((expanded_read[i] != 0) && (expanded_read[i] != 5) &&
+                           (minors[i] == 0)) {  // mismatch
+                    ref_pos++;
+                }
+            }
+
+            // other entires
+            matrix[shift] = expanded_read_quals[i];
+            shift++;
+
+            matrix[shift] = strand == 0 ? 1 : -1;  // medaka convention
+            shift++;
+
+            matrix[shift] = mapq;
+            shift++;
+
+            if (options.include_dwells) {
+                matrix[shift] = expanded_read_dwells[i];
+                shift++;
+            }
+            if (options.include_haplotype_column) {
+                matrix[shift] = haptag;
+                shift++;
+            }
+            if (options.include_snp_qv) {
+                matrix[shift] = snp_qv;
+                shift++;
+            }
+            if (options.num_dtypes > 1) {
+                matrix[shift] = dtype;
+                shift++;
+            }
+
+            shift_base += shift_step;
+        }
+
+        // cleanup buffers
+        std::fill(expanded_read.begin() + offset0, expanded_read.begin() + offset, 0);
+        std::fill(expanded_read_quals.begin() + offset0, expanded_read_quals.begin() + offset, 0);
+        std::fill(expanded_read_dwells.begin() + offset0, expanded_read_dwells.begin() + offset, 0);
+    }
+
+    return ret;
+}
+
+medaka_feature_matrix_t gen_medaka_feature_matrix_wrapper(
+        dorado::secondary::BamFile &bam_file,
+        std::string refname,
+        uint32_t itvl_start,
+        uint32_t itvl_end,
+        const std::unordered_map<std::string, int32_t> &qname2hp,
+        const medaka_feature_matrix_options_t &options) {
+    // refname and interval start & end are needed only for the
+    // coordinates and debugging. They are not used to retrieve ref seq.
+    dorado::secondary::BamFileView hf = bam_file.get_view();
+    return gen_medaka_feature_matrix(hf, refname, itvl_start, itvl_end, qname2hp, options);
+}
+
+static void print_medaka_feature_matrix1(std::ostream &out, const medaka_feature_matrix_t &mfm) {
+    out << "#buffer_pos,buffer_reads,num_dtypes,n_pos,n_reads,featlen,mat size,major size,minor "
+           "size\n";
+    out << mfm.buffer_pos << ',' << mfm.buffer_reads << ',' << mfm.num_dtypes << ',' << mfm.n_pos
+        << ',' << mfm.n_reads << ',' << mfm.featlen << ',' << mfm.matrix.size() << ','
+        << mfm.major.size() << ',' << mfm.minor.size() << '\n';
+
+    // print boundary read names
+    std::vector<std::string> qnames = mfm.read_ids_left;
+    int i = 0;
+    for (const std::string &qn : qnames) {
+        out << "L\t" << i << '\t' << qn << '\n';
+        i++;
+    }
+    qnames = mfm.read_ids_right;
+    i = 0;
+    for (const std::string &qn : qnames) {
+        out << "R\t" << i << '\t' << qn << '\n';
+        i++;
+    }
+
+    // right now mfm is position-major
+    for (int32_t i_pos = 0; i_pos < mfm.buffer_pos; i_pos++) {
+        for (int i_feature = 0; i_feature < 7; i_feature++) {
+            out << (mfm.major[i_pos] + 1) << '\t' << mfm.minor[i_pos] << '\t';
+            for (int32_t i_lane = 0; i_lane < mfm.buffer_reads; i_lane++) {
+                if (i_feature == 0) {
+                    out << "0ACGT-"[mfm.matrix[i_pos * mfm.buffer_reads * mfm.featlen +
+                                               i_lane * mfm.featlen + i_feature]];
+                } else {
+                    out << std::to_string(mfm.matrix[i_pos * mfm.buffer_reads * mfm.featlen +
+                                                     i_lane * mfm.featlen + i_feature]);
+                    out << ',';
+                }
+            }
+            out << '\n';
+        }
+    }
+}
+
+void print_medaka_feature_matrix(const std::string &fn_out, const medaka_feature_matrix_t &mfm) {
+    std::ofstream fp(fn_out);
+    print_medaka_feature_matrix1(fp, mfm);
+}
+
+std::string print_medaka_feature_matrix(const medaka_feature_matrix_t &mfm) {
+    std::ostringstream oss;
+    print_medaka_feature_matrix1(oss, mfm);
+    return std::move(oss).str();
 }
 
 }  // namespace kadayashi

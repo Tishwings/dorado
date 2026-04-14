@@ -51,6 +51,36 @@ const unsigned char md_op_table[256]={
 
 }  // namespace
 
+float get_tag_de_f(const bam1_t *aln) {
+    float de = 0.0f;
+    uint8_t *tmp = bam_aux_get(aln, "de");
+    if (tmp) {
+        de = static_cast<float>(bam_aux2f(tmp));
+    }
+    return de;
+}
+
+bool to_exclude_by_flags(const bam1_t *aln, uint16_t unwanted_flags) {
+    if (aln->core.flag & unwanted_flags) {
+        return true;
+    }
+    return false;
+}
+
+bool to_exclude_by_low_mapq(const bam1_t *aln, int min_mapq) {
+    if (static_cast<int>(aln->core.qual) < min_mapq) {
+        return true;
+    }
+    return false;
+}
+bool to_exlucde_by_high_de_tag(const bam1_t *aln, float max_gapcompressed_seqdiv) {
+    float de = get_tag_de_f(aln);
+    if (de > max_gapcompressed_seqdiv) {
+        return true;
+    }
+    return false;
+}
+
 bool sancheck_MD_tag_exists_and_is_valid(const bam1_t *aln) {
     const uint8_t *tmp = bam_aux_get(aln, "MD");
     if (!tmp) {

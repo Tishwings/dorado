@@ -1,10 +1,15 @@
 #include "bam_tagging.h"
 #include "cli.h"
+#include "faidx_utils.h"
 #include "kadayashi_utils.h"
 #include "local_haplotagging.h"
 #include "pipeline.h"
 #include "resources.h"
+#include "secondary/common/bam_file.h"
+#include "string_utils.h"
 
+#include <htslib/faidx.h>
+#include <htslib/sam.h>
 #include <spdlog/spdlog.h>
 
 #include <cstdio>
@@ -21,13 +26,13 @@ void print_help_main() {
     fprintf(stdout, "  kadayashi tsv2bin -o out.bin in.tsv\n");
     fprintf(stdout, "  kadayashi phaseglobal -r fn_ref [-o output.vcf] [-t threads] fn_bam fn_vcf\n");
     fprintf(stdout, "  kadayashi varcall [--varcall-use-dvr] -o prefix [-t threads -b -r REGION -w window_size] fn_ref fn_bam 2>log\n");
-    fprintf(stdout, "  kadayashi dbg #runs whatever is in the current main_debug()\n");
+    fprintf(stdout, "  kadayashi featmatgen [-r ref:start-end -o fn_out -t threads] fn_ref fn_bam\n");
     // clang-format on
 }
 
-void print_end_summary(int argc, char *argv[], double T) {
+void print_end_summary(int argc, char *argv[], double timestamp) {
     fprintf(stdout, "\n[M::%s] ELAPSED: %.1fs , PeakRSS: %.1f GiB\n", __func__,
-            kadayashi::get_timestamp() - T, kadayashi::get_peakrss());
+            kadayashi::get_timestamp() - timestamp, kadayashi::get_peakrss());
     fprintf(stdout, "[M::%s] kadayashi %s\n", __func__, KADAYASHI_VERSION);
     fprintf(stdout, "[M::%s] CMD: ", __func__);
     for (int i = 0; i < argc; i++) {
@@ -47,25 +52,133 @@ int main_phase(cliopt_t &clio) {
     return ret;
 }
 
-int main_debug(int argc, char *argv[]) {
-    // clang-format off
-    //kadayashi::dorado::secondary::BamFile hf{argv[1], 1};
-    //faidx_t *fai = fai_load_format(argv[2], FAI_FASTA);
-    //const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
-    //            hf.fp(), hf.idx(), hf.hdr(),
-    //            fai, "chr20", 1, 1000000, false, 5,
-    //            5, 0.2f, 200, 0.1f, false);
-    //for (auto &var : result.variants){
-    //    if (var.is_valid)
-    //        fprintf(stdout, "%d %s %s\n", var.pos0, var.ref_allele_seq0.c_str(), var.alt_allele_seq0.c_str());
-    //}
+int main_featmatgen(const std::filesystem::path &fn_ref,
+                    const std::filesystem::path &fn_bam,
+                    const std::filesystem::path &fn_out,
+                    const std::string &itvl_str,  // 1-index []
+                    int n_threads,
+                    bool is_use_medaka_featmatgen,
+                    kadayashi::medaka_feature_matrix_options_t mfm_options) {
+    // note: output will be written to file only if -r or --region is specified
+    constexpr uint32_t stride = 500000;
+    double timestamp = kadayashi::get_timestamp();
+
+    if (!itvl_str.empty()) {
+        std::string ref_name;
+        uint32_t ref_start, ref_end;  // 0-index [)
+        const bool itvl_str_parse_ok =
+                kadayashi::split_region_string(itvl_str, ref_name, ref_start, ref_end);
+        if (!itvl_str_parse_ok) {
+            spdlog::error("[kdys::{}] interval string parsing failed: {}", __func__, itvl_str);
+            return 1;
+        }
+        dorado::secondary::BamFile hf{fn_bam, 4};
+        dorado::secondary::BamFileView hf_view = hf.get_view();
+
+        const std::unordered_map<std::string, int32_t> qname2hp{};
+        kadayashi::medaka_feature_matrix_t mfm =
+                is_use_medaka_featmatgen
+                        ? dorado::secondary::calculate_read_alignment(
+                                  hf, ref_name, ref_start, ref_end, qname2hp,
+                                  mfm_options.num_dtypes, mfm_options.dtypes, mfm_options.tag_name,
+                                  mfm_options.tag_value, mfm_options.tag_keep_missing,
+                                  mfm_options.readgroup, mfm_options.min_mapq,
+                                  mfm_options.disable_read_packing, mfm_options.include_dwells,
+                                  mfm_options.include_haplotype_column, mfm_options.include_snp_qv,
+                                  dorado::secondary::HaplotagSource::UNPHASED,
+                                  mfm_options.max_reads, mfm_options.right_align_insertions,
+                                  mfm_options.min_snp_accuracy)
+                        : kadayashi::gen_medaka_feature_matrix(hf_view, ref_name, ref_start,
+                                                               ref_end, qname2hp, mfm_options);
+        fprintf(stderr, "[time] feature matrix generation used %.2fs\n",
+                kadayashi::get_timestamp() - timestamp);
+
+        kadayashi::print_medaka_feature_matrix(fn_out, mfm);
+    } else {  //  all of the bam file
+        const int n_cpu_per_worker = 1;
+        const int n_workers = n_threads / n_cpu_per_worker;
+        double timestamp = kadayashi::get_timestamp();
+
+        // ref
+        faidx_t *fai = fai_load_format(fn_ref.string().c_str(), FAI_FASTA);
+
+        // placeholder
+        const std::unordered_map<std::string, int32_t> qname2hp{};
+
+        // get the refseq names from the bam
+        std::vector<std::string> ref_names;
+        dorado::secondary::BamFile tmp_hf{fn_bam, 1};
+        for (int i = 0; i < tmp_hf.hdr()->n_targets; i++) {
+            ref_names.push_back(tmp_hf.hdr()->target_name[i]);
+        }
+
+        for (const std::string &chrom : ref_names) {
+            fprintf(stderr, "[dbg] ---- at %s ----\n", chrom.c_str());
+
+            const std::string refseq = kadayashi::hts_utils::fetch_seq(fai, chrom);
+
+            // (for batching)
+            const uint32_t end = refseq.size();
+            // (lambda)
+            std::atomic<int> next_jobID{0};
+            const int job_stride = 10;
+            const int n_jobs = (int)end / stride;
+            auto worker = [&] {
+                dorado::secondary::BamFile hf{fn_bam.string().c_str(), n_cpu_per_worker};
+                dorado::secondary::BamFileView hf_view = hf.get_view();
+                while (true) {
+                    const int jobID_start =
+                            next_jobID.fetch_add(job_stride, std::memory_order_relaxed);
+                    if (jobID_start >= n_jobs) {
+                        break;
+                    }
+                    for (int i_job = jobID_start; i_job < jobID_start + job_stride; i_job++) {
+                        uint32_t ref_start = i_job * stride;
+                        uint32_t ref_end = (i_job + 1) * stride;
+                        kadayashi::medaka_feature_matrix_t mfm =
+                                is_use_medaka_featmatgen
+                                        ? dorado::secondary::calculate_read_alignment(
+                                                  hf, chrom, ref_start, ref_end, qname2hp,
+                                                  mfm_options.num_dtypes, mfm_options.dtypes,
+                                                  mfm_options.tag_name, mfm_options.tag_value,
+                                                  mfm_options.tag_keep_missing,
+                                                  mfm_options.readgroup, mfm_options.min_mapq,
+                                                  mfm_options.disable_read_packing,
+                                                  mfm_options.include_dwells,
+                                                  mfm_options.include_haplotype_column,
+                                                  mfm_options.include_snp_qv,
+                                                  dorado::secondary::HaplotagSource::UNPHASED,
+                                                  mfm_options.max_reads,
+                                                  mfm_options.right_align_insertions,
+                                                  mfm_options.min_snp_accuracy)
+                                        : kadayashi::gen_medaka_feature_matrix(
+                                                  hf_view, chrom, ref_start, ref_end, qname2hp,
+                                                  mfm_options);
+                        fprintf(stderr, "[dbg] %s %d-%d done; junk %d\n", chrom.c_str(),
+                                (int)ref_start, (int)ref_end,
+                                mfm.matrix.size() > 0 ? (int)mfm.matrix[0] : -1);
+                    }
+                }
+            };
+            // (go)
+            std::vector<std::thread> threads;
+            threads.reserve(n_workers);
+            for (int t = 0; t < n_workers; t++) {
+                threads.emplace_back(worker);
+            }
+            for (auto &th : threads) {
+                th.join();
+            }
+        }
+        fprintf(stderr, "[time] total: %.2fs\n", kadayashi::get_timestamp() - timestamp);
+    }
+
     return 0;
-    // clang-format on
 }
 
 int main(int argc, char *argv[]) {
     int ret = 0;
-    double T = kadayashi::get_timestamp();
+    double timestamp = kadayashi::get_timestamp();
 
     spdlog::set_level(spdlog::level::trace);
 
@@ -86,7 +199,7 @@ int main(int argc, char *argv[]) {
         if (ret != 0) {
             spdlog::error("[kdys::{}] phasing failed; not generating bin file from tsv output",
                           __func__);
-            print_end_summary(argc, argv, T);
+            print_end_summary(argc, argv, timestamp);
             return ret;
         }
 
@@ -149,11 +262,11 @@ int main(int argc, char *argv[]) {
 
         if (!clio.fn_out_bam.empty()) {
             spdlog::info("[kdys::{}] To write haptagged bam...", __func__);
-            double T = kadayashi::get_timestamp();
+            double timestamp = kadayashi::get_timestamp();
             kadayashi::write_haptagged_bam_given_hashtable_and_itvl(
                     clio.fn_bam, ".", clio.fn_out_bam, qname2hp, clio.n_threads);
             spdlog::info("[kdys::{}] haptagged bam written, used %.1fs", __func__,
-                         kadayashi::get_timestamp() - T);
+                         kadayashi::get_timestamp() - timestamp);
         }
         ret = 0;
     } else if (subcommand == "varcall") {
@@ -162,7 +275,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        double T = kadayashi::get_timestamp();
+        double timestamp = kadayashi::get_timestamp();
         std::string fn_out_vcf = clio.output_prefix.string() + ".vcf";
         kadayashi::str2int_t qname2hp = kadayashi::kadayashi_phased_variant_calling_threaded(
                 clio.fn_ref, clio.fn_bam, clio.n_threads, fn_out_vcf, clio.output_prefix,
@@ -172,28 +285,49 @@ int main(int argc, char *argv[]) {
                 clio.pp.max_gapcompressed_seqdiv, clio.vcf_write_allow_refbase_N,
                 clio.pp.disable_region_expansion, clio.varcall_use_dvr, clio.bed_flanking);
         spdlog::info("[kdys::{}] varcall main routine done, used %.1fs", __func__,
-                     kadayashi::get_timestamp() - T);
+                     kadayashi::get_timestamp() - timestamp);
 
         if (clio.write_dbg_bam) {
-            T = kadayashi::get_timestamp();
+            timestamp = kadayashi::get_timestamp();
             std::string fn_out_bam = clio.output_prefix.string() + ".kadayashi.bam";
             kadayashi::write_haptagged_bam_given_hashtable_and_multiple_itvls(
                     clio.fn_bam, clio.varcall_regions, fn_out_bam, qname2hp, clio.n_threads);
             spdlog::info("[kdys::{}] haptagged bam written, used %.1fs", __func__,
-                         kadayashi::get_timestamp() - T);
+                         kadayashi::get_timestamp() - timestamp);
         }
         ret = 0;
+    } else if (subcommand == "featmatgen") {
+        cliopt_featmatgen_t clio = parse_clio_featmatgen(argc - 1, argv + 1);
+        if ((!clio.is_valid) || clio.is_print_help) {
+            return 1;
+        }
+        kadayashi::medaka_feature_matrix_options_t mfm_options = {
+                .include_dwells = clio.include_dwells,
+                .include_haplotype_column = clio.include_haplotype_column,
+                .include_snp_qv = clio.include_snp_qv,
+                .min_mapq = clio.min_mapq,
+                .num_dtypes = 1,
+                .dtypes = {},
+                .tag_name = "",
+                .tag_value = 0,
+                .tag_keep_missing = false,
+                .readgroup = clio.readgroup,
+                .disable_read_packing = clio.disable_read_packing,
+                .hap_source = kadayashi::FORCE_UNPHASED,
+                .max_reads = clio.max_lanes,
+                .right_align_insertions = clio.right_align_insertions,
+                .min_snp_accuracy = clio.min_snp_accuracy};
+        ret = main_featmatgen(clio.fn_in_ref, clio.fn_in_bam, clio.fn_out, clio.itvl_str,
+                              clio.n_threads, clio.is_use_medaka, mfm_options);
     } else if (subcommand == "--version") {
         fprintf(stdout, "kadayashi %s\n", KADAYASHI_VERSION);
         ret = 0;
-    } else if (subcommand == "dbg") {
-        ret = main_debug(argc - 1, argv + 1);
     } else {
         fprintf(stdout, "[E::%s] unknown subcommand: %s\n", __func__, argv[1]);
         print_help_main();
         return 1;
     }
 
-    print_end_summary(argc, argv, T);
+    print_end_summary(argc, argv, timestamp);
     return ret;
 }

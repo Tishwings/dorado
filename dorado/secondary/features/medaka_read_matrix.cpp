@@ -1,4 +1,4 @@
-#include "medaka_read_matrix.h"
+#include "secondary/features/medaka_read_matrix.h"
 
 #include "hts_utils/bam_utils.h"
 #include "local_haplotagging.h"
@@ -51,17 +51,35 @@ struct Read {
     std::vector<int8_t> dwells{};
 };
 
+size_t aligned_ref_pos_from_cigar(const uint32_t *cigar, const uint32_t n_cigar) {
+    uint32_t aligned_ref_pos = 0;
+    for (size_t ci = 0; ci < n_cigar; ++ci) {
+        const uint32_t cigar_len = cigar[ci] >> 4;
+        const uint8_t cigar_op = cigar[ci] & 0xf;
+        if ((cigar_op == BAM_CMATCH) || (cigar_op == BAM_CDEL) || (cigar_op == BAM_CEQUAL) ||
+            (cigar_op == BAM_CDIFF)) {
+            aligned_ref_pos += cigar_len;
+        }
+    }
+    return aligned_ref_pos;
+}
+
+int8_t compute_snp_qv(const bam1_t *alignment) {
+    const dorado::utils::AlignmentAccuracy accuracy =
+            dorado::utils::compute_accuracy_from_cigar(alignment);
+    return static_cast<int8_t>(nearbyint(dorado::utils::compute_quality_score(1.0 - accuracy.snp)));
+}
+
+}  // namespace
+
+namespace dorado::secondary {
+
 /** Populate an array of dwells per base.
  *
  *  \param alignment an htslib alignment.
  *  \param ret_dwells return vector of dwells.
  *  \returns status of dwell computation (success, no dwell tags or bad alignment).
  */
-enum class CalcDwellsReturnValue {
-    SUCCESS,
-    NO_DWELL_TAG,
-    BAD_ALIGNMENT,
-};
 CalcDwellsReturnValue calculate_dwells(const bam1_t *alignment, std::vector<int8_t> &ret_dwells) {
     ret_dwells.clear();
 
@@ -133,34 +151,6 @@ CalcDwellsReturnValue calculate_dwells(const bam1_t *alignment, std::vector<int8
 
     return CalcDwellsReturnValue::SUCCESS;
 }
-
-size_t aligned_ref_pos_from_cigar(const uint32_t *cigar, const uint32_t n_cigar) {
-    uint32_t aligned_ref_pos = 0;
-    for (size_t ci = 0; ci < n_cigar; ++ci) {
-        const uint32_t cigar_len = cigar[ci] >> 4;
-        const uint8_t cigar_op = cigar[ci] & 0xf;
-        if ((cigar_op == BAM_CMATCH) || (cigar_op == BAM_CDEL) || (cigar_op == BAM_CEQUAL) ||
-            (cigar_op == BAM_CDIFF)) {
-            aligned_ref_pos += cigar_len;
-        }
-    }
-    return aligned_ref_pos;
-}
-
-double compute_logprob(const double p) {
-    const double e = 1.0 - p;
-    return (e <= 0.0) ? 60.0 : (e >= 1.0) ? 0.0 : (-10.0 * log10(e));
-}
-
-int8_t compute_snp_qv(const bam1_t *alignment) {
-    const dorado::utils::AlignmentAccuracy accuracy =
-            dorado::utils::compute_accuracy_from_cigar(alignment);
-    return static_cast<int8_t>(nearbyint(compute_logprob(accuracy.snp)));
-}
-
-}  // namespace
-
-namespace dorado::secondary {
 
 /** Constructs a ReadAlignmentData data structure.
  *

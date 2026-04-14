@@ -3,6 +3,7 @@
 #include "hts_utils/FastxRandomReader.h"
 #include "local_haplotagging.h"
 #include "secondary/common/bam_file.h"
+#include "secondary/features/medaka_read_matrix.h"
 #include "sequence_utility.h"
 #include "types.h"
 
@@ -379,6 +380,81 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false);
         CATCH_CHECK(result3.variants.empty());
     }
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen normal case", TEST_GROUP) {
+    kadayashi::medaka_feature_matrix_options_t medaka_feature_matrix_options = {
+            .include_dwells = true,
+            .include_haplotype_column = true,
+            .include_snp_qv = true,
+            .min_mapq = 1,
+            .num_dtypes = 1,
+            .dtypes = {},
+            .tag_name = "",
+            .tag_value = 0,
+            .tag_keep_missing = false,
+            .readgroup = "",
+            .disable_read_packing = false,
+            .hap_source = kadayashi::USE_TAG_FROM_HASHTABLE,
+            .max_reads = 100,
+            .right_align_insertions = true,
+            .min_snp_accuracy = 0.0};
+    kadayashi::str2int_t qname2hp;
+
+    const std::filesystem::path test_data_dir =
+            get_data_dir("variant") / "test-04-kadayashi-featmatgen";
+    const std::filesystem::path fn_bam = test_data_dir / "in_aln_chr20_10M_10M1k.bam";
+    const std::filesystem::path fn_out_expected =
+            test_data_dir / "outexpected_chr20_10M_10M1k.mfmdump.tsv";
+
+    dorado::secondary::BamFile bam_file(fn_bam, 1);
+    CATCH_REQUIRE(bam_file.fp());
+    CATCH_REQUIRE(bam_file.idx());
+    CATCH_REQUIRE(bam_file.hdr());
+
+    const std::string ref_name = "ref";
+    const uint32_t ref_start = 0;
+    const uint32_t ref_end = 1000;
+    const dorado::secondary::ReadAlignmentData mfm = kadayashi::gen_medaka_feature_matrix_wrapper(
+            bam_file, ref_name, ref_start, ref_end, {}, medaka_feature_matrix_options);
+    const std::string medaka_feature_matrix_string = kadayashi::print_medaka_feature_matrix(mfm);
+
+    std::string medaka_feature_matrix_string_expected;
+    std::ifstream fp_out_expected(fn_out_expected);
+    std::string line;
+    while (std::getline(fp_out_expected, line)) {
+        medaka_feature_matrix_string_expected += line;
+        medaka_feature_matrix_string_expected += '\n';
+    }
+
+    CATCH_CHECK(medaka_feature_matrix_string == medaka_feature_matrix_string_expected);
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen no input", TEST_GROUP) {
+    const std::filesystem::path test_data_dir =
+            get_data_dir("variant") / "test-04-kadayashi-featmatgen";
+    const std::filesystem::path fn_in_empty = test_data_dir / "in_aln_almostempty.bam";
+    dorado::secondary::BamFile bam_file(fn_in_empty, 1);
+    kadayashi::medaka_feature_matrix_options_t medaka_feature_matrix_options{
+            .include_dwells = true,
+            .include_haplotype_column = true,
+            .include_snp_qv = true,
+            .min_mapq = 1,
+            .num_dtypes = 1,
+            .dtypes = {},
+            .tag_name = "",
+            .tag_value = 0,
+            .tag_keep_missing = false,
+            .readgroup = "",
+            .disable_read_packing = false,
+            .hap_source = kadayashi::USE_TAG_FROM_HASHTABLE,
+            .max_reads = 100,
+            .right_align_insertions = true,
+            .min_snp_accuracy = 0.0};
+    const dorado::secondary::ReadAlignmentData mfm = kadayashi::gen_medaka_feature_matrix_wrapper(
+            bam_file, "ref", 0, 1000, {}, medaka_feature_matrix_options);
+    CATCH_CHECK(mfm.n_pos == 0);
+    CATCH_CHECK(mfm.n_reads == 0);
 }
 
 }  // namespace kadayashi::tests

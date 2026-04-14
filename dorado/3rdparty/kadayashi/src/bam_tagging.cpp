@@ -1,9 +1,9 @@
 #include "bam_tagging.h"
 
-#include "bam_file.h"
 #include "kadayashi_utils.h"
 #include "local_haplotagging.h"
 #include "pipeline.h"
+#include "secondary/common/bam_file.h"
 
 #include <htslib/bgzf.h>
 #include <htslib/hts.h>
@@ -95,7 +95,7 @@ int write_haptagged_bam_given_bin_and_itvl(const std::filesystem::path &fn_bam,
                 "[kdys::{}] failed to parse region string (string={} stat={}) or range not fully "
                 "specified "
                 "(is_whole_chrom={} (need to provide start&end))\n",
-                __func__, itvl.data(), region.is_parse_success ? "true" : "false",
+                __func__, itvl, region.is_parse_success ? "true" : "false",
                 region.is_whole_chrom ? "true" : "false");
         return 1;
     }
@@ -204,15 +204,15 @@ int write_haptagged_bam_given_hashtable_and_multiple_itvls(
         }
 
         BamPtr aln = BamPtr(bam_init1(), BamDestructor());
-        for (auto &_ : query_interavls[chrom]) {
-            std::string itvl_s = chrom;
-            itvl_s.append(":");
-            itvl_s.append(std::to_string(_.first));
-            itvl_s.append("-");
-            itvl_s.append(std::to_string(_.second));
-            LOG_TRACE("[kdys::{}] writing bam: {}\n", __func__, itvl_s);
+        for (const std::pair<uint32_t, uint32_t> &query_itvl : query_interavls[chrom]) {
+            std::string query_itvl_s = chrom;
+            query_itvl_s.append(":");
+            query_itvl_s.append(std::to_string(query_itvl.first));
+            query_itvl_s.append("-");
+            query_itvl_s.append(std::to_string(query_itvl.second));
+            LOG_TRACE("[kdys::{}] writing bam: {}\n", __func__, query_itvl_s);
 
-            HtsItrPtr bamitr = HtsItrPtr(sam_itr_querys(hf.idx(), hf.hdr(), itvl_s.c_str()),
+            HtsItrPtr bamitr = HtsItrPtr(sam_itr_querys(hf.idx(), hf.hdr(), query_itvl_s.c_str()),
                                          HtsItrDestructor());
             int haptag;
             while (sam_itr_next(hf.fp(), bamitr.get(), aln.get()) >= 0) {

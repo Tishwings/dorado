@@ -2,6 +2,7 @@
 
 #include "ketopt.h"
 #include "resources.h"
+#include "string_utils.h"
 
 #include <spdlog/spdlog.h>
 #include <sys/stat.h>
@@ -33,7 +34,7 @@ static ko_longopt_t longopts[] = {
         // 403 vacant
         {"min-site-ratio", ko_required_argument,404},
         {"use-simple", ko_no_argument, 405},
-        {"varcall-use-dvr", ko_no_argument, 406}, // note: bad CLI but don't break older scripts at least for now; 
+        {"varcall-use-dvr", ko_no_argument, 406}, // note: bad CLI but don't break older scripts at least for now;
                                           // added for varcall to use dvr; mutually exclusive with 405
         {"suppress-refbase-n", ko_no_argument, 501}, // varcall, when writing vcf, omit entries where ref base is N
         {"verbose", ko_no_argument, 998},
@@ -169,8 +170,6 @@ cliopt_t parse_cli(int argc, char *argv[]) {
             print_help_cliopt_t(clio);
             clio.is_print_help = true;
             return clio;
-            // } else if (c == 'v') {
-            //     clio_verbose++;
         } else if (c == 'o') {
             clio.output_prefix = std::filesystem::path(opt.arg);
         } else if (c == 't') {
@@ -484,7 +483,7 @@ cliopt_phaseglobal_t parse_cli_phaseglobal(int argc, char *argv[]) {
 static ko_longopt_t longopts_varcall[] = {
         {"region", ko_required_argument,   301},  // specify one region to work on, mostly a debug option. String considered 0-index.
         {"strict-intervals", ko_no_argument, 302},  // if set, do not allow expanding the requested interval(s)
-        {"use-dvr", ko_no_argument, 303}, // note: bad CLI but don't break older scripts at least for now; 
+        {"use-dvr", ko_no_argument, 303}, // note: bad CLI but don't break older scripts at least for now;
                                           // added for varcall to use dvr; mutually exclusive with 405
         {"suppress-refbase-n", ko_no_argument, 304}, // varcall, when writing vcf, omit entries where ref base is N
         {"max-gc-seqdiv", ko_required_argument, 305},  // varcall, max gap-compressed sequence divergence
@@ -687,6 +686,128 @@ cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]) {
         clio.is_valid = false;
         return clio;
     }
+
+    return clio;
+}
+
+// clang-format off
+static ko_longopt_t longopts_featmatgen[] = {
+    {"exclude-dwells",        ko_no_argument,      301},
+    {"exclude-haplotag",      ko_no_argument,      302},
+    {"exclude-snp-qv",        ko_no_argument,      303},
+    {"min-mapq",              ko_required_argument,304},
+    {"readgroup",             ko_required_argument,305},
+    {"disable-read-packing",  ko_no_argument,      306},
+    {"max-lanes",             ko_required_argument,307},
+    {"left-align-insertions", ko_no_argument,      308},
+    {"min-snp-accuracy",      ko_required_argument,309},
+    {"region",                ko_required_argument,310},
+    {"use-medaka",            ko_no_argument,      311}
+};
+void print_help_cliopt_featmatgen_t(cliopt_featmatgen_t &clio) {
+    fprintf(stdout, "kadayashi %s\n", KADAYASHI_VERSION);
+    fprintf(stdout, "Usage: kadayashi featmatgen [-r ref:start-end -o fn_out -t threads] fn_ref fn_bam\n");
+    fprintf(stdout, "Options:\n");
+    fprintf(stdout, "  -r/--region   [opt] Generate feature matrix for the given region and write to file.\n");
+    fprintf(stdout, "  -o            [opt] Output file name. Without -r no output will be written.\n");
+    fprintf(stdout, "  --use-medaka  [opt] Use medaka's feature generator instead.\n");
+    fprintf(stdout, "  -h            [   ] Print this message and exit.\n");
+}
+// clang-format on
+
+cliopt_featmatgen_t parse_clio_featmatgen(int argc, char *argv[]) {
+    cliopt_featmatgen_t clio;
+    opt = KETOPT_INIT;
+    int c = 0;
+    if (argc < 2) {
+        print_help_cliopt_featmatgen_t(clio);
+        clio.is_valid = false;
+        return clio;
+    }
+
+    while ((c = ketopt(&opt, argc, argv, 1, "ho:t:r:", longopts_featmatgen)) >= 0) {
+        if (c == 'h') {
+            print_help_cliopt_featmatgen_t(clio);
+            clio.is_print_help = false;
+            return clio;
+        } else if (c == 'o') {
+            clio.fn_out = opt.arg;
+        } else if (c == 't') {
+            bool ok = kadayashi::stoi_catch(clio.n_threads, opt.arg);
+            if (!ok || clio.n_threads < 0) {
+                spdlog::error("[kdys::{}] invalid argment from -t . Should be a positive integer.",
+                              __func__);
+                clio.is_valid = false;
+                return clio;
+            }
+        } else if (c == 'r' || c == 110) {
+            clio.itvl_str = opt.arg;
+        } else if (c == 301) {
+            clio.include_dwells = false;
+        } else if (c == 302) {
+            clio.include_haplotype_column = false;
+        } else if (c == 303) {
+            clio.include_snp_qv = false;
+        } else if (c == 304) {
+            bool ok = kadayashi::stoi_catch(clio.min_mapq, opt.arg);
+            if (!ok || clio.min_mapq < 0) {
+                spdlog::error(
+                        "[kdys::{}] invalid argment from --min-mapq . Should be a positive "
+                        "integer.",
+                        __func__);
+                clio.is_valid = false;
+                return clio;
+            }
+        } else if (c == 305) {
+            clio.readgroup = opt.arg;
+        } else if (c == 306) {
+            clio.disable_read_packing = true;
+        } else if (c == 307) {
+            bool ok = kadayashi::stoi_catch(clio.max_lanes, opt.arg);
+            if (!ok || clio.max_lanes <= 0) {
+                spdlog::error(
+                        "[kdys::{}] invalid argment from --max-lanes. Should be a positive "
+                        "integer.",
+                        __func__);
+                clio.is_valid = false;
+                return clio;
+            }
+        } else if (c == 308) {
+            clio.right_align_insertions = false;
+        } else if (c == 309) {
+            bool ok = kadayashi::stod_catch(clio.min_snp_accuracy, opt.arg);
+            if (!ok || clio.min_snp_accuracy >= 1.0 || clio.min_snp_accuracy < 0) {
+                spdlog::error(
+                        "[kdys::{}] invalid argment from --min-snp-accuracy. Should be a double in "
+                        "[0.0, 1.0).",
+                        __func__);
+                clio.is_valid = false;
+                return clio;
+            }
+        } else if (c == 311) {
+            clio.is_use_medaka = true;
+        } else if (c == '?') {
+            spdlog::error("[kdys::{}] unknown option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
+            clio.is_valid = false;
+            return clio;
+        } else if (c == ':') {
+            spdlog::error("[kdys::{}] missing option argument in \"{}\"\n", __func__,
+                          argv[opt.i - 1]);
+            clio.is_valid = false;
+            return clio;
+        }
+    }
+    if (argc - opt.ind != 2) {
+        spdlog::error("[kdys::{}] invalid number of positional arguments ({})\n", __func__,
+                      argc - opt.ind);
+        print_help_cliopt_featmatgen_t(clio);
+        clio.is_valid = false;
+        return clio;
+    }
+
+    clio.fn_in_ref = argv[opt.ind];
+    clio.fn_in_bam = argv[opt.ind + 1];
 
     return clio;
 }

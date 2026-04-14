@@ -1,9 +1,11 @@
 #pragma once
 
 #include "secondary/common/bam_file.h"
+#include "secondary/features/medaka_read_matrix.h"
 #include "types.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -15,18 +17,6 @@ struct faidx_t;
 struct bam1_t;
 
 namespace kadayashi {
-/**
- * @brief Construct a htslib-style region string (1-index, inclusive–inclusive)
- *        from 0-index, inclusive-exclusive coordinates.
- *
- * @param ref_name Reference sequence name.
- * @param start    0-based inclusive start position.
- * @param end      0-based exclusive end position.
- * @return Region string in the format "ref_name:start-end".
- */
-std::string create_region_string(const std::string_view ref_name,
-                                 const uint32_t start,
-                                 const uint32_t end);
 
 /**
  * @brief  Make a hashtable that maps read names to read haptags
@@ -379,5 +369,80 @@ varcall_result_t kadayashi_phase_and_varcall_wrapper(samFile *fp_bam,
                                                      const float min_strand_cov_frac,
                                                      const float max_gapcompressed_seqdiv,
                                                      const bool use_dvr_for_phasing);
+
+typedef dorado::secondary::ReadAlignmentData medaka_feature_matrix_t;
+/*
+ - Values: 0=uninitiated, 1234=ACGT, 5=del(or inside minor columns)
+   If at position X, read#1 has an insertion of length five and read#2 has ins of
+    length three, read#2's insertion will be like [55111] (right-aligned) or
+    [11155] (left-aligned).
+ - Major positions are aboslute coordinate wrt the reference sequence.
+ - Minor positions are 0-valued except for in insertion.
+ - Reference sequence is not in the matrix.
+ - Reads in a lane are separated by at least five consecutive value 0 entries.
+ - Example:
+        pos 0123456789
+        ref AACCCGGGGG
+        r1  AA---GGGGG
+                ^TT (insertion)
+                  ^TT
+        r2  AA--CGGG
+                  ^TTT
+    matrix will be:
+      major 012344456666789
+      minor 000001200123000
+      ref   AACCC--GG---GGG
+      lane1 115554433544300
+      lane2 115525533444300
+ */
+
+enum haplotagsource { FORCE_UNPHASED, USE_BAM_HAP_TAG, USE_TAG_FROM_HASHTABLE };
+
+struct medaka_feature_matrix_options_t {
+    bool include_dwells;
+    bool include_haplotype_column;
+    bool include_snp_qv;
+    int min_mapq;
+
+    const int64_t num_dtypes;  // medaka: this should be 1 when `dtypes` is empty
+    const std::vector<std::string>
+            &dtypes;  // is used to retrieve data from DT tag, if num_types>1 then
+                      // we will have extra feature dimensions in the mat.
+    const std::string &tag_name;
+    const int32_t tag_value;
+    const bool tag_keep_missing;
+    std::string readgroup;
+    bool disable_read_packing;  // medaka: row_per_read ; note that enabling this
+                                // will NOT automatically set `max_reads` to a large value.
+                                // Even if we set `max_reads` to be big manually,
+                                // the original feature mat gen has a hardcoded cap at 100 too
+                                // which is included in this impl. Therefore if a query region
+                                // has more than 100 reads and read packing is disabled,
+                                // reads closer to the right side of the region will simply
+                                // not be included.
+    haplotagsource hap_source;
+    int max_reads;
+    bool right_align_insertions;
+    double min_snp_accuracy;
+};
+
+medaka_feature_matrix_t gen_medaka_feature_matrix(
+        dorado::secondary::BamFileView &hf,
+        std::string_view refname,
+        const uint32_t itvl_start,
+        const uint32_t itvl_end,
+        const std::unordered_map<std::string, int32_t> &qname2hp,
+        const medaka_feature_matrix_options_t &options);
+
+medaka_feature_matrix_t gen_medaka_feature_matrix_wrapper(
+        dorado::secondary::BamFile &bam_file,
+        std::string refname,
+        uint32_t itvl_start,
+        uint32_t itvl_end,
+        const std::unordered_map<std::string, int32_t> &qname2hp,
+        const medaka_feature_matrix_options_t &options);
+
+void print_medaka_feature_matrix(const std::string &fn_out, const medaka_feature_matrix_t &mfm);
+std::string print_medaka_feature_matrix(const medaka_feature_matrix_t &mfm);
 
 }  // namespace kadayashi

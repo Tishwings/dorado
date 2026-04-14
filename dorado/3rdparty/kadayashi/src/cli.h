@@ -11,7 +11,7 @@
 #define BAM_THREAD_RATIO 3
 #define BAM_THREAD_MULT 4
 
-#define KADAYASHI_VERSION "v0.1-r71"
+#define KADAYASHI_VERSION "v0.1-r73"
 
 struct cliopt_t {
     bool is_valid = true;
@@ -86,3 +86,32 @@ struct cliopt_varcall_t {
 };
 void print_help_varcall_cli(cliopt_varcall_t &clio);
 cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]);
+
+struct cliopt_featmatgen_t {
+    bool is_valid{true};
+    bool is_print_help{false};
+    int n_threads{1};
+    std::string itvl_str{};
+
+    // IO
+    std::filesystem::path fn_in_ref{};
+    std::filesystem::path fn_in_bam{};
+    std::filesystem::path fn_out{"kadayashi.featmatgen.out"};
+
+    // toggle
+    bool is_use_medaka{false};
+
+    // to init medaka_feature_matrix_options_t
+    // (omitted: dypte, tag, hap_source)
+    bool include_dwells{true};
+    bool include_haplotype_column{true};
+    bool include_snp_qv{true};
+    int min_mapq{1};
+    std::string readgroup{};
+    bool disable_read_packing{false};  // see medaka_feature_matrix_options_t comment
+    int max_lanes{100};
+    bool right_align_insertions{true};
+    double min_snp_accuracy{0.0};
+};
+
+cliopt_featmatgen_t parse_clio_featmatgen(int argc, char *argv[]);

@@ -11,6 +11,7 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/kadayashi_options.h
         ${PUBLIC_BASE}/kadayashi_utils.h
         ${PUBLIC_BASE}/variant_candidate_source.h
+        ${PUBLIC_BASE}/medaka_read_matrix.h
     PRIVATE
         decoder_base.cpp
         decoder_factory.cpp
@@ -26,7 +27,6 @@ target_sources(dorado_secondary
         medaka_counts.cpp
         medaka_counts.h
         medaka_read_matrix.cpp
-        medaka_read_matrix.h
 )
 
 target_include_directories(dorado_secondary
