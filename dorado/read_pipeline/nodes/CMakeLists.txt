@@ -17,6 +17,7 @@ dorado_add_library(
         ModBaseChunkCallerNode.h
         NullNode.h
         PairingNode.h
+        PipelinePools.h # Not technically a node, but depends on them so can't go in base.
         PolyACalculatorNode.h
         ReadFilterNode.h
         ReadForwarderNode.h

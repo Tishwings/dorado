@@ -307,11 +307,14 @@ int aligner(int argc, char* argv[]) {
         writers.push_back(std::move(summary_writer));
     }
 
+    // Setup pools. These are referenced by the pipeline so must outlive it.
+    utils::concurrency::MultiQueueThreadPool aligner_pool(aligner_threads, "align_node_pool");
+
     PipelineDescriptor pipeline_desc;
     auto writer_node = pipeline_desc.add_node<WriterNode>({}, std::move(writers));
     auto aligner_node = pipeline_desc.add_node<AlignerNode>(
             {writer_node}, index_file_access, bed_file_access, align_info->reference_file,
-            align_info->bed_file, align_info->minimap_options, aligner_threads);
+            align_info->bed_file, align_info->minimap_options, aligner_pool);
 
     // Create the Pipeline from our description.
     std::vector<dorado::stats::StatsReporter> stats_reporters;

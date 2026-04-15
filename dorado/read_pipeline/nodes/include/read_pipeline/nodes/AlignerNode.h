@@ -35,10 +35,10 @@ public:
                 const std::string& index_file,
                 const std::string& bed_file,
                 const alignment::Minimap2Options& options,
-                int threads);
+                utils::concurrency::MultiQueueThreadPool& thread_pool);
     AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_access,
                 std::shared_ptr<alignment::BedFileAccess> bed_file_access,
-                std::shared_ptr<utils::concurrency::MultiQueueThreadPool> thread_pool,
+                utils::concurrency::MultiQueueThreadPool& thread_pool,
                 utils::concurrency::TaskPriority pipeline_priority);
     ~AlignerNode();
 
@@ -62,7 +62,6 @@ private:
     void align_read_common(ReadCommon& read_common, mm_tbuf_t* tbuf);
     void add_bed_hits_to_record(const std::string& genome, bam1_t* record);
 
-    std::shared_ptr<utils::concurrency::MultiQueueThreadPool> m_thread_pool{};
     std::shared_ptr<const alignment::Minimap2Index> m_index_for_bam_messages{};
     std::shared_ptr<const alignment::BedFile> m_bedfile_for_bam_messages{};
     std::vector<std::string> m_header_sequence_names{};

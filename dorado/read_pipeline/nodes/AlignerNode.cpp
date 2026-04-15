@@ -73,15 +73,12 @@ AlignerNode::AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_
                          const std::string& index_file,
                          const std::string& bed_file,
                          const alignment::Minimap2Options& options,
-                         int threads)
+                         utils::concurrency::MultiQueueThreadPool& thread_pool)
         : MessageSink(MAX_INPUT_QUEUE_SIZE, 1),
-          m_thread_pool(
-                  std::make_shared<utils::concurrency::MultiQueueThreadPool>(threads,
-                                                                             "align_node_pool")),
           m_index_for_bam_messages(load_and_get_index(*index_file_access, index_file, options)),
           m_index_file_access(std::move(index_file_access)),
           m_bed_file_access(std::move(bed_file_access)),
-          m_task_executor(*m_thread_pool,
+          m_task_executor(thread_pool,
                           utils::concurrency::TaskPriority::normal,
                           MAX_PROCESSING_QUEUE_SIZE) {
     if (!bed_file.empty()) {
@@ -103,13 +100,12 @@ AlignerNode::AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_
 
 AlignerNode::AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_access,
                          std::shared_ptr<alignment::BedFileAccess> bed_file_access,
-                         std::shared_ptr<utils::concurrency::MultiQueueThreadPool> thread_pool,
+                         utils::concurrency::MultiQueueThreadPool& thread_pool,
                          utils::concurrency::TaskPriority pipeline_priority)
         : MessageSink(MAX_INPUT_QUEUE_SIZE, 1),
-          m_thread_pool(std::move(thread_pool)),
           m_index_file_access(std::move(index_file_access)),
           m_bed_file_access(std::move(bed_file_access)),
-          m_task_executor(*m_thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
+          m_task_executor(thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
 
 AlignerNode::~AlignerNode() { stop_input_processing(utils::AsyncQueueTerminateFast::Yes); }
 

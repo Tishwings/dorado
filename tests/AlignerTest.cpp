@@ -78,8 +78,9 @@ protected:
         if (!bed_file.empty()) {
             bed_file_access->load_bedfile(bed_file);
         }
+        dorado::utils::concurrency::MultiQueueThreadPool thread_pool(threads);
         create_pipeline(index_file_access, bed_file_access, reference_file, bed_file, options,
-                        threads);
+                        thread_pool);
 
         auto client_info = std::make_shared<dorado::DefaultClientInfo>();
         auto alignment_info = std::make_shared<dorado::alignment::AlignmentInfo>();
@@ -111,7 +112,7 @@ protected:
         CATCH_CHECK(index_file_access->load_index(loaded_align_info->reference_file,
                                                   loaded_align_info->minimap_options, 2) ==
                     dorado::alignment::IndexLoadResult::success);
-        auto thread_pool = std::make_shared<dorado::utils::concurrency::MultiQueueThreadPool>(2);
+        dorado::utils::concurrency::MultiQueueThreadPool thread_pool(2);
         create_pipeline(index_file_access, bed_file_access, thread_pool,
                         dorado::utils::concurrency::TaskPriority::normal);
 

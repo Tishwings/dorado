@@ -367,6 +367,9 @@ int duplex(int argc, char* argv[]) {
             writers.push_back(std::move(hts_file_writer));
         }
 
+        // Setup pools. These are referenced by the pipeline so must outlive it.
+        std::unique_ptr<utils::concurrency::MultiQueueThreadPool> aligner_pool;
+
         PipelineDescriptor pipeline_desc;
         auto hts_writer = PipelineDescriptor::InvalidNodeHandle;
         auto aligner = PipelineDescriptor::InvalidNodeHandle;
@@ -390,9 +393,12 @@ int duplex(int argc, char* argv[]) {
                 }
             }
 
-            aligner = pipeline_desc.add_node<AlignerNode>({}, index_file_access, bed_file_access,
-                                                          ref, bed, *minimap_options,
-                                                          std::thread::hardware_concurrency());
+            const std::size_t aligner_threads = std::thread::hardware_concurrency();
+            aligner_pool = std::make_unique<utils::concurrency::MultiQueueThreadPool>(
+                    aligner_threads, "align_node_pool");
+            aligner =
+                    pipeline_desc.add_node<AlignerNode>({}, index_file_access, bed_file_access, ref,
+                                                        bed, *minimap_options, *aligner_pool);
             pipeline_desc.add_node_sink(aligner, converted_reads_sink);
             converted_reads_sink = aligner;
         }
