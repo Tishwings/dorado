@@ -1691,7 +1691,7 @@ CATCH_TEST_CASE("synthetic_test_06-calculate_read_alignment_fix_for_high_coverag
     }
 }
 
-CATCH_TEST_CASE("synthetic_test_07-populate_refseq_tensor", TEST_GROUP) {
+CATCH_TEST_CASE("synthetic_test_07-populate_draft_seq_tensor", TEST_GROUP) {
     // clang-format off
     const std::vector<std::string> reference_sequences{
         "ACTGAACTGA",
@@ -1810,7 +1810,7 @@ CATCH_TEST_CASE("synthetic_test_07-populate_refseq_tensor", TEST_GROUP) {
     };
     // clang-format on
 
-    // Create a dummpy encoder
+    // Create a dummy encoder
     const std::filesystem::path test_data_dir = get_data_dir("polish") / "test-01-supertiny";
     const std::filesystem::path in_ref_fn{test_data_dir / "draft.fasta.gz"};
     const std::filesystem::path in_bam_aln_fn{test_data_dir / "calls_to_draft.bam"};
@@ -1841,7 +1841,7 @@ CATCH_TEST_CASE("synthetic_test_07-populate_refseq_tensor", TEST_GROUP) {
 
     for (size_t i = 0; i < samples.size(); ++i) {
         CATCH_SECTION("Example " + std::to_string(i)) {
-            torch::Tensor result = encoder.populate_refseq_tensor(
+            torch::Tensor result = encoder.populate_draft_seq_tensor(
                     samples[i], reference_sequences[samples[i].seq_id]);
             CATCH_CHECK(result.equal(expected_results[i]));
         }

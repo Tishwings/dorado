@@ -270,6 +270,7 @@ process_single_bam_window(
         const int64_t tiled_ext_min_cov,
         const float tiled_ext_cov_fract,
         const int32_t min_depth,
+        const bool model_requires_draft,
         const int32_t tid) {
     if ((bam_window.seq_id < 0) || (bam_window.seq_id >= std::ssize(draft_lens)) ||
         (bam_window.seq_id >= std::ssize(draft_seqs))) {
@@ -327,9 +328,8 @@ process_single_bam_window(
             "{}:{}-{}",
             tid, ref_name, (bam_window.start + 1), bam_window.end);
 
-    const secondary::Sample sample =
-            encoder.encode_region(ref_name, bam_window.start, bam_window.end, bam_window.seq_id,
-                                  kadayashi_result.qname2hp);
+    secondary::Sample sample = encoder.encode_region(ref_name, bam_window.start, bam_window.end,
+                                                     bam_window.seq_id, kadayashi_result.qname2hp);
 
     spdlog::debug(
             "[process_single_bam_window tid = {}] Generated sample for region: {}:{}-{}, sample: "
@@ -397,6 +397,13 @@ process_single_bam_window(
         }
     } else {
         local_samples = split_samples(std::move(local_samples), window_len, window_overlap);
+    }
+
+    if (model_requires_draft) {
+        const std::string_view draft_seq(draft_seqs[bam_window.seq_id]);
+        for (auto& local_sample : local_samples) {
+            local_sample.draft_seq = {encoder.populate_draft_seq_tensor(local_sample, draft_seq)};
+        }
     }
 
     spdlog::debug(
@@ -470,7 +477,7 @@ void worker_sample_producer(
                         candidate_source, candidate_trees_from_file, ploidy, pass_min_qual,
                         window_len, window_overlap, variant_flanking_bases, tiled_regions,
                         tiled_ext_flanks, tiled_ext_major, tiled_ext_min_cov, tiled_ext_cov_fract,
-                        min_depth, tid);
+                        min_depth, resources.models[0]->requires_ref(), tid);
                 stats.add("processed",
                           static_cast<double>(std::max<int64_t>(
                                   0, bam_window.end_no_overlap - bam_window.start_no_overlap)));
@@ -795,7 +802,6 @@ void worker_infer_samples_in_parallel(
         const std::vector<c10::optional<c10::Stream>>& streams,
         const std::vector<std::unique_ptr<secondary::EncoderBase>>& encoders,
         [[maybe_unused]] const std::vector<std::pair<std::string, int64_t>>& draft_lens,
-        const std::vector<std::string>& draft_seqs,
         const bool continue_on_exception) {
     utils::ScopedProfileRange spr1("infer_samples_in_parallel", 2);
 
@@ -803,9 +809,8 @@ void worker_infer_samples_in_parallel(
         throw std::runtime_error("No models have been initialized, cannot run inference.");
     }
 
-    auto batch_infer = [&encoders, &draft_lens, &draft_seqs](secondary::ModelTorchBase& model,
-                                                             const InferenceData& batch,
-                                                             const int32_t tid) {
+    auto batch_infer = [&encoders, &draft_lens](secondary::ModelTorchBase& model,
+                                                const InferenceData& batch, const int32_t tid) {
         utils::ScopedProfileRange spr2("infer_samples_in_parallel-batch_infer", 3);
         timer::TimerHighRes timer_total;
 
@@ -845,20 +850,14 @@ void worker_infer_samples_in_parallel(
 
             spdlog::trace("In batching, model requires ref: {}", model.requires_ref());
             if (model.requires_ref()) {
+                if (!batch.samples[0].draft_seq) {
+                    throw std::runtime_error{
+                            "Model requires reference but these are missing from samples."};
+                }
                 std::vector<torch::Tensor> refseqs;
                 refseqs.reserve(std::ssize(batch.samples));
                 for (const auto& sample : batch.samples) {
-                    if (sample.seq_id > std::ssize(draft_seqs)) {
-                        throw std::runtime_error{"Sample sequence id " +
-                                                 std::to_string(sample.seq_id) +
-                                                 "is out of range for the number of provided "
-                                                 "reference sequences (" +
-                                                 std::to_string(std::ssize(draft_seqs)) + ")"};
-                    }
-                    refseqs.emplace_back(
-                            encoders[tid]
-                                    ->populate_refseq_tensor(sample, draft_seqs[sample.seq_id])
-                                    .view({-1, 1, 1}));
+                    refseqs.emplace_back(sample.draft_seq->view({-1, 1, 1}));
                 }
                 batched_data.refseqs = {encoders[tid]
                                                 ->collate(std::move(refseqs), use_pinned_memory)

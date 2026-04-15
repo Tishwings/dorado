@@ -369,9 +369,10 @@ secondary::Sample EncoderCounts::encode_region(
     return sample;
 }
 
-at::Tensor EncoderCounts::populate_refseq_tensor([[maybe_unused]] const secondary::Sample& sample,
-                                                 [[maybe_unused]] const std::string_view& ref_seq) {
-    throw std::runtime_error{"Reference sequence being requested for an unsupported Encoder"};
+at::Tensor EncoderCounts::populate_draft_seq_tensor(
+        [[maybe_unused]] const secondary::Sample& sample,
+        [[maybe_unused]] const std::string_view draft_seq) {
+    throw std::runtime_error{"Draft sequence being requested for an unsupported Encoder"};
     // return at::empty({});
 }
 

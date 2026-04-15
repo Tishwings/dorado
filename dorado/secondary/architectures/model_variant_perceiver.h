@@ -279,12 +279,11 @@ public:
      * \return Logits for positionwise predictions (num_positions, num_slots, num_classes).
      */
     at::Tensor forward(at::Tensor x) override;
-    at::Tensor forward(at::Tensor x, const std::optional<at::Tensor>& ref_seqs);
+    at::Tensor forward(const at::Tensor& x, const std::optional<at::Tensor>& ref_seqs);
     /**
      * \brief Predict on a batch with device and precision handling.
      */
-    at::Tensor predict_on_batch(dorado::variant::BatchedData batched_data) override;
-    at::Tensor predict_on_device_batch(dorado::variant::BatchedData batched_data) override;
+    at::Tensor predict_on_device_batch(const BatchedData& batched_data) override;
 
     double estimate_batch_memory(const std::vector<int64_t>& batch_tensor_shape) const override;
 

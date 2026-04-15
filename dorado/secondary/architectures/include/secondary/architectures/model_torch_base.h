@@ -63,25 +63,20 @@ public:
     /**
      * \brief Predict on a batch with device and precision handling.
      */
-    virtual at::Tensor predict_on_batch(at::Tensor x);
-    virtual at::Tensor predict_on_batch(dorado::variant::BatchedData batched_data);
+    virtual at::Tensor predict_on_batch(BatchedData batched_data);
 
     /**
      * \brief Move an input batch to the model device before the serialized forward path.
      *        This intentionally avoids taking the model mutex so host-to-device copies can
      *        overlap with another worker's compute once the model has been fully initialized.
      */
-    virtual at::Tensor prepare_batch_input(at::Tensor x, bool non_blocking) const;
-    virtual dorado::variant::BatchedData prepare_batch_input(
-            dorado::variant::BatchedData batched_data,
-            bool non_blocking) const;
+    virtual BatchedData prepare_batch_input(BatchedData batched_data, bool non_blocking) const;
 
     /**
      * \brief Run the model on a batch that is already on the correct device / input precision.
      *        The returned tensor stays on the model device.
      */
-    virtual at::Tensor predict_on_device_batch(at::Tensor x);
-    virtual at::Tensor predict_on_device_batch(dorado::variant::BatchedData batched_data);
+    virtual at::Tensor predict_on_device_batch(const BatchedData &batched_data);
 
     /**
      * \brief Approximate memory consumption estimate given an input batch tensor shape.

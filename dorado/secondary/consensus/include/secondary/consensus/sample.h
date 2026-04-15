@@ -20,6 +20,7 @@ struct Sample {
     at::Tensor depth;
     std::vector<std::string> read_ids_left;
     std::vector<std::string> read_ids_right;
+    std::optional<at::Tensor> draft_seq{std::nullopt};
 
     int64_t start() const { return (std::empty(positions_major) ? -1 : (positions_major.front())); }
 

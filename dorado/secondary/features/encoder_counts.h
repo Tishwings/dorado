@@ -45,8 +45,8 @@ public:
             const int32_t seq_id,
             const std::unordered_map<std::string, int32_t>& haplotags) override;
 
-    at::Tensor populate_refseq_tensor(const secondary::Sample& sample,
-                                      const std::string_view& ref_seq) override;
+    at::Tensor populate_draft_seq_tensor(const secondary::Sample& sample,
+                                         const std::string_view draft_seq) override;
 
     at::Tensor collate(std::vector<at::Tensor> batch, bool pinned_memory) const override;
 

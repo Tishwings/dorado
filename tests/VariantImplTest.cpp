@@ -69,8 +69,8 @@ public:
         return {};
     }
 
-    at::Tensor populate_refseq_tensor([[maybe_unused]] const secondary::Sample& sample,
-                                      [[maybe_unused]] const std::string_view& refseq) override {
+    at::Tensor populate_draft_seq_tensor([[maybe_unused]] const secondary::Sample& sample,
+                                         [[maybe_unused]] const std::string_view refseq) override {
         return at::empty({});
     }
 
@@ -107,8 +107,8 @@ public:
         throw std::runtime_error{"Unexpected encode_region call."};
     }
 
-    at::Tensor populate_refseq_tensor([[maybe_unused]] const secondary::Sample& sample,
-                                      [[maybe_unused]] const std::string_view& refseq) override {
+    at::Tensor populate_draft_seq_tensor([[maybe_unused]] const secondary::Sample& sample,
+                                         [[maybe_unused]] const std::string_view refseq) override {
         return at::empty({});
     }
 
@@ -514,7 +514,7 @@ CATCH_TEST_CASE("batch and inference workflow functions operate on synthetic sam
         /// Run the unit under test.         ///
         ////////////////////////////////////////
         worker_infer_samples_in_parallel(batch_queue, decode_queue, models, worker_terminate,
-                                         ret_status, streams, encoders, draft_lens, {}, false);
+                                         ret_status, streams, encoders, draft_lens, false);
 
         ////////////////////////////////////////
         /// Eval.                            ///
@@ -645,6 +645,8 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
                     .variants = {simple_variant},
                     .phasing_breakpoints = {},
             }));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
 
     // Initialize the data for reduction, updated by worker_sample_producer.
     std::vector<ChromosomeReduceData> chrom_reduce_data(1);
@@ -723,6 +725,8 @@ CATCH_TEST_CASE("worker_sample_producer rejects bam windows with seq_id outside 
             StubEncoder::ExpectedRegion{"chr1", bam_window.start, bam_window.end,
                                         bam_window.seq_id},
             std::unordered_map<std::string, int32_t>{}, kadayashi::varcall_result_t{}));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
 
     // Initialize the data for reduction, updated by worker_sample_producer.
     std::vector<ChromosomeReduceData> chrom_reduce_data(1);
@@ -800,6 +804,8 @@ CATCH_TEST_CASE("worker_sample_producer rejects negative remaining_bam_regions",
                     .variants = {},
                     .phasing_breakpoints = {},
             }));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
 
     // Initialize the data for reduction, updated by worker_sample_producer.
     // The num_bam_regions and remaining_bam_regions are initialized to zero,
@@ -889,6 +895,8 @@ CATCH_TEST_CASE("worker_sample_producer handles migrated haplotagging with real 
     VariantResources resources;
     resources.encoders.emplace_back(make_haplotagging_encoder(in_ref_fn, in_bam_aln_fn));
     resources.encoders.emplace_back(make_haplotagging_encoder(in_ref_fn, in_bam_aln_fn));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
 
     // Create the reduction information updated by worker_sample_producer.
     std::vector<ChromosomeReduceData> chrom_reduce_data(draft_lens.size());

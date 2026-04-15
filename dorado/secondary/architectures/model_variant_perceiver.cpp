@@ -854,7 +854,8 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
 
 at::Tensor ModelVariantPerceiver::forward(at::Tensor x) { return forward_impl(x, {std::nullopt}); }
 
-at::Tensor ModelVariantPerceiver::forward(at::Tensor x, const std::optional<at::Tensor>& ref_seq) {
+at::Tensor ModelVariantPerceiver::forward(const at::Tensor& x,
+                                          const std::optional<at::Tensor>& ref_seq) {
     return forward_impl(x, ref_seq);
 }
 
@@ -1089,24 +1090,16 @@ at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x,
 }
 
 // Predict on a batch with device and precision handling.
-at::Tensor ModelVariantPerceiver::predict_on_device_batch(
-        dorado::variant::BatchedData batched_data) {
+at::Tensor ModelVariantPerceiver::predict_on_device_batch(const BatchedData& batched_data) {
     std::lock_guard<std::mutex> lock(m_mutex_write);
-    at::Tensor x = forward(std::move(batched_data.features), std::move(batched_data.refseqs));
+    at::Tensor x = batched_data.features;
+    x = forward(x, batched_data.refseqs);
     if (m_half_precision) {
         x = x.to(torch::kFloat);
     }
     if (m_normalise) {
         x = torch::softmax(x, -1);
     }
-    return x;
-}
-
-// Predict on a batch with device and precision handling.
-at::Tensor ModelVariantPerceiver::predict_on_batch(dorado::variant::BatchedData batched_data) {
-    prepare_batch_input(batched_data, false);
-    at::Tensor x = predict_on_device_batch(batched_data);
-    x = x.cpu();
     return x;
 }
 

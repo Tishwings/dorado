@@ -90,12 +90,12 @@ Sample slice_sample(const Sample& sample,
         ret.depth = ret.depth.clone();
     }
 
-    // if (sample.ref_seq) {
-    //     ret.ref_seq = {sample.ref_seq->index({at::indexing::Slice(idx_start, idx_end)})};
-    //     if (clone) {
-    //         ret.ref_seq = {ret.ref_seq->clone()};
-    //     }
-    // }
+    if (sample.draft_seq) {
+        ret.draft_seq = {sample.draft_seq->index({at::indexing::Slice(idx_start, idx_end)})};
+        if (clone) {
+            ret.draft_seq = {ret.draft_seq->clone()};
+        }
+    }
 
     return ret;
 }
@@ -168,6 +168,12 @@ void merge_adjacent_samples_in_place(Sample& lh, const Sample& rh) {
     // Merge the tensors.
     lh.features = at::cat({std::move(lh.features), rh.features});
     lh.depth = at::cat({std::move(lh.depth), rh.depth});
+
+    if ((lh.draft_seq) && (rh.draft_seq)) {
+        lh.draft_seq = {at::cat({std::move(*lh.draft_seq), *rh.draft_seq})};
+    } else {
+        lh.draft_seq = {std::nullopt};
+    }
 
     // Insert positions vectors.
     lh.positions_major.reserve(width + std::size(rh.positions_major));
