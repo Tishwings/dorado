@@ -16,4 +16,3 @@ Run a supertiny test case.
   > grep "\[E::" out/stderr || true
   Exit code: 0
   [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
-
