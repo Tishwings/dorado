@@ -1,5 +1,9 @@
 #include "compat/compat_utils.h"
 
+// For some reason AppleClang 2100.0.123.102 confuses ninja when this file is compiled, leading
+// to it being rebuilt and hence relinked into everything. Presumably this is because it's
+// completely empty after preprocessing. Adding this comment "fixes" the issue.
+
 #ifdef _WIN32
 
 #define WIN32_LEAN_AND_MEAN
