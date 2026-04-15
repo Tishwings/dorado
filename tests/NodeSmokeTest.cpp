@@ -472,7 +472,8 @@ DEFINE_TEST(NodeSmokeTestRead, "PolyACalculatorNode") {
                                    0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1};
     });
 
-    run_smoke_test<dorado::PolyACalculatorNode>(8, 1000);
+    dorado::utils::concurrency::MultiQueueThreadPool thread_pool(8);
+    run_smoke_test<dorado::PolyACalculatorNode>(thread_pool, 1000);
 }
 
 }  // namespace

@@ -649,7 +649,7 @@ NewPipeline create_pipeline(
             client_info->contexts().register_context<const poly_tail::PolyTailCalculatorSelector>(
                     poly_tail_calc_selector);
             current_sink_node = pipeline_desc.add_node<PolyACalculatorNode>(
-                    {current_sink_node}, std::thread::hardware_concurrency(), 1000);
+                    {current_sink_node}, worker_pools.polya_pool, 1000);
         }
     }
     if (barcoding_info) {

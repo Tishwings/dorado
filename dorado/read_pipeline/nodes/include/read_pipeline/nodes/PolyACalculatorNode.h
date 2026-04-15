@@ -19,10 +19,10 @@ public:
     static inline constexpr std::size_t MAX_INPUT_QUEUE_SIZE{10000};
     static inline constexpr std::size_t MAX_PROCESSING_QUEUE_SIZE{MAX_INPUT_QUEUE_SIZE / 2};
 
-    PolyACalculatorNode(std::shared_ptr<utils::concurrency::MultiQueueThreadPool> thread_pool,
+    PolyACalculatorNode(utils::concurrency::MultiQueueThreadPool &thread_pool,
                         utils::concurrency::TaskPriority pipeline_priority,
                         size_t max_reads);
-    PolyACalculatorNode(size_t num_worker_threads, size_t max_reads);
+    PolyACalculatorNode(utils::concurrency::MultiQueueThreadPool &thread_pool, size_t max_reads);
     ~PolyACalculatorNode();
 
     std::string get_name() const override;
@@ -35,7 +35,6 @@ private:
     void input_thread_fn();
     void process_read(SimplexRead &read);
 
-    std::shared_ptr<utils::concurrency::MultiQueueThreadPool> m_thread_pool{};
     utils::concurrency::AsyncTaskExecutor m_task_executor;
 
     std::atomic<size_t> total_tail_lengths_called{0};

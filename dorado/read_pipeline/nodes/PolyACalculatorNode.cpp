@@ -85,19 +85,15 @@ void PolyACalculatorNode::process_read(SimplexRead &read) {
     }
 }
 
-PolyACalculatorNode::PolyACalculatorNode(
-        std::shared_ptr<utils::concurrency::MultiQueueThreadPool> thread_pool,
-        utils::concurrency::TaskPriority pipeline_priority,
-        size_t max_reads)
+PolyACalculatorNode::PolyACalculatorNode(utils::concurrency::MultiQueueThreadPool &thread_pool,
+                                         utils::concurrency::TaskPriority pipeline_priority,
+                                         size_t max_reads)
         : MessageSink(max_reads, 1),
-          m_thread_pool(std::move(thread_pool)),
-          m_task_executor(*m_thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
+          m_task_executor(thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
 
-PolyACalculatorNode::PolyACalculatorNode(size_t threads, size_t max_reads)
-        : PolyACalculatorNode(
-                  std::make_shared<utils::concurrency::MultiQueueThreadPool>(threads, "polya_pool"),
-                  utils::concurrency::TaskPriority::normal,
-                  max_reads) {}
+PolyACalculatorNode::PolyACalculatorNode(utils::concurrency::MultiQueueThreadPool &thread_pool,
+                                         size_t max_reads)
+        : PolyACalculatorNode(thread_pool, utils::concurrency::TaskPriority::normal, max_reads) {}
 
 PolyACalculatorNode::~PolyACalculatorNode() { terminate_impl(utils::AsyncQueueTerminateFast::Yes); }
 

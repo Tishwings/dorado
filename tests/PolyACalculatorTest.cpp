@@ -38,8 +38,9 @@ CATCH_TEST_CASE("PolyACalculator: Test polyT tail estimation", TEST_GROUP) {
     CATCH_CAPTURE(data);
     dorado::PipelineDescriptor pipeline_desc;
     std::vector<dorado::Message> messages;
+    utils::concurrency::MultiQueueThreadPool thread_pool(2);
     auto sink = pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
-    pipeline_desc.add_node<PolyACalculatorNode>({sink}, 2, 1000);
+    pipeline_desc.add_node<PolyACalculatorNode>({sink}, thread_pool, 1000);
 
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
@@ -76,8 +77,9 @@ CATCH_TEST_CASE("PolyACalculator: Test polyT tail estimation with custom config"
 
     dorado::PipelineDescriptor pipeline_desc;
     std::vector<dorado::Message> messages;
+    utils::concurrency::MultiQueueThreadPool thread_pool(2);
     auto sink = pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
-    pipeline_desc.add_node<PolyACalculatorNode>({sink}, 2, 1000);
+    pipeline_desc.add_node<PolyACalculatorNode>({sink}, thread_pool, 1000);
 
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
