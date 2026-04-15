@@ -832,7 +832,7 @@ void worker_infer_samples_in_parallel(
 #endif
 
         // We can simply stack these since all windows are of the same size. (Smaller windows are set aside.)
-        dorado::variant::BatchedData batched_data;
+        dorado::secondary::BatchedData batched_data;
         int64_t time_collate = 0;
         int64_t time_move_to_device = 0;
 

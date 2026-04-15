@@ -5,6 +5,7 @@ target_sources(dorado_secondary
         ${PUBLIC_BASE}/alignment.h
         ${PUBLIC_BASE}/bam_file.h
         ${PUBLIC_BASE}/bam_info.h
+        ${PUBLIC_BASE}/batched_data.h
         ${PUBLIC_BASE}/batching.h
         ${PUBLIC_BASE}/device_info.h
         ${PUBLIC_BASE}/interval.h

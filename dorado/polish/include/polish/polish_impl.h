@@ -6,6 +6,7 @@
 #include "polish/polisher_resources.h"
 #include "secondary/architectures/model_config.h"
 #include "secondary/architectures/model_torch_base.h"
+#include "secondary/common/batched_data.h"
 #include "secondary/common/interval.h"
 #include "secondary/common/interval_tree_types.h"
 #include "secondary/common/stats.h"

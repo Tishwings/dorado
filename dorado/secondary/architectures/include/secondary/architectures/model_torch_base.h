@@ -1,6 +1,6 @@
 #pragma once
 
-#include "variant/inference_data.h"
+#include "secondary/common/batched_data.h"
 
 #include <torch/nn/module.h>
 
