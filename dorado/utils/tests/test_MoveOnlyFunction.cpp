@@ -66,18 +66,27 @@ DEFINE_TEST("Move only lambda") {
     CATCH_CHECK(counter == 2);
 }
 
+static int add_one_func(int x) { return x + 1; };
+
 DEFINE_TEST("Constructible from function pointer") {
-    static constexpr int (*add_one)(int) = +[](int x) { return x + 1; };
-    MoveOnlyFunction<int(int)> functor = add_one;
+    using FnType = int(int);
+    FnType *const add_one_ptr = add_one_func;
+
+    MoveOnlyFunction<FnType> functor = add_one_ptr;
     CATCH_CHECK(functor(2) == 3);
-    functor = add_one;
+    functor = add_one_ptr;
     CATCH_CHECK(functor(3) == 4);
 
     // nullptr is a valid pointer
     functor = nullptr;
     CATCH_CHECK_FALSE(functor);
-    functor = (int (*)(int)) nullptr;
+    functor = (FnType *)nullptr;
     CATCH_CHECK_FALSE(functor);
+
+    MoveOnlyFunction<FnType> from_func = add_one_func;
+    CATCH_CHECK(from_func(4) == 5);
+    from_func = add_one_func;
+    CATCH_CHECK(from_func(5) == 6);
 }
 
 DEFINE_TEST("Invocable with refs") {

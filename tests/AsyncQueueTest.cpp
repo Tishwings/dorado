@@ -1,6 +1,5 @@
 #include "utils/AsyncQueue.h"
 
-#include "utils/concurrency/synchronisation.h"
 #include "utils/jthread.h"
 
 #include <catch2/benchmark/catch_benchmark.hpp>
@@ -9,11 +8,15 @@
 #include <spdlog/spdlog.h>
 
 #include <atomic>
+#include <chrono>
+#include <latch>
 #include <numeric>
 #include <thread>
 
 using dorado::utils::AsyncQueue;
 using dorado::utils::AsyncQueueStatus;
+using dorado::utils::AsyncQueueNonBlockingMode::FullLock;
+using dorado::utils::AsyncQueueNonBlockingMode::TryLock;
 
 #define TEST_GROUP "AsyncQueue "
 
@@ -95,6 +98,51 @@ CATCH_TEST_CASE(TEST_GROUP ": QueueEmptyAfterRestarting") {
     queue.terminate(terminate_mode);
     queue.restart();
     CATCH_CHECK(queue.size() == 0);
+}
+
+CATCH_TEST_CASE(TEST_GROUP ": NonBlocking") {
+    AsyncQueue<int> queue(5);
+    CATCH_CHECK(queue.try_push(1) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(2) == AsyncQueueStatus::Success);
+
+    // Pop the items.
+    int val = 0;
+    CATCH_CHECK(queue.try_pop_nonblocking(val, FullLock) == AsyncQueueStatus::Success);
+    CATCH_CHECK(val == 1);
+    {
+        // Blocking the queue should cause a timeout rather than blocking the caller.
+        auto blocker = queue.block_for_testing();
+        CATCH_CHECK(queue.try_pop_nonblocking(val, TryLock) == AsyncQueueStatus::Timeout);
+    }
+    CATCH_CHECK(queue.try_pop_nonblocking(val, FullLock) == AsyncQueueStatus::Success);
+    CATCH_CHECK(val == 2);
+
+    // Popping from an empty queue should timeout too.
+    CATCH_CHECK(queue.try_pop_nonblocking(val, FullLock) == AsyncQueueStatus::Timeout);
+}
+
+CATCH_TEST_CASE(TEST_GROUP ": try_pop_until") {
+    using Clock = AsyncQueue<int>::Clock;
+
+    AsyncQueue<int> queue(5);
+    CATCH_CHECK(queue.try_push(1) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(2) == AsyncQueueStatus::Success);
+
+    const auto small_timeout = std::chrono::milliseconds(200);
+    const auto distant_future = std::chrono::seconds(100);
+
+    // Pop the items.
+    int val = 0;
+    CATCH_CHECK(queue.try_pop_until(val, Clock::now() + distant_future) ==
+                AsyncQueueStatus::Success);
+    CATCH_CHECK(val == 1);
+    CATCH_CHECK(queue.try_pop_until(val, Clock::now() + small_timeout) ==
+                AsyncQueueStatus::Success);
+    CATCH_CHECK(val == 2);
+
+    // Popping from an empty queue should timeout.
+    CATCH_CHECK(queue.try_pop_until(val, Clock::now() + small_timeout) ==
+                AsyncQueueStatus::Timeout);
 }
 
 // Spawned thread sits waiting for an item.
@@ -181,6 +229,44 @@ CATCH_TEST_CASE(TEST_GROUP ": process_and_pop_n") {
     CATCH_CHECK(queue.size() == 0);
 }
 
+CATCH_TEST_CASE(TEST_GROUP ": process_and_pop_n_with_timeout") {
+    using Clock = AsyncQueue<int>::Clock;
+
+    AsyncQueue<int> queue(5);
+    CATCH_CHECK(queue.try_push(1) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(2) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(3) == AsyncQueueStatus::Success);
+    CATCH_CHECK(queue.try_push(4) == AsyncQueueStatus::Success);
+
+    const auto small_timeout = std::chrono::milliseconds(200);
+    const auto distant_future = std::chrono::seconds(100);
+
+    std::vector<int> popped_items;
+    auto pop_item = [&popped_items](int popped) { popped_items.push_back(popped); };
+
+    // Take 2 of the 4 items.
+    CATCH_CHECK(queue.process_and_pop_n_with_timeout(pop_item, 2, Clock::now() + distant_future) ==
+                AsyncQueueStatus::Success);
+    CATCH_REQUIRE(popped_items.size() == 2);
+    CATCH_CHECK(popped_items.at(0) == 1);
+    CATCH_CHECK(popped_items.at(1) == 2);
+
+    // Try and take 3 of the remaining 2 items.
+    // The timeout is on waiting for any elements, so we should pop 2 successfully.
+    popped_items.clear();
+    CATCH_CHECK(queue.process_and_pop_n_with_timeout(pop_item, 3, Clock::now() + small_timeout) ==
+                AsyncQueueStatus::Success);
+    CATCH_REQUIRE(popped_items.size() == 2);
+    CATCH_CHECK(popped_items.at(0) == 3);
+    CATCH_CHECK(popped_items.at(1) == 4);
+
+    // Popping from an empty queue should timeout.
+    popped_items.clear();
+    CATCH_CHECK(queue.process_and_pop_n_with_timeout(pop_item, 1, Clock::now() + small_timeout) ==
+                AsyncQueueStatus::Timeout);
+    CATCH_CHECK(popped_items.empty());
+}
+
 CATCH_TEST_CASE(TEST_GROUP ": name") {
     AsyncQueue<int> queue(1);
     CATCH_CHECK(queue.get_name() == "queue");
@@ -198,7 +284,7 @@ CATCH_TEST_CASE(TEST_GROUP ": benchmarks") {
 
     using Item = std::unique_ptr<int>;
     AsyncQueue<Item> queue(unbounded ? 1'000'000 : 10);
-    dorado::utils::concurrency::Latch latch(num_producers + num_consumers);
+    std::latch latch(num_producers + num_consumers);
     std::vector<std::size_t> processed_counts(num_consumers);
 
     // Start the threads.
@@ -206,8 +292,7 @@ CATCH_TEST_CASE(TEST_GROUP ": benchmarks") {
     threads.reserve(num_producers + num_consumers);
     for (int i = 0; i < num_producers; i++) {
         threads.emplace_back([&latch, &queue] {
-            latch.count_down();
-            latch.wait();
+            latch.arrive_and_wait();
 
             while (true) {
                 auto res = queue.try_push(Item{});
@@ -220,8 +305,7 @@ CATCH_TEST_CASE(TEST_GROUP ": benchmarks") {
     for (int i = 0; i < num_consumers; i++) {
         auto &counter = processed_counts.at(i);
         threads.emplace_back([&latch, &queue, &counter] {
-            latch.count_down();
-            latch.wait();
+            latch.arrive_and_wait();
 
             std::size_t processed = 0;
             while (true) {

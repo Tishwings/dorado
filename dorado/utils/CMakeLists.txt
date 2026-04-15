@@ -12,10 +12,14 @@ dorado_add_library(
         benchmark_timer.h
         cigar.h
         concurrency/async_task_executor.h
+        concurrency/AsyncExecutor.h
         concurrency/detail/priority_task_queue.h
         concurrency/multi_queue_thread_pool.h
         concurrency/synchronisation.h
         concurrency/task_priority.h
+        concurrency/Task.h
+        concurrency/TaskPool.h
+        concurrency/WorkerPool.h
         container_utils.h
         context_container.h
         crash_handlers.h
@@ -24,6 +28,7 @@ dorado_add_library(
         FixedSizeQueue.h
         fs_utils.h
         FunctionRef.h
+        hardware_interference_size.h
         io_utils.h
         jthread.h
         locale_utils.h
@@ -59,8 +64,11 @@ dorado_add_library(
         benchmark_timer.cpp
         cigar.cpp
         concurrency/async_task_executor.cpp
+        concurrency/AsyncExecutor.cpp
         concurrency/detail/priority_task_queue.cpp
         concurrency/multi_queue_thread_pool.cpp
+        concurrency/TaskPool.cpp
+        concurrency/WorkerPool.cpp
         container_utils.cpp
         crash_handlers.cpp
         crypto_utils.cpp
@@ -83,6 +91,7 @@ dorado_add_library(
         time_utils.cpp
         uuid_utils.cpp
     SOURCES_TEST
+        test_AsyncExecutor.cpp
         test_FunctionRef.cpp
         test_MoveOnlyFunction.cpp
     DEPENDS_PUBLIC
