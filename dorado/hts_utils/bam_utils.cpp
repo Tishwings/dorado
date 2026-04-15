@@ -299,6 +299,16 @@ AlignmentOps get_alignment_op_counts(const bam1_t* record) {
     const uint32_t* cigar = bam_get_cigar(record);
     const int n_cigar = record->core.n_cigar;
 
+    if (bam_cigar_op(cigar[0]) == BAM_CHARD_CLIP) {
+        counts.softclip_start = bam_cigar_oplen(cigar[0]);
+        counts.hard_clipped = true;
+    }
+
+    if (bam_cigar_op(cigar[n_cigar - 1]) == BAM_CHARD_CLIP) {
+        counts.softclip_end = bam_cigar_oplen(cigar[n_cigar - 1]);
+        counts.hard_clipped = true;
+    }
+
     if (bam_cigar_op(cigar[0]) == BAM_CSOFT_CLIP) {
         counts.softclip_start = bam_cigar_oplen(cigar[0]);
     }

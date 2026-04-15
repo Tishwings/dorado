@@ -26,6 +26,7 @@ struct AlignmentOps {
     size_t insertions{};
     size_t deletions{};
     size_t substitutions{};
+    bool hard_clipped{false};
 };
 
 struct AlignmentAccuracy {
