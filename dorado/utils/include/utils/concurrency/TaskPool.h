@@ -36,6 +36,9 @@ public:
 
     std::size_t num_queues() const { return m_task_qs.size(); }
     std::size_t queue_size(std::size_t q_idx) const { return m_task_qs.at(q_idx).size(); }
+    std::size_t tasks_in_flight(std::size_t q_idx) const {
+        return m_q_counters.at(q_idx).value.load(std::memory_order_relaxed);
+    }
 
     // Push a task into the pool.
     template <typename Func>

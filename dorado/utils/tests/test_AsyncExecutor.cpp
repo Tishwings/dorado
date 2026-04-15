@@ -88,7 +88,7 @@ DEFINE_TEST("Rebind task pools") {
 }
 
 DEFINE_TEST("Limits are followed") {
-    const std::size_t num_workers = 1;
+    const std::size_t num_workers = GENERATE(1, 2);
     const std::size_t num_producers = 1;
 
     // Create the workers.
@@ -106,13 +106,14 @@ DEFINE_TEST("Limits are followed") {
         AsyncExecutor producer(tasks, 0);
 
         // Push as many tasks as the pool should be able to hold.
-        // The worker will pop one of the tasks, so we get an extra one.
-        for (std::size_t task_id = 0; task_id <= queue_capacity; task_id++) {
+        // The workers will each pop one of the tasks, so we push that many more.
+        for (std::size_t task_id = 0; task_id < queue_capacity + num_workers; task_id++) {
             producer.send([&latch] { latch.wait(); });
         }
 
         // We can't push another task to the queue without it blocking, but we can check that it's full.
         CATCH_CHECK(tasks.queue_size(0) == queue_capacity);
+        CATCH_CHECK(tasks.tasks_in_flight(0) == queue_capacity + num_workers);
 
         // Unpause the workers.
         latch.count_down();
