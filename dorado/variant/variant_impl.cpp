@@ -6,6 +6,7 @@
 #include "secondary/common/region.h"
 #include "secondary/consensus/sample_collate_utils.h"
 #include "secondary/consensus/variant_calling.h"
+#include "secondary/features/encoder_utils.h"
 #include "torch_utils/gpu_profiling.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
@@ -402,7 +403,8 @@ process_single_bam_window(
     if (model_requires_draft) {
         const std::string_view draft_seq(draft_seqs[bam_window.seq_id]);
         for (auto& local_sample : local_samples) {
-            local_sample.draft_seq = {encoder.populate_draft_seq_tensor(local_sample, draft_seq)};
+            local_sample.draft_seq = {secondary::draft_encoding_from_seq(
+                    local_sample.positions_major, local_sample.positions_minor, draft_seq)};
         }
     }
 

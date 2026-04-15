@@ -398,45 +398,6 @@ secondary::Sample EncoderReadAlignment::encode_region(
     return sample;
 }
 
-at::Tensor EncoderReadAlignment::populate_draft_seq_tensor(const secondary::Sample& sample,
-                                                           const std::string_view draft_seq) {
-    const auto opts = at::TensorOptions().dtype(at::kInt);
-    const int64_t sample_size = std::ssize(sample.positions_major);
-    if (sample_size == 0) {
-        return at::empty({});
-    }
-    int64_t pos = sample.positions_major[0];
-    // if first position is minor, start at the next reference base
-    if (sample.positions_minor[0] != 0) {
-        ++pos;
-    }
-    const int64_t seq_end = sample.positions_major[sample_size - 1] + 1;  // end-exclusive
-
-    at::Tensor draft_seq_tensor = at::full({sample_size}, DEL_VAL, opts);
-
-    if (seq_end > std::ssize(draft_seq)) {
-        throw std::runtime_error{"Sample coordinates (seq_id=" + std::to_string(sample.seq_id) +
-                                 " " + std::to_string(pos) + "-" + std::to_string(seq_end) +
-                                 ") extend beyond the provided reference (length " +
-                                 std::to_string(draft_seq.length()) + ")."};
-    }
-    if (pos == seq_end) {
-        // Entire chunk is in an insertion, nothing to do
-        return draft_seq_tensor;
-    }
-    for (int64_t idx = 0; idx < sample_size; ++idx) {
-        if (sample.positions_minor[idx] == 0) {
-            const auto base_encoding =
-                    NUM_TO_COUNT_BASE_SYMM[seq_nt16_table[static_cast<uint8_t>(draft_seq[pos])]];
-            if (base_encoding >= 1) {
-                draft_seq_tensor.index({idx}) = base_encoding;
-            }
-            ++pos;
-        }
-    }
-    return draft_seq_tensor;
-}
-
 at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch,
                                          const bool pinned_memory) const {
     if (std::empty(batch)) {

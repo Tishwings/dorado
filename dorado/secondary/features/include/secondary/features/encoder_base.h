@@ -71,9 +71,6 @@ public:
             const int32_t seq_id,
             const std::unordered_map<std::string, int32_t>& haplotags) = 0;
 
-    virtual at::Tensor populate_draft_seq_tensor(const secondary::Sample& sample,
-                                                 const std::string_view draft_seq) = 0;
-
     virtual at::Tensor collate(std::vector<at::Tensor> batch, bool pinned_memory) const = 0;
 
     virtual std::vector<secondary::Sample> merge_adjacent_samples(

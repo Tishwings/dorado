@@ -69,11 +69,6 @@ public:
         return {};
     }
 
-    at::Tensor populate_draft_seq_tensor([[maybe_unused]] const secondary::Sample& sample,
-                                         [[maybe_unused]] const std::string_view refseq) override {
-        return at::empty({});
-    }
-
     at::Tensor collate(std::vector<at::Tensor> batch, const bool /*pinned_memory*/) const override {
         return std::empty(batch) ? at::empty({0}) : std::move(batch.front());
     }
@@ -105,11 +100,6 @@ public:
                                     const int32_t,
                                     const std::unordered_map<std::string, int32_t>&) override {
         throw std::runtime_error{"Unexpected encode_region call."};
-    }
-
-    at::Tensor populate_draft_seq_tensor([[maybe_unused]] const secondary::Sample& sample,
-                                         [[maybe_unused]] const std::string_view refseq) override {
-        return at::empty({});
     }
 
     at::Tensor collate(std::vector<at::Tensor> batch, const bool /*pinned_memory*/) const override {
