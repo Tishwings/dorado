@@ -241,8 +241,9 @@ CATCH_TEST_CASE(
     const bool barcode_both_ends = GENERATE(true, false);
     CATCH_CAPTURE(barcode_both_ends);
     constexpr bool no_trim = false;
+    utils::concurrency::MultiQueueThreadPool thread_pool(8);
     auto trimmer = pipeline_desc.add_node<TrimmerNode>({sink}, 1, false);
-    pipeline_desc.add_node<BarcodeClassifierNode>({trimmer}, 8);
+    pipeline_desc.add_node<BarcodeClassifierNode>({trimmer}, thread_pool);
 
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
@@ -398,10 +399,11 @@ CATCH_TEST_CASE("BarcodeClassifierNode: test for proper trimming and alignment d
     std::vector<dorado::Message> messages;
     auto sink = pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
     std::string kit = "SQK-16S024";
-    bool barcode_both_ends = false;
-    bool no_trim = false;
+    constexpr bool barcode_both_ends = false;
+    constexpr bool no_trim = false;
+    utils::concurrency::MultiQueueThreadPool thread_pool(8);
     auto trimmer = pipeline_desc.add_node<TrimmerNode>({sink}, 1, false);
-    pipeline_desc.add_node<BarcodeClassifierNode>({trimmer}, 8);
+    pipeline_desc.add_node<BarcodeClassifierNode>({trimmer}, thread_pool);
 
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
     fs::path data_dir = fs::path(get_data_dir("barcode_demux"));

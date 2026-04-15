@@ -45,18 +45,13 @@ const dorado::demux::BarcodingInfo* get_barcoding_info(const dorado::ClientInfo&
 
 namespace dorado {
 
-BarcodeClassifierNode::BarcodeClassifierNode(
-        std::shared_ptr<utils::concurrency::MultiQueueThreadPool> thread_pool,
-        utils::concurrency::TaskPriority pipeline_priority)
+BarcodeClassifierNode::BarcodeClassifierNode(utils::concurrency::MultiQueueThreadPool& thread_pool,
+                                             utils::concurrency::TaskPriority pipeline_priority)
         : MessageSink(10000, 1),
-          m_thread_pool(std::move(thread_pool)),
-          m_task_executor(*m_thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
+          m_task_executor(thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
 
-BarcodeClassifierNode::BarcodeClassifierNode(int threads)
-        : BarcodeClassifierNode(
-                  std::make_shared<utils::concurrency::MultiQueueThreadPool>(threads,
-                                                                             "barcode_pool"),
-                  utils::concurrency::TaskPriority::normal) {}
+BarcodeClassifierNode::BarcodeClassifierNode(utils::concurrency::MultiQueueThreadPool& thread_pool)
+        : BarcodeClassifierNode(thread_pool, utils::concurrency::TaskPriority::normal) {}
 
 BarcodeClassifierNode::~BarcodeClassifierNode() {
     stop_input_processing(utils::AsyncQueueTerminateFast::Yes);

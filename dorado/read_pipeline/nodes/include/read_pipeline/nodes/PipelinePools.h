@@ -7,9 +7,11 @@ namespace dorado {
 
 struct PipelineWorkers {
     explicit PipelineWorkers(const utils::ThreadAllocations& thread_allocations)
-            : aligner_pool(thread_allocations.aligner_threads, "align_node_pool") {}
+            : aligner_pool(thread_allocations.aligner_threads, "align_node_pool"),
+              barcode_pool(thread_allocations.barcoder_threads, "barcode_pool") {}
 
     utils::concurrency::MultiQueueThreadPool aligner_pool;
+    utils::concurrency::MultiQueueThreadPool barcode_pool;
 };
 
 }  // namespace dorado

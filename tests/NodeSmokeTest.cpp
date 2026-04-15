@@ -394,7 +394,8 @@ DEFINE_TEST(NodeSmokeTestRead, "BarcodeClassifierNode") {
 
     set_pipeline_restart(pipeline_restart);
 
-    run_smoke_test<dorado::BarcodeClassifierNode>(2);
+    dorado::utils::concurrency::MultiQueueThreadPool thread_pool(2);
+    run_smoke_test<dorado::BarcodeClassifierNode>(thread_pool);
 }
 
 DEFINE_TEST(NodeSmokeTestRead, "AdapterDetectorNode") {
@@ -419,9 +420,10 @@ CATCH_TEST_CASE("BarcodeClassifierNode: test simple pipeline with fastq and sam 
     std::vector<dorado::Message> messages;
     auto sink = pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
     std::string kit = {"EXP-PBC096"};
-    bool barcode_both_ends = GENERATE(true, false);
-    bool no_trim = GENERATE(true, false);
-    pipeline_desc.add_node<dorado::BarcodeClassifierNode>({sink}, 8);
+    const bool barcode_both_ends = GENERATE(true, false);
+    const bool no_trim = GENERATE(true, false);
+    dorado::utils::concurrency::MultiQueueThreadPool thread_pool(8);
+    pipeline_desc.add_node<dorado::BarcodeClassifierNode>({sink}, thread_pool);
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
     fs::path data1 = fs::path(get_data_dir("barcode_demux/double_end_variant")) /

@@ -262,6 +262,9 @@ int demuxer(int argc, char* argv[]) {
         writers.push_back(std::move(summary_writer));
     }
 
+    // Setup pools. These are referenced by the pipeline so must outlive it.
+    utils::concurrency::MultiQueueThreadPool demux_pool(demux_threads, "barcode_pool");
+
     auto client_info = std::make_shared<DefaultClientInfo>();
 
     PipelineDescriptor pipeline_desc;
@@ -294,7 +297,7 @@ int demuxer(int argc, char* argv[]) {
             current_node =
                     pipeline_desc.add_node<TrimmerNode>({writer_node}, 1, kit_info.rna_barcodes);
         }
-        pipeline_desc.add_node<BarcodeClassifierNode>({current_node}, demux_threads);
+        pipeline_desc.add_node<BarcodeClassifierNode>({current_node}, demux_pool);
     }
 
     // Create the Pipeline from our description.

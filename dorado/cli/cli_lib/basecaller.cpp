@@ -655,7 +655,7 @@ NewPipeline create_pipeline(
     if (barcoding_info) {
         client_info->contexts().register_context<const demux::BarcodingInfo>(barcoding_info);
         current_sink_node = pipeline_desc.add_node<BarcodeClassifierNode>(
-                {current_sink_node}, thread_allocations.barcoder_threads);
+                {current_sink_node}, worker_pools.barcode_pool);
     }
     if (adapter_trimming_enabled) {
         current_sink_node = pipeline_desc.add_node<AdapterDetectorNode>(
