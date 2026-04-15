@@ -9,7 +9,7 @@ struct KadayashiOptions {
     int32_t min_base_quality{5};
     int32_t min_varcall_coverage{5};
     float min_varcall_fraction{0.2f};
-    int32_t max_clipping{200};
+    int32_t max_clipping{10000000};
     int32_t min_strand_cov{3};
     float min_strand_cov_frac{0.03f};
     float max_gapcompressed_seqdiv{0.1f};
