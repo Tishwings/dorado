@@ -83,7 +83,7 @@ WorkerPool::WorkerPool(size_t num_workers)
 
 WorkerPool::~WorkerPool() {
     // There shouldn't be a task pool bound at this point, so there's no need to flush the workers.
-    assert(m_states[0].task_pool == nullptr);
+    assert(m_num_workers == 0 || m_states[0].task_pool == nullptr);
 
     // Tell the workers to stop, then join them.
     for (size_t idx = 0; idx < m_num_workers; idx++) {

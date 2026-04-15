@@ -224,6 +224,15 @@ DEFINE_TEST("Bad queue index") {
     CATCH_CHECK_THROWS_AS(make_executor(2), std::logic_error);
 }
 
+DEFINE_TEST("Empty pools don't crash") {
+    WorkerPool(0);
+    WorkerPool(1);
+    TaskPool(0, 0);
+    TaskPool(1, 0);
+    TaskPool(0, 1);
+    TaskPool(1, 1);
+}
+
 #if DORADO_ENABLE_BENCHMARK_TESTS
 
 }  // namespace
