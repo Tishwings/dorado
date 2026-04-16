@@ -154,7 +154,7 @@ struct pileup_pars_t {
     int min_base_quality{5};
     int min_varcall_coverage{5};
     float min_varcall_fraction{0.2f};
-    int max_clipping{200};
+    int max_clipping{10000000};
     int min_mapq{10};
     int min_strand_cov{1};
     float min_strand_cov_frac{0.033f};

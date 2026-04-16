@@ -338,7 +338,7 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
         parser.add_argument("--kada-max-clipping")
                 .hidden()
                 .help("Maximum alignment clipping for Kadayashi haplotagging/variant calling.")
-                .default_value(200)
+                .default_value(10000000)
                 .scan<'i', int>();
         parser.add_argument("--kada-min-strand-cov")
                 .hidden()

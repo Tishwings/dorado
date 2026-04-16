@@ -1347,11 +1347,6 @@ std::unordered_map<std::string, int> kadayashi_global_phasing_simple_modify_vcf1
         }
 
         pileup_pars_t pp = {
-                .allow_any_candidate = false,
-                .min_base_quality = 5,
-                .min_varcall_coverage = 5,
-                .min_varcall_fraction = 0.2f,
-                .max_clipping = 200,
                 .disable_region_expansion = true,
         };
 

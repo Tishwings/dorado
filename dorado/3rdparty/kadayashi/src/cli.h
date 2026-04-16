@@ -82,7 +82,7 @@ struct cliopt_varcall_t {
     float max_gapcompressed_seqdiv{0.1f};
 
     // output
-    int bed_flanking{2500};
+    int bed_flanking{5000};
 };
 void print_help_varcall_cli(cliopt_varcall_t &clio);
 cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]);
