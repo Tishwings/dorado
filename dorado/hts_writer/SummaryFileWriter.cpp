@@ -360,6 +360,13 @@ void SummaryFileWriter::handle(const HtsData& data) const {
             } else if (m_shared_header != nullptr) {
                 header = m_shared_header.get();
             }
+
+            if (!header) {
+                throw std::logic_error(
+                        "Missing header in SummaryFileWriter - call set_shared_header or "
+                        "set_dynamic_header first.");
+            }
+
             alignment_genome = sam_hdr_tid2name(header, record->core.tid);
             alignment_direction = bam_is_rev(record) ? "-" : "+";
             alignment_genome_start = int32_t(record->core.pos) + 1;
