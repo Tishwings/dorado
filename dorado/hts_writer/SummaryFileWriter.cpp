@@ -326,27 +326,28 @@ void SummaryFileWriter::handle(const HtsData& data) const {
     }
     if (m_field_flags & ALIGNMENT_FIELDS) {
         std::string alignment_genome = "*";
-        int32_t alignment_genome_start = -1;
-        int32_t alignment_genome_end = -1;
-        int32_t alignment_strand_start = -1;
-        int32_t alignment_strand_end = -1;
+        int32_t alignment_genome_start = 0;
+        int32_t alignment_genome_end = 0;
+        int32_t alignment_strand_start = 0;
+        int32_t alignment_strand_end = 0;
         std::string alignment_direction = "*";
         int32_t alignment_length = 0;
         int32_t alignment_mapping_quality = 0;
-        int alignment_num_aligned = 0;
-        int alignment_num_correct = 0;
-        int alignment_num_insertions = 0;
-        int alignment_num_deletions = 0;
-        float alignment_coverage = 0.0;
-        float alignment_identity = 0.0;
-        float alignment_accuracy = 0.0;
+        int alignment_num_aligned = -1;
+        int alignment_num_correct = -1;
+        int alignment_num_insertions = -1;
+        int alignment_num_deletions = -1;
+        float alignment_coverage = -1.f;
+        float alignment_identity = -1.f;
+        float alignment_accuracy = -1.f;
+        int alignment_score = -1;
         int alignment_bed_hits = 0;
-        int alignment_score = 0;
         int alignment_num_alignments = 0;
         int alignment_num_secondary_alignments = 0;
         int alignment_num_supplementary_alignments = 0;
 
         if (!(record->core.flag & BAM_FUNMAP)) {
+            const sam_hdr_t* header{nullptr};
             if (m_dynamic_header != nullptr) {
                 const auto& it = m_dynamic_header->find(data.read_attrs);
                 if (it == m_dynamic_header->cend()) {
@@ -355,14 +356,21 @@ void SummaryFileWriter::handle(const HtsData& data) const {
                                   data.read_attrs.protocol_run_id);
                     throw std::runtime_error("SummaryFileWriter - Failed to load dynamic header.");
                 }
-                alignment_genome =
-                        sam_hdr_tid2name(it->second->get_merged_header(), record->core.tid);
+                header = it->second->get_merged_header();
             } else if (m_shared_header != nullptr) {
-                alignment_genome = sam_hdr_tid2name(m_shared_header.get(), record->core.tid);
+                header = m_shared_header.get();
             }
+
+            if (!header) {
+                throw std::logic_error(
+                        "Missing header in SummaryFileWriter - call set_shared_header or "
+                        "set_dynamic_header first.");
+            }
+
+            alignment_genome = sam_hdr_tid2name(header, record->core.tid);
             alignment_direction = bam_is_rev(record) ? "-" : "+";
-            alignment_genome_start = int32_t(record->core.pos);
-            alignment_genome_end = int32_t(bam_endpos(record));
+            alignment_genome_start = int32_t(record->core.pos) + 1;
+            alignment_genome_end = int32_t(bam_endpos(record)) + 1;
 
             auto alignment_counts = utils::get_alignment_op_counts(record);
             alignment_strand_start = int(alignment_counts.softclip_start);
@@ -378,8 +386,14 @@ void SummaryFileWriter::handle(const HtsData& data) const {
             alignment_accuracy = alignment_num_correct / static_cast<float>(alignment_length);
             alignment_score = get_tag(record, "AS", 0);
 
-            alignment_coverage = (alignment_strand_end - alignment_strand_start) /
-                                 static_cast<float>(record->core.l_qseq);
+            auto full_len = static_cast<hts_pos_t>(record->core.l_qseq);
+            if (alignment_counts.hard_clipped) {
+                full_len += alignment_counts.softclip_start + alignment_counts.softclip_end;
+            }
+
+            auto ref_len = sam_hdr_tid2len(header, record->core.tid);
+            alignment_coverage =
+                    (alignment_counts.matches) / static_cast<float>(std::min(full_len, ref_len));
             alignment_bed_hits = get_tag(record, "bh", 0);
             alignment_mapping_quality = record->core.qual;
             alignment_num_alignments = data.read_attrs.num_alignments;
