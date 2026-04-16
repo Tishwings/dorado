@@ -16,6 +16,7 @@
 #include "model_resolver/Models.h"
 #include "models/models.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/AlignerNode.h"
 #include "read_pipeline/nodes/BaseSpaceDuplexCallerNode.h"
@@ -368,7 +369,8 @@ int duplex(int argc, char* argv[]) {
         }
 
         // Setup pools. These are referenced by the pipeline so must outlive it.
-        std::unique_ptr<utils::concurrency::MultiQueueThreadPool> aligner_pool;
+        const std::size_t aligner_threads = std::thread::hardware_concurrency();
+        SimpleExecutor<AlignerNode> aligner_executor(aligner_threads);
 
         PipelineDescriptor pipeline_desc;
         auto hts_writer = PipelineDescriptor::InvalidNodeHandle;
@@ -393,12 +395,9 @@ int duplex(int argc, char* argv[]) {
                 }
             }
 
-            const std::size_t aligner_threads = std::thread::hardware_concurrency();
-            aligner_pool = std::make_unique<utils::concurrency::MultiQueueThreadPool>(
-                    aligner_threads, "align_node_pool");
-            aligner =
-                    pipeline_desc.add_node<AlignerNode>({}, index_file_access, bed_file_access, ref,
-                                                        bed, *minimap_options, *aligner_pool);
+            aligner = pipeline_desc.add_node<AlignerNode>({}, index_file_access, bed_file_access,
+                                                          ref, bed, *minimap_options,
+                                                          aligner_executor.get());
             pipeline_desc.add_node_sink(aligner, converted_reads_sink);
             converted_reads_sink = aligner;
         }

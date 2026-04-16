@@ -25,11 +25,11 @@
 #include "models/models.h"
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/base/messages/ReadCommon.h"
 #include "read_pipeline/nodes/AdapterDetectorNode.h"
 #include "read_pipeline/nodes/AlignerNode.h"
 #include "read_pipeline/nodes/BarcodeClassifierNode.h"
-#include "read_pipeline/nodes/PipelinePools.h"
 #include "read_pipeline/nodes/PolyACalculatorNode.h"
 #include "read_pipeline/nodes/ReadFilterNode.h"
 #include "read_pipeline/nodes/ReadToBamTypeNode.h"
@@ -570,6 +570,17 @@ auto create_writers(ProgressTracker& tracker,
     return writers;
 }
 
+struct PipelineWorkers {
+    explicit PipelineWorkers(const utils::ThreadAllocations& thread_allocations)
+            : aligner_executor(thread_allocations.aligner_threads),
+              barcode_pool(thread_allocations.barcoder_threads, "barcode_pool"),
+              polya_pool(std::thread::hardware_concurrency(), "polya_pool") {}
+
+    SimpleExecutor<AlignerNode> aligner_executor;
+    utils::concurrency::MultiQueueThreadPool barcode_pool;
+    utils::concurrency::MultiQueueThreadPool polya_pool;
+};
+
 struct NewPipeline {
     std::unique_ptr<Pipeline> pipeline;
     NodeHandle aligner_idx;
@@ -609,7 +620,7 @@ NewPipeline create_pipeline(
         aligner = pipeline_desc.add_node<AlignerNode>({current_sink_node}, index_file_access,
                                                       bed_file_access, options.alignment_reference,
                                                       options.bed_file, aligner_options,
-                                                      worker_pools.aligner_pool);
+                                                      worker_pools.aligner_executor.get());
         current_sink_node = aligner;
     }
     current_sink_node = pipeline_desc.add_node<ReadToBamTypeNode>(

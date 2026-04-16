@@ -8,7 +8,6 @@
 #include "read_pipeline/base/ClientInfo.h"
 #include "read_pipeline/base/messages/DuplexRead.h"
 #include "read_pipeline/base/messages/SimplexRead.h"
-#include "utils/concurrency/multi_queue_thread_pool.h"
 #include "utils/context_container.h"
 #include "utils/sequence_utils.h"
 
@@ -73,14 +72,12 @@ AlignerNode::AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_
                          const std::string& index_file,
                          const std::string& bed_file,
                          const alignment::Minimap2Options& options,
-                         utils::concurrency::MultiQueueThreadPool& thread_pool)
+                         utils::concurrency::AsyncExecutor&& task_executor)
         : MessageSink(MAX_INPUT_QUEUE_SIZE, 1),
           m_index_for_bam_messages(load_and_get_index(*index_file_access, index_file, options)),
           m_index_file_access(std::move(index_file_access)),
           m_bed_file_access(std::move(bed_file_access)),
-          m_task_executor(thread_pool,
-                          utils::concurrency::TaskPriority::normal,
-                          MAX_PROCESSING_QUEUE_SIZE) {
+          m_task_executor(std::move(task_executor)) {
     if (!bed_file.empty()) {
         if (!m_bed_file_access) {
             throw std::runtime_error(
@@ -100,12 +97,11 @@ AlignerNode::AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_
 
 AlignerNode::AlignerNode(std::shared_ptr<alignment::IndexFileAccess> index_file_access,
                          std::shared_ptr<alignment::BedFileAccess> bed_file_access,
-                         utils::concurrency::MultiQueueThreadPool& thread_pool,
-                         utils::concurrency::TaskPriority pipeline_priority)
+                         utils::concurrency::AsyncExecutor&& task_executor)
         : MessageSink(MAX_INPUT_QUEUE_SIZE, 1),
           m_index_file_access(std::move(index_file_access)),
           m_bed_file_access(std::move(bed_file_access)),
-          m_task_executor(thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
+          m_task_executor(std::move(task_executor)) {}
 
 AlignerNode::~AlignerNode() { stop_input_processing(utils::AsyncQueueTerminateFast::Yes); }
 
@@ -232,7 +228,6 @@ void AlignerNode::terminate(const TerminateOptions& terminate_options) {
 }
 
 void AlignerNode::restart() {
-    m_task_executor.restart();
     start_input_processing([this] { input_thread_fn(); }, "aligner_node");
 }
 
@@ -241,7 +236,7 @@ std::string AlignerNode::get_name() const { return "AlignerNode"; }
 stats::NamedStats AlignerNode::sample_stats() const {
     stats::NamedStats stats = MessageSink::sample_stats();
     stats.merge(alignment::mm2_limiter_stats());
-    stats["queued_tasks"] = double(m_task_executor.num_tasks_in_flight());
+    stats["queued_tasks"] = double(m_task_executor.tasks_in_flight());
     return stats;
 }
 
