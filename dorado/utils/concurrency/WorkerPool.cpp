@@ -2,6 +2,9 @@
 
 #include "utils/concurrency/TaskPool.h"
 #include "utils/hardware_interference_size.h"
+#include "utils/thread_utils.h"
+
+#include <spdlog/spdlog.h>
 
 #include <cassert>
 #include <stdexcept>
@@ -74,10 +77,14 @@ void WorkerPool::set_task_pool(TaskPool* pool) {
     }
 }
 
-WorkerPool::WorkerPool(size_t num_workers)
+WorkerPool::WorkerPool(size_t num_workers, std::string_view name)
         : m_states(std::make_unique<WorkerState[]>(num_workers)), m_num_workers(num_workers) {
     for (size_t idx = 0; idx < m_num_workers; idx++) {
-        m_states[idx].worker = std::thread([this, idx] { worker_thread(idx); });
+        m_states[idx].worker =
+                std::thread([this, idx, worker_name = fmt::format("{}_{}", name, idx)] {
+                    utils::set_thread_name(worker_name.c_str());
+                    worker_thread(idx);
+                });
     }
 }
 

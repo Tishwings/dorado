@@ -55,7 +55,7 @@ DEFINE_TEST("Rebind task pools") {
     CATCH_CAPTURE(num_workers, num_producers, queue_capacity);
 
     // Create the workers.
-    WorkerPool workers(num_workers);
+    WorkerPool workers(num_workers, "test");
 
     std::atomic_size_t jobs_run = 0;
     for (std::size_t repeat = 0; repeat < rebind_count; repeat++) {
@@ -92,7 +92,7 @@ DEFINE_TEST("Limits are followed") {
     const std::size_t num_producers = 1;
 
     // Create the workers.
-    WorkerPool workers(num_workers);
+    WorkerPool workers(num_workers, "test");
 
     for (std::size_t queue_capacity : {1, 2, 5, 10}) {
         // The main thread will block the tasks.
@@ -126,7 +126,7 @@ DEFINE_TEST("All workers take from all producers") {
     const std::size_t queue_capacity = 2;
 
     // Create the workers.
-    WorkerPool workers(num_workers);
+    WorkerPool workers(num_workers, "test");
 
     for (std::size_t mask = 0; mask < 4; mask++) {
         const std::size_t idx_a = (mask & 1) ? 1 : 0;
@@ -160,7 +160,7 @@ DEFINE_TEST("Per-producer flushing works") {
     const std::chrono::microseconds task_time(100);
 
     // Create the workers.
-    WorkerPool workers(num_workers);
+    WorkerPool workers(num_workers, "test");
 
     for (std::size_t num_producers : {1, 2}) {
         // Per-producer counters.
@@ -225,8 +225,8 @@ DEFINE_TEST("Bad queue index") {
 }
 
 DEFINE_TEST("Empty pools don't crash") {
-    WorkerPool(0);
-    WorkerPool(1);
+    WorkerPool(0, "test");
+    WorkerPool(1, "test");
     TaskPool(0, 0);
     TaskPool(1, 0);
     TaskPool(0, 1);
@@ -355,7 +355,7 @@ DEFINE_TEMPLATE_TEST("Benchmarking", NewThreadPool, OldThreadPool) {
     }
 
     // Create the worker pool.
-    typename TestType::ThreadPool thread_pool(num_workers);
+    typename TestType::ThreadPool thread_pool(num_workers, "test");
 
     // Typically we have a small number of producers vs a large number of workers.
     for (std::size_t num_producers : {1, 2, 4}) {
