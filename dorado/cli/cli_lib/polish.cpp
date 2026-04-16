@@ -248,6 +248,10 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Set quality filter for PASS variants.")
                 .default_value(3.0f)
                 .scan<'g', float>();
+        parser.add_argument("--model-override")
+                .help("Path to a specific model folder. Overrides auto model resolution and all "
+                      "compatibility checks. This may produce inferior results.")
+                .default_value("");
     }
 
     // Hidden advanced arguments.
@@ -278,10 +282,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Continue the process even if an exception is thrown. This "
                       "may leave some regions unprocessed.")
                 .flag();
-        parser.add_argument("--model-override")
-                .hidden()
-                .help("Path to a model folder or an exact name of a model to use.")
-                .default_value("");
     }
 }
 
