@@ -6,7 +6,6 @@
 #include "cli/utils/cli_utils.h"
 #include "dorado_version.h"
 #include "hts_utils/HeaderMapper.h"
-#include "hts_utils/KString.h"
 #include "hts_utils/bam_utils.h"
 #include "hts_utils/hts_types.h"
 #include "hts_writer/HtsFileWriterBuilder.h"
@@ -23,7 +22,6 @@
 #include "summary_info.h"
 #include "utils/log_utils.h"
 #include "utils/stats.h"
-#include "utils/string_utils.h"
 #include "utils/tty_utils.h"
 
 #include <minimap.h>
@@ -31,15 +29,10 @@
 
 #include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-
-#ifndef _WIN32
-#include <unistd.h>
-#endif
 
 using namespace std::chrono_literals;
 
