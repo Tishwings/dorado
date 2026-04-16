@@ -4,6 +4,7 @@
 #include "local_haplotagging.h"
 #include "secondary/architectures/model_config.h"
 #include "secondary/architectures/model_torch_base.h"
+#include "secondary/common/batched_data.h"
 #include "secondary/common/interval.h"
 #include "secondary/common/interval_tree_types.h"
 #include "secondary/common/stats.h"
@@ -137,6 +138,7 @@ void worker_sample_producer(
         secondary::WorkerReturnStatus& ret_status,
         const std::vector<std::vector<secondary::Window>>& bam_regions,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        const std::vector<std::string>& draft_seqs,
         const secondary::VariantCandidateSource candidate_source,
         const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees_from_file,
         const int32_t num_threads,

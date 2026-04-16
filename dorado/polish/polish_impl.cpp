@@ -1027,7 +1027,7 @@ void infer_samples_in_parallel(
 
         // We can simply stack these since all windows are of the same size. (Smaller windows are set aside.)
         timer::TimerHighRes timer_collate;
-        torch::Tensor batch_features_tensor;
+        dorado::secondary::BatchedData batched_data;
         int64_t time_collate = 0;
         {
             utils::ScopedProfileRange spr3("infer_samples_in_parallel-collate", 4);
@@ -1036,21 +1036,21 @@ void infer_samples_in_parallel(
             for (const auto& sample : batch.samples) {
                 batch_features.emplace_back(sample.features);
             }
-            batch_features_tensor = encoders[tid]->collate(std::move(batch_features), false);
+            batched_data.features = encoders[tid]->collate(std::move(batch_features), false);
             time_collate = timer_collate.GetElapsedMilliseconds();
         }
 
         const std::string input_batch_tensor_shape =
-                utils::tensor_shape_as_string(batch_features_tensor);
+                utils::tensor_shape_as_string(batched_data.features);
 
         // Debug output.
         {
             spdlog::trace(
-                    "[consumer {}] About to call forward(): batch_features_tensor.size() = [{}], "
+                    "[consumer {}] About to call forward(): batched_data.features.size() = [{}], "
                     "approx "
                     "size: {} MB.",
                     tid, input_batch_tensor_shape,
-                    batch_features_tensor.numel() * batch_features_tensor.element_size() /
+                    batched_data.features.numel() * batched_data.features.element_size() /
                             (1024.0 * 1024.0));
         }
 
@@ -1071,16 +1071,16 @@ void infer_samples_in_parallel(
 
 #ifdef DEBUG_INFERENCE_DATA
             {
-                std::cout << "[infer] input: batch_features_tensor.shape = "
-                          << utils::tensor_shape_as_string(batch_features_tensor) << "\n";
-                std::cout << "[infer] input: batch_features_tensor =\n"
-                          << batch_features_tensor << "\n";
-                utils::save_tensor(batch_features_tensor, "debug.tensor.in.pt");
+                std::cout << "[infer] input: batched_data.features.shape = "
+                          << utils::tensor_shape_as_string(batched_data.features) << "\n";
+                std::cout << "[infer] input: batched_data.features =\n"
+                          << batched_data.features << "\n";
+                utils::save_tensor(batched_data.features, "debug.tensor.in.pt");
             }
 #endif
 
             try {
-                output = model.predict_on_batch(std::move(batch_features_tensor));
+                output = model.predict_on_batch(std::move(batched_data));
             } catch (const std::exception& e) {
                 spdlog::error("Exception caught: {}", e.what());
                 throw;
@@ -1119,7 +1119,7 @@ void infer_samples_in_parallel(
             spdlog::trace(
                     "[consumer {}] Computed batch inference. Timings - collate: {} ms, forward: {} "
                     "ms, "
-                    "total = {}, batch_features_tensor.shape = [{}]",
+                    "total = {}, batched_data.features.shape = [{}]",
                     tid, time_collate, time_forward, time_total, input_batch_tensor_shape);
         }
 

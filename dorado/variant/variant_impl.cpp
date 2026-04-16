@@ -6,6 +6,7 @@
 #include "secondary/common/region.h"
 #include "secondary/consensus/sample_collate_utils.h"
 #include "secondary/consensus/variant_calling.h"
+#include "secondary/features/encoder_utils.h"
 #include "torch_utils/gpu_profiling.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
@@ -256,6 +257,7 @@ process_single_bam_window(
         const secondary::Window& bam_window,
         secondary::EncoderBase& encoder,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        [[maybe_unused]] const std::vector<std::string>& draft_seqs,
         const secondary::VariantCandidateSource candidate_source,
         const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees_from_file,
         const int32_t ploidy,
@@ -269,11 +271,14 @@ process_single_bam_window(
         const int64_t tiled_ext_min_cov,
         const float tiled_ext_cov_fract,
         const int32_t min_depth,
+        const bool model_requires_draft,
         const int32_t tid) {
-    if ((bam_window.seq_id < 0) || (bam_window.seq_id >= std::ssize(draft_lens))) {
+    if ((bam_window.seq_id < 0) || (bam_window.seq_id >= std::ssize(draft_lens)) ||
+        (bam_window.seq_id >= std::ssize(draft_seqs))) {
         throw std::runtime_error{
-                fmt::format("bam_window.seq_id ({}) is out of bounds for draft_lens (size = {}).",
-                            bam_window.seq_id, std::size(draft_lens))};
+                fmt::format("bam_window.seq_id ({}) is out of bounds for draft_lens (size = {}) or "
+                            "the number of loaded reference sequences (size = {})",
+                            bam_window.seq_id, std::size(draft_lens), std::size(draft_seqs))};
     }
 
     const std::string& ref_name = draft_lens[bam_window.seq_id].first;
@@ -324,9 +329,8 @@ process_single_bam_window(
             "{}:{}-{}",
             tid, ref_name, (bam_window.start + 1), bam_window.end);
 
-    const secondary::Sample sample =
-            encoder.encode_region(ref_name, bam_window.start, bam_window.end, bam_window.seq_id,
-                                  kadayashi_result.qname2hp);
+    secondary::Sample sample = encoder.encode_region(ref_name, bam_window.start, bam_window.end,
+                                                     bam_window.seq_id, kadayashi_result.qname2hp);
 
     spdlog::debug(
             "[process_single_bam_window tid = {}] Generated sample for region: {}:{}-{}, sample: "
@@ -396,6 +400,14 @@ process_single_bam_window(
         local_samples = split_samples(std::move(local_samples), window_len, window_overlap);
     }
 
+    if (model_requires_draft) {
+        const std::string_view draft_seq(draft_seqs[bam_window.seq_id]);
+        for (auto& local_sample : local_samples) {
+            local_sample.draft_seq = {secondary::draft_encoding_from_seq(
+                    local_sample.positions_major, local_sample.positions_minor, draft_seq)};
+        }
+    }
+
     spdlog::debug(
             "[process_single_bam_window tid = {}] After final sample extraction: {}:{}-{}, "
             "local_samples.size = {}",
@@ -416,6 +428,7 @@ void worker_sample_producer(
         secondary::WorkerReturnStatus& ret_status,
         const std::vector<std::vector<secondary::Window>>& bam_regions,
         const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        const std::vector<std::string>& draft_seqs,
         const secondary::VariantCandidateSource candidate_source,
         const std::optional<secondary::IntervalTreesInt64Map>& candidate_trees_from_file,
         const int32_t num_threads,
@@ -432,6 +445,13 @@ void worker_sample_producer(
         const float tiled_ext_cov_fract,
         const int32_t min_depth) {
     utils::ScopedProfileRange spr1("sample_producer", 2);
+
+    if (std::size(draft_lens) != std::size(draft_seqs)) {
+        throw std::runtime_error{
+                "Number of loaded reference sequence lengths and sequences differs. draft_lens = " +
+                std::to_string(std::size(draft_lens)) +
+                ", draft_seqs = " + std::to_string(std::size(draft_seqs))};
+    }
 
     const auto worker = [&](const int32_t tid, secondary::WorkerReturnStatus& ret_val) {
         while (!worker_terminate) {
@@ -455,10 +475,11 @@ void worker_sample_producer(
             bool reduce_data_updated = false;
             try {
                 auto [local_samples, simple_variants] = process_single_bam_window(
-                        bam_window, *resources.encoders[tid], draft_lens, candidate_source,
-                        candidate_trees_from_file, ploidy, pass_min_qual, window_len,
-                        window_overlap, variant_flanking_bases, tiled_regions, tiled_ext_flanks,
-                        tiled_ext_major, tiled_ext_min_cov, tiled_ext_cov_fract, min_depth, tid);
+                        bam_window, *resources.encoders[tid], draft_lens, draft_seqs,
+                        candidate_source, candidate_trees_from_file, ploidy, pass_min_qual,
+                        window_len, window_overlap, variant_flanking_bases, tiled_regions,
+                        tiled_ext_flanks, tiled_ext_major, tiled_ext_min_cov, tiled_ext_cov_fract,
+                        min_depth, resources.models[0]->requires_ref(), tid);
                 stats.add("processed",
                           static_cast<double>(std::max<int64_t>(
                                   0, bam_window.end_no_overlap - bam_window.start_no_overlap)));
@@ -813,9 +834,10 @@ void worker_infer_samples_in_parallel(
 #endif
 
         // We can simply stack these since all windows are of the same size. (Smaller windows are set aside.)
-        torch::Tensor batch_features_tensor;
+        dorado::secondary::BatchedData batched_data;
         int64_t time_collate = 0;
         int64_t time_move_to_device = 0;
+
         {
             utils::ScopedProfileRange spr3("infer_samples_in_parallel-collate", 4);
             timer::TimerHighRes timer_collate;
@@ -825,8 +847,26 @@ void worker_infer_samples_in_parallel(
                 batch_features.emplace_back(sample.features);
             }
             const bool use_pinned_memory = (model.get_device().type() == torch::kCUDA);
-            batch_features_tensor =
+            batched_data.features =
                     encoders[tid]->collate(std::move(batch_features), use_pinned_memory);
+
+            spdlog::trace("In batching, model requires ref: {}", model.requires_ref());
+            if (model.requires_ref()) {
+                if (!batch.samples[0].draft_seq) {
+                    throw std::runtime_error{
+                            "Model requires reference but these are missing from samples."};
+                }
+                std::vector<torch::Tensor> refseqs;
+                refseqs.reserve(std::ssize(batch.samples));
+                for (const auto& sample : batch.samples) {
+                    refseqs.emplace_back(sample.draft_seq->view({-1, 1, 1}));
+                }
+                batched_data.refseqs = {encoders[tid]
+                                                ->collate(std::move(refseqs), use_pinned_memory)
+                                                .view({std::ssize(batch.samples), -1})};
+            }
+            spdlog::trace("Post-batching, batch has refs: {}", batched_data.refseqs ? true : false);
+
             time_collate = timer_collate.GetElapsedMilliseconds();
         }
 
@@ -834,22 +874,22 @@ void worker_infer_samples_in_parallel(
             utils::ScopedProfileRange spr3("infer_samples_in_parallel-move_to_device", 4);
             timer::TimerHighRes timer_move_to_device;
             const bool non_blocking = (model.get_device().type() == torch::kCUDA);
-            batch_features_tensor =
-                    model.prepare_batch_input(std::move(batch_features_tensor), non_blocking);
+            batched_data = model.prepare_batch_input(std::move(batched_data), non_blocking);
             time_move_to_device = timer_move_to_device.GetElapsedMilliseconds();
+            spdlog::trace("Post-move, batch has refs: {}", batched_data.refseqs ? true : false);
         }
 
         const std::string input_batch_tensor_shape =
-                utils::tensor_shape_as_string(batch_features_tensor);
+                utils::tensor_shape_as_string(batched_data.features);
 
         // Debug output.
         {
             spdlog::trace(
-                    "[consumer {}] About to call forward(): batch_features_tensor.size() = [{}], "
+                    "[consumer {}] About to call forward(): batched_data.features.size() = [{}], "
                     "approx "
                     "size: {} MB.",
                     tid, input_batch_tensor_shape,
-                    batch_features_tensor.numel() * batch_features_tensor.element_size() /
+                    batched_data.features.numel() * batched_data.features.element_size() /
                             (1024.0 * 1024.0));
         }
 
@@ -872,18 +912,18 @@ void worker_infer_samples_in_parallel(
 
 #ifdef DEBUG_INFERENCE_DATA
             {
-                std::cout << "[infer] input: batch_features_tensor.shape = "
-                          << utils::tensor_shape_as_string(batch_features_tensor) << "\n";
-                std::cout << "[infer] input: batch_features_tensor =\n"
-                          << batch_features_tensor << "\n";
-                utils::save_tensor(batch_features_tensor, "debug.tensor.in.pt");
+                std::cout << "[infer] input: batched_data.features.shape = "
+                          << utils::tensor_shape_as_string(batched_data.features) << "\n";
+                std::cout << "[infer] input: batched_data.features =\n"
+                          << batched_data.features << "\n";
+                utils::save_tensor(batched_data.features, "debug.tensor.in.pt");
             }
 #endif
 
             timer::TimerHighRes timer_forward;
 
             try {
-                output_on_device = model.predict_on_device_batch(std::move(batch_features_tensor));
+                output_on_device = model.predict_on_device_batch(batched_data);
             } catch (const std::exception& e) {
                 spdlog::error("Exception caught: {}", e.what());
                 throw;
@@ -930,7 +970,7 @@ void worker_infer_samples_in_parallel(
             spdlog::trace(
                     "[consumer {}] Computed batch inference. Timings - collate: {} ms, "
                     "move_to_device: {} ms, forward: {} ms, move_to_host: {} ms, "
-                    "total = {}, batch_features_tensor.shape = [{}]",
+                    "total = {}, batched_data.features.shape = [{}]",
                     tid, time_collate, time_move_to_device, time_forward, time_move_to_host,
                     time_total, input_batch_tensor_shape);
         }

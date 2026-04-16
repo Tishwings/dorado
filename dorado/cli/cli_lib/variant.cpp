@@ -898,6 +898,45 @@ std::vector<std::vector<secondary::Region>> resolve_input_regions(
     return ret;
 }
 
+std::vector<std::string> load_reference_sequences(
+        const std::filesystem::path& in_ref_fastx_fn,
+        const std::vector<std::pair<std::string, int64_t>>& draft_lens,
+        const std::vector<std::vector<secondary::Region>>& input_regions) {
+    if (std::size(draft_lens) != std::size(input_regions)) {
+        throw std::runtime_error{
+                "Cannot load reference sequences because draft_lens and input_regions have "
+                "different sizes. draft_lens.size = " +
+                std::to_string(std::size(draft_lens)) +
+                ", input_regions.size = " + std::to_string(std::size(input_regions))};
+    }
+
+    spdlog::debug("[run_variant_calling] Loading full draft sequences.");
+    hts_io::FastxRandomReader fastx_reader(in_ref_fastx_fn);
+
+    // Dense vector by seq_id. Unused sequence IDs stay as empty strings.
+    std::vector<std::string> draft_seqs(std::size(draft_lens));
+    for (int64_t seq_id = 0; seq_id < std::ssize(draft_lens); ++seq_id) {
+        if (std::empty(input_regions[seq_id])) {
+            continue;
+        }
+        const auto& [ref_name, ref_len] = draft_lens[seq_id];
+        std::string ref_seq = fastx_reader.fetch_seq(ref_name);
+        const int64_t loaded_ref_len = std::ssize(ref_seq);
+
+        if (loaded_ref_len != ref_len) {
+            throw std::runtime_error{
+                    "Length of the reference sequence differs between the input reference FASTA "
+                    "index and loaded sequence. Sequence name: '" +
+                    ref_name + "', length from FASTA index: " + std::to_string(ref_len) +
+                    ", loaded sequence length: " + std::to_string(loaded_ref_len)};
+        }
+
+        draft_seqs[seq_id] = std::move(ref_seq);
+    }
+
+    return draft_seqs;
+}
+
 void init_progress_tracker(secondary::Stats& stats,
                            const std::vector<std::vector<secondary::Region>>& input_regions) {
     int64_t total_input_bases = std::accumulate(
@@ -950,6 +989,14 @@ void run_variant_calling(const Options& opt,
     }
 
     secondary::validate_regions(opt.regions, draft_lens);
+
+    // Prepare regions for processing.
+    const std::vector<std::vector<secondary::Region>> input_regions =
+            resolve_input_regions(draft_lookup, bam_info.ref_seqs, opt.regions);
+
+    // Load only reference sequences which are needed for the selected regions.
+    const std::vector<std::string> draft_seqs =
+            load_reference_sequences(opt.in_ref_fastx_fn, draft_lens, input_regions);
 
     // Parse candidate variant regions if a candidate file path was provided.
     const std::unordered_map<std::string, std::vector<int64_t>> candidate_sites =
@@ -1044,10 +1091,6 @@ void run_variant_calling(const Options& opt,
         spdlog::info("Using auto computed batch size. Usable per-worker memory: {:.2f} GB",
                      usable_mem);
     }
-
-    // Prepare regions for processing.
-    const std::vector<std::vector<secondary::Region>> input_regions =
-            resolve_input_regions(draft_lookup, bam_info.ref_seqs, opt.regions);
 
     const int32_t ploidy = secondary::label_scheme_type_to_ploidy(
             secondary::parse_label_scheme_type(model_config.label_scheme_type));
@@ -1145,7 +1188,7 @@ void run_variant_calling(const Options& opt,
             utils::set_thread_name("worker_sample_producer");
             variant::worker_sample_producer(
                     bam_region_queue, sample_queue, chrom_reduce_data, resources, stats,
-                    worker_terminate, wrs_sample_producer, bam_regions, draft_lens,
+                    worker_terminate, wrs_sample_producer, bam_regions, draft_lens, draft_seqs,
                     opt.variant_candidate_source, candidate_trees_from_file, opt.threads,
                     opt.window_len, opt.window_overlap, opt.variant_flanking_bases,
                     opt.continue_on_error, ploidy, opt.pass_min_qual, opt.tiled_regions,

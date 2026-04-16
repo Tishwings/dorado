@@ -1,5 +1,6 @@
 #include "secondary/features/encoder_utils.h"
 
+#include "medaka_read_matrix.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
 
@@ -219,6 +220,66 @@ std::tuple<at::Tensor, std::vector<int64_t>, std::vector<int64_t>> filter_empty_
             relabel_positions(positions_major, positions_minor, keep_mask);
 
     return {std::move(ret_tensor), std::move(ret_pos_major), std::move(ret_pos_minor)};
+}
+
+namespace {
+// Converts ASCII to BAM nibble encoding.
+// Copied from htslib/hts.c since linking to <htslib/hts.h> fails on windows.
+static constexpr unsigned char SEQ_NT16_TABLE[256]{
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 1,  2,  4,  8,  15, 15, 15, 15, 15, 15, 15, 15, 15, 0,  15, 15, 15, 1,
+        14, 2,  13, 15, 15, 4,  11, 15, 15, 12, 15, 3,  15, 15, 15, 15, 5,  6,  8,  8,  7,  9,
+        15, 10, 15, 15, 15, 15, 15, 15, 15, 1,  14, 2,  13, 15, 15, 4,  11, 15, 15, 12, 15, 3,
+        15, 15, 15, 15, 5,  6,  8,  8,  7,  9,  15, 10, 15, 15, 15, 15, 15, 15,
+
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15};
+
+}  // namespace
+
+at::Tensor draft_encoding_from_seq(const std::vector<int64_t>& positions_major,
+                                   const std::vector<int64_t>& positions_minor,
+                                   const std::string_view draft_seq) {
+    const auto opts = at::TensorOptions().dtype(at::kInt);
+    const int64_t sample_size = std::ssize(positions_major);
+    if (sample_size == 0) {
+        return at::empty({});
+    }
+    int64_t pos = positions_major[0];
+    // if first position is minor, start at the next reference base
+    if (positions_minor[0] != 0) {
+        ++pos;
+    }
+    const int64_t seq_end = positions_major[sample_size - 1] + 1;  // end-exclusive
+
+    at::Tensor draft_seq_tensor = at::full({sample_size}, DEL_VAL, opts);
+
+    if (seq_end > std::ssize(draft_seq)) {
+        throw std::runtime_error{"Reference coordinates " + std::to_string(pos) + "-" +
+                                 std::to_string(seq_end) +
+                                 " extend beyond the provided reference length (" +
+                                 std::to_string(draft_seq.length()) + ")."};
+    }
+    if (pos == seq_end) {
+        // Entire chunk is in an insertion, nothing to do
+        return draft_seq_tensor;
+    }
+    for (int64_t idx = 0; idx < sample_size; ++idx) {
+        if (positions_minor[idx] == 0) {
+            const auto base_encoding =
+                    NUM_TO_COUNT_BASE_SYMM[SEQ_NT16_TABLE[static_cast<uint8_t>(draft_seq[pos])]];
+            if (base_encoding >= 1) {
+                draft_seq_tensor.index({idx}) = base_encoding;
+            }
+            ++pos;
+        }
+    }
+    return draft_seq_tensor;
 }
 
 }  // namespace dorado::secondary

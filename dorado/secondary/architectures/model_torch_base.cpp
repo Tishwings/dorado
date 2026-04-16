@@ -36,23 +36,28 @@ void ModelTorchBase::to_device(torch::Device device) {
 }
 
 // Predict on a batch with device and precision handling.
-torch::Tensor ModelTorchBase::predict_on_batch(torch::Tensor x) {
-    x = prepare_batch_input(std::move(x), false);
-    x = predict_on_device_batch(std::move(x));
+at::Tensor ModelTorchBase::predict_on_batch(BatchedData batched_data) {
+    batched_data = prepare_batch_input(batched_data, false);
+    at::Tensor x = predict_on_device_batch(batched_data);
     x = x.cpu();
     return x;
 }
 
-torch::Tensor ModelTorchBase::prepare_batch_input(torch::Tensor x, const bool non_blocking) const {
-    x = x.to(get_device(), non_blocking);
+BatchedData ModelTorchBase::prepare_batch_input(BatchedData batched_data,
+                                                const bool non_blocking) const {
+    batched_data.features = batched_data.features.to(get_device(), non_blocking);
     if (m_half_precision) {
-        x = x.to(torch::kHalf, non_blocking);
+        batched_data.features = batched_data.features.to(torch::kHalf, non_blocking);
     }
-    return x;
+    if (batched_data.refseqs) {
+        batched_data.refseqs = {batched_data.refseqs->to(get_device(), non_blocking)};
+    }
+    return batched_data;
 }
 
-torch::Tensor ModelTorchBase::predict_on_device_batch(torch::Tensor x) {
+at::Tensor ModelTorchBase::predict_on_device_batch(const BatchedData& batched_data) {
     std::lock_guard<std::mutex> lock(m_mutex_write);
+    at::Tensor x = batched_data.features;
     x = forward(std::move(x));
     if (m_half_precision) {
         x = x.to(torch::kFloat);
@@ -72,5 +77,7 @@ void ModelTorchBase::add_nonpersistent_buffer(std::string name) {
     std::lock_guard<std::mutex> lock(m_mutex_write);
     m_non_persistent_buffers.emplace(std::move(name));
 }
+
+bool ModelTorchBase::requires_ref() const { return false; }
 
 }  // namespace dorado::secondary

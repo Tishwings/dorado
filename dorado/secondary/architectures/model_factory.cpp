@@ -321,11 +321,18 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
             embedding_type = parse_embedding_type(get_value(config.model_kwargs, "embedding_type"));
         }
 
+        bool latent_ref_init = false;
+        if (config.model_kwargs.find("latent_init_method") != std::cend(config.model_kwargs)) {
+            latent_ref_init = parse_latent_init_from_ref(
+                    get_value(config.model_kwargs, "latent_init_method"));
+        }
+
         model = ModelVariantPerceiver::make<ModelVariantPerceiver>(
                 read_max_depth, ploidy, num_classes, cnn_size, kernel_sizes, dimension, num_blocks,
                 num_heads, self_attn_layers_per_block, use_mapqc, use_dwells, use_haplotags,
                 use_snp_qv, bases_alphabet_size, bases_embedding_size, use_decoder_lstm,
-                use_per_read_embedding, embedding_type, update_read_embeddings, feature_column_map);
+                use_per_read_embedding, embedding_type, update_read_embeddings, latent_ref_init,
+                feature_column_map);
 
     } else {
         throw std::runtime_error("Unsupported model type!");

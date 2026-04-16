@@ -2,6 +2,7 @@
 #include "TestUtils.h"
 #include "hts_utils/hts_file.h"
 #include "hts_utils/hts_types.h"
+#include "secondary/features/encoder_utils.h"
 #include "secondary/features/haplotag_source.h"
 #include "secondary/features/kadayashi_options.h"
 #include "utils/cigar.h"
@@ -20,6 +21,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -1688,6 +1690,90 @@ CATCH_TEST_CASE("synthetic_test_06-calculate_read_alignment_fix_for_high_coverag
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
         eval_sample(expected, result);
+    }
+}
+
+CATCH_TEST_CASE("synthetic_test_07-populate_draft_seq_tensor", TEST_GROUP) {
+    // clang-format off
+    const std::vector<std::string> reference_sequences{
+        "ACTGAACTGA",
+        "ACTgaacTGA",
+        "AGGATTCNNNGABACG",
+    };
+
+    // clang-format off
+    const std::vector<
+        std::tuple<int64_t, std::vector<int64_t>, std::vector<int64_t> >
+        //Each record is (sequence_id, positions_major, positions_minor)
+    > ranges{
+        {
+            // All of sequence 0
+            0,
+            { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 },
+            { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
+        },
+        {
+            // Subsequence of sequence 0 with gaps
+            0,
+            { 2, 3, 3, 3, 4, 5, 6, 7, 8 },
+            { 0, 0, 1, 2, 0, 0, 0, 0, 0 }
+        },
+        {
+            // Subsequence of sequence 1 with gaps and lower case characters
+            1,
+            { 2, 3, 3, 3, 4, 5, 6, 7, 8 },
+            { 0, 0, 1, 2, 0, 0, 0, 0, 0 }
+        },
+        {
+            // Subsequence of sequence 2 with gaps and ambiguity characters
+            2,
+            { 6, 6, 7, 8, 8, 8, 8, 9, 10, 11, 12, 13, 14, 15 },
+            { 0, 1, 0, 0, 1, 2, 3, 0,  0,  0,  0,  0,  0,  0 }
+        },
+        {
+            // Subsequence of sequence 2 starting on a minor position
+            2,
+            { 1, 1, 2, 3, 4 },
+            { 1, 2, 0, 0, 0 }
+        },
+        {
+            // Entire sample is in an insertion
+            2,
+            { 1, 1, 1, 1, 1, 1 },
+            { 2, 3, 4, 5, 6, 7 }
+        }
+    };
+
+    // Expected results.
+    const std::vector<torch::Tensor> expected_results{
+        torch::tensor(
+            // A  C  T  G  A  A  C  T  G  A
+            {  1, 2, 4, 3, 1, 1, 2, 4, 3, 1}, torch::kInt8),
+        torch::tensor(
+            // T  G  -  -  A  A  C  T  G
+            {  4, 3, 5, 5, 1, 1, 2, 4, 3}, torch::kInt8),
+        torch::tensor(
+            // T  G  -  -  A  A  C  T  G
+            {  4, 3, 5, 5, 1, 1, 2, 4, 3}, torch::kInt8),
+        torch::tensor(
+            // C  -  N  N  -  -  -  N  G  A  B  A  C  G
+            {  2, 5, 5, 5, 5, 5, 5, 5, 3, 1, 5, 1, 2, 3}, torch::kInt8),
+        torch::tensor(
+            // -  -  G  A  T
+            {  5, 5, 3, 1, 4}, torch::kInt8),
+        torch::tensor(
+            // -  -  -  -  -  -
+            {  5, 5, 5, 5, 5, 5}, torch::kInt8)
+    };
+    // clang-format on
+
+    for (int64_t i = 0; i < std::ssize(ranges); ++i) {
+        CATCH_SECTION("Example " + std::to_string(i)) {
+            auto [seq_id, positions_major, positions_minor] = ranges[i];
+            torch::Tensor result = draft_encoding_from_seq(positions_major, positions_minor,
+                                                           reference_sequences[seq_id]);
+            CATCH_CHECK(result.equal(expected_results[i]));
+        }
     }
 }
 

@@ -8,6 +8,7 @@
 #include "torch_utils/tensor_utils.h"
 #include "utils/container_utils.h"
 
+#include <htslib/hts.h>
 #include <spdlog/spdlog.h>
 
 #include <cassert>

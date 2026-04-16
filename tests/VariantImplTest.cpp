@@ -622,6 +622,7 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
 
     const std::vector<std::vector<secondary::Window>> bam_regions{{bam_window}};
     const std::vector<std::pair<std::string, int64_t>> draft_lens{{"chr1", bam_window.seq_length}};
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
 
     // Mock encoder which returns zero samples for this region.
     VariantResources resources;
@@ -634,6 +635,8 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
                     .variants = {simple_variant},
                     .phasing_breakpoints = {},
             }));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
 
     // Initialize the data for reduction, updated by worker_sample_producer.
     std::vector<ChromosomeReduceData> chrom_reduce_data(1);
@@ -664,7 +667,7 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
     /// Run the unit under test.         ///
     ////////////////////////////////////////
     worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
-                           worker_terminate, ret_status, bam_regions, draft_lens,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
                            secondary::VariantCandidateSource::COMPUTE, std::nullopt, 1,
                            bam_window.seq_length, 0, 10, false, 2, 30.0f, false, false, 0, 0, 0.0f,
                            0);
@@ -712,6 +715,8 @@ CATCH_TEST_CASE("worker_sample_producer rejects bam windows with seq_id outside 
             StubEncoder::ExpectedRegion{"chr1", bam_window.start, bam_window.end,
                                         bam_window.seq_id},
             std::unordered_map<std::string, int32_t>{}, kadayashi::varcall_result_t{}));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
 
     // Initialize the data for reduction, updated by worker_sample_producer.
     std::vector<ChromosomeReduceData> chrom_reduce_data(1);
@@ -719,6 +724,7 @@ CATCH_TEST_CASE("worker_sample_producer rejects bam windows with seq_id outside 
 
     // Define the draft lens. Only one sequence.
     const std::vector<std::pair<std::string, int64_t>> draft_lens{{"chr1", 10}};
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
 
     // Populate the input queue.
     utils::AsyncQueue<secondary::Window> input_queue{2};
@@ -741,7 +747,7 @@ CATCH_TEST_CASE("worker_sample_producer rejects bam windows with seq_id outside 
     /// Run the unit under test.         ///
     ////////////////////////////////////////
     worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
-                           worker_terminate, ret_status, bam_regions, draft_lens,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
                            secondary::VariantCandidateSource::COMPUTE, std::nullopt, 1,
                            bam_window.seq_length, 0, 10, false, 2, 30.0f, false, false, 0, 0, 0.0f,
                            0);
@@ -788,6 +794,8 @@ CATCH_TEST_CASE("worker_sample_producer rejects negative remaining_bam_regions",
                     .variants = {},
                     .phasing_breakpoints = {},
             }));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
 
     // Initialize the data for reduction, updated by worker_sample_producer.
     // The num_bam_regions and remaining_bam_regions are initialized to zero,
@@ -803,6 +811,7 @@ CATCH_TEST_CASE("worker_sample_producer rejects negative remaining_bam_regions",
     // Bam regions and draft lengths.
     const std::vector<std::vector<secondary::Window>> bam_regions{{bam_window}};
     const std::vector<std::pair<std::string, int64_t>> draft_lens{{"chr1", 10}};
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
 
     // Populate the input queue.
     utils::AsyncQueue<secondary::Window> input_queue{2};
@@ -825,7 +834,7 @@ CATCH_TEST_CASE("worker_sample_producer rejects negative remaining_bam_regions",
     /// Run the unit under test.         ///
     ////////////////////////////////////////
     worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
-                           worker_terminate, ret_status, bam_regions, draft_lens,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
                            secondary::VariantCandidateSource::COMPUTE, std::nullopt, 1,
                            bam_window.seq_length, 0, 10, false, 2, 30.0f, false, false, 0, 0, 0.0f,
                            0);
@@ -862,6 +871,8 @@ CATCH_TEST_CASE("worker_sample_producer handles migrated haplotagging with real 
     const std::vector<std::pair<std::string, int64_t>> draft_lens =
             utils::load_seq_lengths(in_ref_fn);
 
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
+
     // Define input BAM regions for processing.
     const std::vector<secondary::Window> bam_windows{
             secondary::Window{0, 10000, 0, 300, 0, 0, -1},
@@ -874,6 +885,8 @@ CATCH_TEST_CASE("worker_sample_producer handles migrated haplotagging with real 
     VariantResources resources;
     resources.encoders.emplace_back(make_haplotagging_encoder(in_ref_fn, in_bam_aln_fn));
     resources.encoders.emplace_back(make_haplotagging_encoder(in_ref_fn, in_bam_aln_fn));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
 
     // Create the reduction information updated by worker_sample_producer.
     std::vector<ChromosomeReduceData> chrom_reduce_data(draft_lens.size());
@@ -905,7 +918,7 @@ CATCH_TEST_CASE("worker_sample_producer handles migrated haplotagging with real 
 
     // Unit under test.
     worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
-                           worker_terminate, ret_status, bam_regions, draft_lens,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
                            secondary::VariantCandidateSource::COMPUTE, std::nullopt,
                            /*num_threads=*/2, /*window_len=*/1000, /*window_overlap=*/0,
                            /*variant_flanking_bases=*/50, /*continue_on_exception=*/false,

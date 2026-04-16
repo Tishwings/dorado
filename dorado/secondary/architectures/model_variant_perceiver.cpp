@@ -37,6 +37,15 @@ EmbeddingType parse_embedding_type(const std::string& type) {
     throw std::runtime_error{"Unknown embedding type: '" + type + "'!"};
 }
 
+bool parse_latent_init_from_ref(const std::string& init_method) {
+    if (init_method == "learnable") {
+        return false;
+    } else if (init_method == "ref_seq") {
+        return true;
+    }
+    throw std::runtime_error{"Unknown latent initiation method: '" + init_method + "'!"};
+}
+
 SwiGLUImpl::SwiGLUImpl(const int32_t in_features, const int32_t hidden_features, const bool bias) {
     m_fc1 = register_module(
             "fc1", torch::nn::Linear(
@@ -721,6 +730,7 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
                                              const EmbeddingType embedding_type,
                                              const bool update_read_embeddings,
                                              // const std::optional<int32_t> attn_window,
+                                             const bool latent_ref_init,
                                              const FeatureColumnMap& feature_column_map)
         : ModelTorchBase(ctor_tag),
           m_ploidy{ploidy},
@@ -733,6 +743,7 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
           m_use_dwells{use_dwells},
           m_use_haplotags{use_haplotags},
           m_use_snp_qv{use_snp_qv},
+          m_latent_ref_init{latent_ref_init},
           m_bases_alphabet_size{bases_alphabet_size},
           m_bases_embedding_size{bases_embedding_size},
           m_use_decoder_lstm{use_decoder_lstm},
@@ -749,8 +760,7 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
                   std::vector<int32_t>(std::size(m_kernel_sizes), m_cnn_size),
                   /*use_batch_norm = */ true,
                   /*add_expansion_layer = */ false},
-          m_expansion_layer{m_cnn_size, m_dimension},
-          m_latent_init{torch::randn(m_dimension)},
+          m_expansion_layer{torch::nn::LinearOptions(m_cnn_size, m_dimension)},
           m_blocks{},
           m_decoder_identity{},
           m_output{m_dimension, m_num_classes * m_ploidy} {
@@ -814,7 +824,15 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
     register_module("expansion_layer", m_expansion_layer);
     register_module("blocks", m_blocks);
     register_module("output", m_output);
-    register_parameter("latent_init", m_latent_init);
+    if (m_latent_ref_init) {
+        m_latent_ref_project = torch::nn::Linear(
+                torch::nn::LinearOptions(m_bases_embedding_size, m_dimension).bias(true));
+        register_module("latent_proj", m_latent_ref_project);
+    } else {
+        m_latent_init = torch::empty(m_dimension);
+        register_parameter("latent_init", m_latent_init);
+    }
+    LOG_TRACE("Model requires reference: {}", m_latent_ref_init);
 
     // Mandatory feature columns.
     m_column_base = get_feature_column_or_throw(feature_column_map, FeatureColumns::BASE);
@@ -834,7 +852,12 @@ ModelVariantPerceiver::ModelVariantPerceiver(const MustConstructWithFactory& cto
                        : -1;
 }
 
-at::Tensor ModelVariantPerceiver::forward(at::Tensor x) { return forward_impl(x); }
+at::Tensor ModelVariantPerceiver::forward(at::Tensor x) { return forward_impl(x, {std::nullopt}); }
+
+at::Tensor ModelVariantPerceiver::forward(const at::Tensor& x,
+                                          const std::optional<at::Tensor>& ref_seq) {
+    return forward_impl(x, ref_seq);
+}
 
 double ModelVariantPerceiver::estimate_batch_memory(
         const std::vector<int64_t>& batch_tensor_shape) const {
@@ -967,7 +990,39 @@ std::pair<at::Tensor, at::Tensor> ModelVariantPerceiver::create_embedded_feature
     return {x, pos_mask};
 }
 
-at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x) {
+at::Tensor ModelVariantPerceiver::create_latent_embedding(const std::optional<at::Tensor>& refseqs,
+                                                          const int64_t N,
+                                                          const int64_t T) {
+    const auto device = this->parameters()[0].device();
+    const auto opts = torch::TensorOptions().device(device);
+
+    at::Tensor haplotype_embedding = at::empty({N, T, m_dimension}, opts);
+    if (m_latent_ref_init) {
+        if (refseqs) {
+            const int64_t N_ref = refseqs->size(0);
+            const int64_t T_ref = refseqs->size(1);
+            if ((N_ref != N) || (T_ref != T)) {
+                throw std::runtime_error{"[ModelVariantPerceiver] Reference tensor shape mismatch"};
+            }
+            haplotype_embedding = m_latent_ref_project->forward(
+                    m_base_embedder->forward(refseqs->to(torch::kLong)));
+        } else {
+            throw std::runtime_error{"References are missing from the variant perceiver model"};
+        }
+    } else {
+        haplotype_embedding = m_latent_init.unsqueeze(0).unsqueeze(0).expand(
+                {N, T, -1});  // (batch_size, num_positions, dimension)
+    }
+    haplotype_embedding = haplotype_embedding.unsqueeze(2);
+
+    LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] haplotype_sequence.dtype() = {}",
+                    torch::toString(haplotype_sequence.scalar_type()));
+
+    return haplotype_embedding;
+}
+
+at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x,
+                                               const std::optional<at::Tensor>& refseqs) {
     utils::ScopedProfileRange spr1("ModelVariantPerceiver::forward_impl", 1);
 
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] in_x.shape = {}",
@@ -1004,11 +1059,7 @@ at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x) {
                     torch::toString(reads.scalar_type()));
 
     at::Tensor haplotype_sequence =
-            m_latent_init.unsqueeze(0)
-                    .unsqueeze(0)
-                    .unsqueeze(0)
-                    .expand({b, p, -1, -1})
-                    .to(reads.device());  // (batch_size, num_positions, dimension)
+            create_latent_embedding(refseqs, b, p);  // (batch_size, num_positions, 1, dimension)
 
     LOG_TRACE_DTYPE("[ModelVariantPerceiver::forward_impl] haplotype_sequence.dtype() = {}",
                     torch::toString(haplotype_sequence.scalar_type()));
@@ -1037,5 +1088,21 @@ at::Tensor ModelVariantPerceiver::forward_impl(const at::Tensor& in_x) {
 
     return out;
 }
+
+// Predict on a batch with device and precision handling.
+at::Tensor ModelVariantPerceiver::predict_on_device_batch(const BatchedData& batched_data) {
+    std::lock_guard<std::mutex> lock(m_mutex_write);
+    at::Tensor x = batched_data.features;
+    x = forward(x, batched_data.refseqs);
+    if (m_half_precision) {
+        x = x.to(torch::kFloat);
+    }
+    if (m_normalise) {
+        x = torch::softmax(x, -1);
+    }
+    return x;
+}
+
+bool ModelVariantPerceiver::requires_ref(void) const { return m_latent_ref_init; }
 
 }  // namespace dorado::secondary

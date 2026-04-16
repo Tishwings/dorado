@@ -28,6 +28,8 @@ enum class EmbeddingType {
 
 EmbeddingType parse_embedding_type(const std::string& type);
 
+bool parse_latent_init_from_ref(const std::string& init_method);
+
 /**
  * \brief Rotary embedding implementation.
  *
@@ -264,6 +266,7 @@ public:
                           EmbeddingType embedding_type,
                           bool update_read_embeddings,
                           // std::optional<int32_t> attn_window,
+                          bool latent_ref_init,
                           const FeatureColumnMap& feature_column_map);
 
     /**
@@ -271,13 +274,20 @@ public:
      * \param x Read level feature matrix, shape
      *          (num_batch, num_positions, num_reads (padded), num_features).
      * \param ref_seq The integer encoded haploid reference.
-     *                  Can be None if the model doesn't require it, else has shape
-     *                  (num_batch, num_positions).
+     *                Can be None if the model doesn't require it, else has shape
+     *                (num_batch, num_positions).
      * \return Logits for positionwise predictions (num_positions, num_slots, num_classes).
      */
     at::Tensor forward(at::Tensor x) override;
+    at::Tensor forward(const at::Tensor& x, const std::optional<at::Tensor>& ref_seqs);
+    /**
+     * \brief Predict on a batch with device and precision handling.
+     */
+    at::Tensor predict_on_device_batch(const BatchedData& batched_data) override;
 
     double estimate_batch_memory(const std::vector<int64_t>& batch_tensor_shape) const override;
+
+    bool requires_ref(void) const override;
 
 private:
     static constexpr int32_t MAX_HAPLOTAGS{16};
@@ -292,6 +302,7 @@ private:
     bool m_use_dwells{false};
     bool m_use_haplotags{false};
     bool m_use_snp_qv{false};
+    bool m_latent_ref_init{false};
     int32_t m_bases_alphabet_size{6};
     int32_t m_bases_embedding_size{6};
     bool m_use_decoder_lstm{false};
@@ -307,6 +318,7 @@ private:
     torch::nn::LSTM m_decoder_lstm{nullptr};
     torch::nn::Identity m_decoder_identity{nullptr};
     torch::nn::Linear m_output{nullptr};
+    torch::nn::Linear m_latent_ref_project{nullptr};
 
     int32_t m_column_base{-1};
     int32_t m_column_qual{-1};
@@ -326,7 +338,11 @@ private:
      */
     std::pair<at::Tensor, at::Tensor> create_embedded_features(const at::Tensor& in_x);
 
-    at::Tensor forward_impl(const at::Tensor& x);
+    at::Tensor create_latent_embedding(const std::optional<at::Tensor>& ref_seq,
+                                       int64_t N,
+                                       int64_t T);
+
+    at::Tensor forward_impl(const at::Tensor& x, const std::optional<at::Tensor>& ref_seqs);
 };
 
 }  // namespace dorado::secondary

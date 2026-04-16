@@ -97,6 +97,7 @@ CATCH_TEST_CASE("slice_sample: Basic slicing", TEST_GROUP) {
     sample.positions_minor = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
     sample.depth =
             torch::tensor({1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9, 10.1}, torch::kFloat32);
+    sample.draft_seq = {torch::tensor({1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, torch::kInt32)};
 
     CATCH_SECTION("Slice middle range") {
         const int64_t idx_start = 2;
@@ -111,6 +112,7 @@ CATCH_TEST_CASE("slice_sample: Basic slicing", TEST_GROUP) {
         const auto expected_depth = torch::tensor({3.3, 4.4, 5.5, 6.6, 7.7}, torch::kFloat32);
         const std::vector<int64_t> expected_positions_major{2, 3, 4, 5, 6};
         const std::vector<int64_t> expected_positions_minor{12, 13, 14, 15, 16};
+        const auto expected_draft_seq = torch::tensor({3, 4, 5, 6, 7}, torch::kInt32);
 
         const Sample sliced_sample = slice_sample(sample, idx_start, idx_end);
 
@@ -121,6 +123,7 @@ CATCH_TEST_CASE("slice_sample: Basic slicing", TEST_GROUP) {
         CATCH_CHECK(sliced_sample.positions_minor == expected_positions_minor);
         CATCH_CHECK(std::empty(sliced_sample.read_ids_left));
         CATCH_CHECK(std::empty(sliced_sample.read_ids_right));
+        CATCH_CHECK(sliced_sample.draft_seq->equal(expected_draft_seq));
     }
 
     CATCH_SECTION("Slice entire range") {
@@ -136,6 +139,7 @@ CATCH_TEST_CASE("slice_sample: Basic slicing", TEST_GROUP) {
         CATCH_CHECK(sliced_sample.positions_minor == sample.positions_minor);
         CATCH_CHECK(std::empty(sliced_sample.read_ids_left));
         CATCH_CHECK(std::empty(sliced_sample.read_ids_right));
+        CATCH_CHECK(sliced_sample.draft_seq->equal(*sample.draft_seq));
     }
 
     CATCH_SECTION("Slice single row") {
@@ -146,6 +150,7 @@ CATCH_TEST_CASE("slice_sample: Basic slicing", TEST_GROUP) {
         const auto expected_depth = torch::tensor({5.5}, torch::kFloat32);
         const std::vector<int64_t> expected_positions_major{4};
         const std::vector<int64_t> expected_positions_minor{14};
+        const auto expected_draft_seq = torch::tensor({5}, torch::kInt32);
 
         const Sample sliced_sample = slice_sample(sample, idx_start, idx_end);
 
@@ -156,6 +161,7 @@ CATCH_TEST_CASE("slice_sample: Basic slicing", TEST_GROUP) {
         CATCH_CHECK(sliced_sample.positions_minor == expected_positions_minor);
         CATCH_CHECK(std::empty(sliced_sample.read_ids_left));
         CATCH_CHECK(std::empty(sliced_sample.read_ids_right));
+        CATCH_CHECK(sliced_sample.draft_seq->equal(expected_draft_seq));
     }
 }
 
