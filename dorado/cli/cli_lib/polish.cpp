@@ -109,7 +109,6 @@ struct Options {
     std::optional<bool> tag_keep_missing;  // Optionally overrides the model config if specified.
     int32_t min_depth = 0;
     bool any_bam = false;
-    bool any_model = false;
     bool bacteria = false;
     VariantCallingEnum vc_type = VariantCallingEnum::VCF;
     bool ambig_ref = false;
@@ -273,10 +272,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .hidden()
                 .help("Allow any BAM as input, not just Dorado aligned.")
                 .flag();
-        parser.add_argument("--skip-model-compatibility-check")
-                .hidden()
-                .help("Allow any model to be applied on the data.")
-                .flag();
         parser.add_argument("--continue-on-error")
                 .hidden()
                 .help("Continue the process even if an exception is thrown. This "
@@ -351,7 +346,6 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.load_scripted_model = parser.get<bool>("scripted");
     opt.queue_size = parser.get<int>("queue-size");
     opt.any_bam = parser.get<bool>("any-bam");
-    opt.any_model = parser.get<bool>("skip-model-compatibility-check");
     opt.continue_on_error = parser.get<bool>("continue-on-error");
     opt.model_str = parser.get<std::string>("model-override");
 
@@ -470,6 +464,12 @@ void validate_options(const Options& opt) {
 
     if (opt.regions_str && std::empty(opt.regions)) {
         spdlog::error("Option --regions is specified, but an empty set of regions is given!");
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (!std::empty(opt.model_str) && !std::filesystem::exists(opt.model_str)) {
+        spdlog::error("Model override file path '{}' is specified, but the file does not exist.",
+                      opt.model_str);
         std::exit(EXIT_FAILURE);
     }
 }
@@ -741,8 +741,11 @@ std::filesystem::path resolve_model_advanced(
     std::filesystem::path model_dir;
 
     if (!std::empty(model_str) && std::filesystem::exists(model_str)) {
+        spdlog::warn(
+                "Skipping basecaller compatibility checks for user-specified model: '{}'. The "
+                "accuracy of the results is not guaranteed.",
+                model_str);
         spdlog::debug("Resolved model from user-specified path: {}", model_str);
-        spdlog::info("Model specified by path: '{}'", model_str);
         model_dir = model_str;
 
     } else if (count_model_hits(models::polish_models(), model_str) == 1) {
@@ -1281,11 +1284,12 @@ int polish(int argc, char* argv[]) {
             validate_bam_model(bam_info, model_config, opt.bacteria, false,
                                secondary::LabelSchemeType::HAPLOID);
         } else {
+            constexpr bool ANY_MODEL = true;
             // Advanced model resolve from a specific path or model name.
             const std::filesystem::path model_dir = resolve_model_advanced(
-                    bam_info, opt.models_directory, opt.model_str, opt.any_model);
+                    bam_info, opt.models_directory, opt.model_str, ANY_MODEL);
             model_config = polisher::load_model(model_dir, opt.load_scripted_model);
-            validate_bam_model(bam_info, model_config, opt.bacteria, opt.any_model,
+            validate_bam_model(bam_info, model_config, opt.bacteria, ANY_MODEL,
                                secondary::LabelSchemeType::HAPLOID);
         }
 

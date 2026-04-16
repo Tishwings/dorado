@@ -42,7 +42,15 @@ popd
 
 MODEL_ROOT_DIR=${output_dir}
 
+# Download the model once.
 MODEL_NAME="dna_r10.4.1_e8.2_400bps_hac@v4.3.0_polish"
+MODEL_DIR=${MODEL_ROOT_DIR}/${MODEL_NAME}
+if [[ ! -d "${MODEL_DIR}" ]]; then
+    ${DORADO_BIN} download --model "${MODEL_NAME}" --models-directory ${output_dir}
+fi
+
+# Download the model once.
+MODEL_NAME="dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl"
 MODEL_DIR=${MODEL_ROOT_DIR}/${MODEL_NAME}
 if [[ ! -d "${MODEL_DIR}" ]]; then
     ${DORADO_BIN} download --model "${MODEL_NAME}" --models-directory ${output_dir}
