@@ -48,7 +48,7 @@ public:
 
         // Keep track of the number of tasks in flight so that we can wait on them during a flush.
         counter.fetch_add(1, std::memory_order_relaxed);
-        q.try_push([task = std::forward<Func>(func), &counter] {
+        q.try_push([task = std::forward<Func>(func), &counter]() mutable {
             task();
 
             // We only need to wake waiters when this value hits 0, so avoid unnecessary notifies.
