@@ -32,6 +32,7 @@ struct AlignmentResult {
     int num_deletions;   ///< Number of positions in genome that have no counterpart in the strand
     int num_aligned;  ///< Equals genome_end - genome_start - num_deletions = strand_end - strand_start - num_insertions
     int num_correct;   ///< Number of aligned positions where bases agree
+    int num_gaps;      ///< Number of skipped reference bases (in spliced alignments)
     float coverage;    ///< num_aligned / min(strand length, reference length)
     float identity;    ///< Equals num_correct / num_aligned
     float accuracy;    ///< Equals num_correct / (num_aligned + num_insertions + num_deletions)
@@ -59,6 +60,7 @@ struct AlignmentResult {
               num_deletions(-1),
               num_aligned(-1),
               num_correct(-1),
+              num_gaps(-1),
               coverage(-1.f),
               identity(-1.f),
               accuracy(-1.f),
