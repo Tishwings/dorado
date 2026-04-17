@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <latch>
+#include <optional>
 #include <random>
 #include <thread>
 
@@ -225,12 +226,24 @@ DEFINE_TEST("Bad queue index") {
 }
 
 DEFINE_TEST("Empty pools don't crash") {
-    WorkerPool(0, "test");
-    WorkerPool(1, "test");
-    TaskPool(0, 0);
-    TaskPool(1, 0);
-    TaskPool(0, 1);
-    TaskPool(1, 1);
+    const std::size_t num_workers = GENERATE(0, 1);
+    const std::size_t num_queues = GENERATE(0, 1);
+    const std::size_t queue_capacity = GENERATE(0, 1);
+    const bool with_bind = GENERATE(false, true);
+    const bool with_wait = GENERATE(false, true);
+    CATCH_CAPTURE(num_workers, num_queues, queue_capacity, with_bind, with_wait);
+
+    WorkerPool workers(num_workers, "test");
+    TaskPool tasks(num_queues, queue_capacity);
+
+    std::optional<WorkerPool::BindTasks> binder;
+    if (with_bind) {
+        binder.emplace(workers, tasks);
+    }
+
+    if (with_wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 }
 
 #if DORADO_ENABLE_BENCHMARK_TESTS

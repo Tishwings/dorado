@@ -77,6 +77,15 @@ void WorkerPool::set_task_pool(TaskPool* pool) {
     }
 }
 
+TaskPool* WorkerPool::get_task_pool() const {
+    if (m_num_workers == 0) {
+        // If there's no workers then we can't service any task pool.
+        return nullptr;
+    } else {
+        return m_states[0].task_pool;
+    }
+}
+
 WorkerPool::WorkerPool(size_t num_workers, std::string_view name)
         : m_states(std::make_unique<WorkerState[]>(num_workers)), m_num_workers(num_workers) {
     for (size_t idx = 0; idx < m_num_workers; idx++) {
@@ -90,7 +99,7 @@ WorkerPool::WorkerPool(size_t num_workers, std::string_view name)
 
 WorkerPool::~WorkerPool() {
     // There shouldn't be a task pool bound at this point, so there's no need to flush the workers.
-    assert(m_num_workers == 0 || m_states[0].task_pool == nullptr);
+    assert(get_task_pool() == nullptr);
 
     // Tell the workers to stop, then join them.
     for (size_t idx = 0; idx < m_num_workers; idx++) {
@@ -101,8 +110,11 @@ WorkerPool::~WorkerPool() {
 }
 
 void WorkerPool::bind_task_pool(TaskPool& pool) {
-    if (m_states[0].task_pool != nullptr) {
+    if (get_task_pool() != nullptr) {
         throw std::logic_error("WorkerPool already has a TaskPool bound");
+    } else if (pool.num_queues() == 0) {
+        // Don't bind an empty pool since we'd crash trying to do anything with it.
+        return;
     }
     set_task_pool(&pool);
 }
@@ -111,7 +123,7 @@ void WorkerPool::unbind_task_pool() { set_task_pool(nullptr); }
 
 void WorkerPool::flush() {
     // If we haven't been assigned a pool yet then bail.
-    TaskPool* task_pool = m_states[0].task_pool;
+    TaskPool* task_pool = get_task_pool();
     if (task_pool == nullptr) {
         return;
     }

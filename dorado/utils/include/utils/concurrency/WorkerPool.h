@@ -22,6 +22,7 @@ private:
 
 private:
     void worker_thread(size_t worker_idx);
+    TaskPool* get_task_pool() const;
     void set_task_pool(TaskPool* pool);
 
     void bind_task_pool(TaskPool& pool);
