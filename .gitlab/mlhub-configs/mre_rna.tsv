@@ -1,3 +1,3 @@
-job_name	basecaller_mode	basecaller	simplex_model	model_m5C	model_inosine_m6A	model_m6A_DRACH	model_pseU
-MRE-Dorado_COMMIT_SHORT_PLACEHOLDER_rna-hac	dorado_artifact	COMMIT_SHA_PLACEHOLDER	hac	m5C	inosine_m6A	m6A_DRACH	pseU
-MRE-Dorado_COMMIT_SHORT_PLACEHOLDER_rna-sup	dorado_artifact	COMMIT_SHA_PLACEHOLDER	sup	m5C_2OmeC	inosine_m6A_2OmeA	m6A_DRACH	pseU_2OmeU
+job_name	basecaller_mode	basecaller	mre_config	simplex_model	model_m5C	model_inosine_m6A	model_m6A_DRACH	model_pseU
+MRE-Dorado_COMMIT_SHORT_PLACEHOLDER_rna-hac	dorado_artifact	COMMIT_SHA_PLACEHOLDER	${projectDir}/configs/rna004_130bps_mods.json	hac	m5C	inosine_m6A	m6A_DRACH	pseU
+MRE-Dorado_COMMIT_SHORT_PLACEHOLDER_rna-sup	dorado_artifact	COMMIT_SHA_PLACEHOLDER	${projectDir}/configs/rna004_130bps_mods.json	sup	m5C_2OmeC	inosine_m6A_2OmeA	m6A_DRACH	pseU_2OmeU
