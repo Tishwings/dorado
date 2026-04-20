@@ -1,7 +1,7 @@
 #pragma once
 
 #include "read_pipeline/base/MessageSink.h"
-#include "utils/concurrency/async_task_executor.h"
+#include "utils/concurrency/AsyncExecutor.h"
 
 #include <atomic>
 #include <map>
@@ -10,19 +10,13 @@
 
 namespace dorado {
 
-namespace utils::concurrency {
-class MultiQueueThreadPool;
-}  // namespace utils::concurrency
-
 class PolyACalculatorNode : public MessageSink {
 public:
     static inline constexpr std::size_t MAX_INPUT_QUEUE_SIZE{10000};
     static inline constexpr std::size_t MAX_PROCESSING_QUEUE_SIZE{MAX_INPUT_QUEUE_SIZE / 2};
+    static inline constexpr char QUEUE_THREAD_NAME[] = "polya";
 
-    PolyACalculatorNode(utils::concurrency::MultiQueueThreadPool &thread_pool,
-                        utils::concurrency::TaskPriority pipeline_priority,
-                        size_t max_reads);
-    PolyACalculatorNode(utils::concurrency::MultiQueueThreadPool &thread_pool, size_t max_reads);
+    PolyACalculatorNode(utils::concurrency::AsyncExecutor &&task_executor, size_t max_reads);
     ~PolyACalculatorNode();
 
     std::string get_name() const override;
@@ -35,7 +29,7 @@ private:
     void input_thread_fn();
     void process_read(SimplexRead &read);
 
-    utils::concurrency::AsyncTaskExecutor m_task_executor;
+    utils::concurrency::AsyncExecutor m_task_executor;
 
     std::atomic<size_t> total_tail_lengths_called{0};
     std::atomic<int> num_called{0};

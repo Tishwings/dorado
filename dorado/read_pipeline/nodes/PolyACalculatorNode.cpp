@@ -85,15 +85,9 @@ void PolyACalculatorNode::process_read(SimplexRead &read) {
     }
 }
 
-PolyACalculatorNode::PolyACalculatorNode(utils::concurrency::MultiQueueThreadPool &thread_pool,
-                                         utils::concurrency::TaskPriority pipeline_priority,
+PolyACalculatorNode::PolyACalculatorNode(utils::concurrency::AsyncExecutor &&task_executor,
                                          size_t max_reads)
-        : MessageSink(max_reads, 1),
-          m_task_executor(thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
-
-PolyACalculatorNode::PolyACalculatorNode(utils::concurrency::MultiQueueThreadPool &thread_pool,
-                                         size_t max_reads)
-        : PolyACalculatorNode(thread_pool, utils::concurrency::TaskPriority::normal, max_reads) {}
+        : MessageSink(max_reads, 1), m_task_executor(std::move(task_executor)) {}
 
 PolyACalculatorNode::~PolyACalculatorNode() { terminate_impl(utils::AsyncQueueTerminateFast::Yes); }
 
@@ -109,13 +103,12 @@ void PolyACalculatorNode::terminate(const TerminateOptions &terminate_options) {
 };
 
 void PolyACalculatorNode::restart() {
-    m_task_executor.restart();
     start_input_processing([this] { input_thread_fn(); }, "polyacalc_node");
 }
 
 stats::NamedStats PolyACalculatorNode::sample_stats() const {
     stats::NamedStats stats = MessageSink::sample_stats();
-    stats["queued_tasks"] = double(m_task_executor.num_tasks_in_flight());
+    stats["queued_tasks"] = double(m_task_executor.tasks_in_flight());
     stats["reads_not_estimated"] = static_cast<double>(num_not_called.load());
     stats["reads_estimated"] = static_cast<double>(num_called.load());
     stats["average_tail_length"] = static_cast<double>(

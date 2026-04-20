@@ -574,11 +574,11 @@ struct PipelineWorkers {
     explicit PipelineWorkers(const utils::ThreadAllocations& thread_allocations)
             : aligner_executor(thread_allocations.aligner_threads),
               barcode_pool(thread_allocations.barcoder_threads),
-              polya_pool(std::thread::hardware_concurrency(), "polya_pool") {}
+              polya_pool(std::thread::hardware_concurrency()) {}
 
     SimpleExecutor<AlignerNode> aligner_executor;
     SimpleExecutor<BarcodeClassifierNode> barcode_pool;
-    utils::concurrency::MultiQueueThreadPool polya_pool;
+    SimpleExecutor<PolyACalculatorNode> polya_pool;
 };
 
 struct NewPipeline {
@@ -660,7 +660,7 @@ NewPipeline create_pipeline(
             client_info->contexts().register_context<const poly_tail::PolyTailCalculatorSelector>(
                     poly_tail_calc_selector);
             current_sink_node = pipeline_desc.add_node<PolyACalculatorNode>(
-                    {current_sink_node}, worker_pools.polya_pool, 1000);
+                    {current_sink_node}, worker_pools.polya_pool.get(), 1000);
         }
     }
     if (barcoding_info) {
