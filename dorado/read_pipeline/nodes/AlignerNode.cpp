@@ -217,7 +217,6 @@ void AlignerNode::input_thread_fn() {
             align_read(message.take<DuplexReadPtr>());
         } else {
             send_message_to_sink(std::move(message));
-            continue;
         }
     }
 }
