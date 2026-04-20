@@ -45,13 +45,8 @@ const dorado::demux::BarcodingInfo* get_barcoding_info(const dorado::ClientInfo&
 
 namespace dorado {
 
-BarcodeClassifierNode::BarcodeClassifierNode(utils::concurrency::MultiQueueThreadPool& thread_pool,
-                                             utils::concurrency::TaskPriority pipeline_priority)
-        : MessageSink(10000, 1),
-          m_task_executor(thread_pool, pipeline_priority, MAX_PROCESSING_QUEUE_SIZE) {}
-
-BarcodeClassifierNode::BarcodeClassifierNode(utils::concurrency::MultiQueueThreadPool& thread_pool)
-        : BarcodeClassifierNode(thread_pool, utils::concurrency::TaskPriority::normal) {}
+BarcodeClassifierNode::BarcodeClassifierNode(utils::concurrency::AsyncExecutor&& task_executor)
+        : MessageSink(10000, 1), m_task_executor(std::move(task_executor)) {}
 
 BarcodeClassifierNode::~BarcodeClassifierNode() {
     stop_input_processing(utils::AsyncQueueTerminateFast::Yes);
@@ -65,7 +60,6 @@ void BarcodeClassifierNode::terminate(const TerminateOptions& terminate_options)
 }
 
 void BarcodeClassifierNode::restart() {
-    m_task_executor.restart();
     start_input_processing([this] { input_thread_fn(); }, "brcd_classifier");
 }
 
@@ -229,7 +223,7 @@ void BarcodeClassifierNode::barcode(SimplexRead& read) {
 
 stats::NamedStats BarcodeClassifierNode::sample_stats() const {
     stats::NamedStats stats = MessageSink::sample_stats();
-    stats["queued_tasks"] = double(m_task_executor.num_tasks_in_flight());
+    stats["queued_tasks"] = double(m_task_executor.tasks_in_flight());
     stats["num_barcodes_demuxed"] = m_num_records.load();
     {
         std::lock_guard lock(m_barcode_count_mutex);

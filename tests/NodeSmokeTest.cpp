@@ -12,6 +12,7 @@
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/AdapterDetectorNode.h"
 #include "read_pipeline/nodes/BarcodeClassifierNode.h"
@@ -394,8 +395,8 @@ DEFINE_TEST(NodeSmokeTestRead, "BarcodeClassifierNode") {
 
     set_pipeline_restart(pipeline_restart);
 
-    dorado::utils::concurrency::MultiQueueThreadPool thread_pool(2);
-    run_smoke_test<dorado::BarcodeClassifierNode>(thread_pool);
+    dorado::SimpleExecutor<dorado::BarcodeClassifierNode> thread_pool(2);
+    run_smoke_test<dorado::BarcodeClassifierNode>(thread_pool.get());
 }
 
 DEFINE_TEST(NodeSmokeTestRead, "AdapterDetectorNode") {
@@ -422,8 +423,8 @@ CATCH_TEST_CASE("BarcodeClassifierNode: test simple pipeline with fastq and sam 
     std::string kit = {"EXP-PBC096"};
     const bool barcode_both_ends = GENERATE(true, false);
     const bool no_trim = GENERATE(true, false);
-    dorado::utils::concurrency::MultiQueueThreadPool thread_pool(8);
-    pipeline_desc.add_node<dorado::BarcodeClassifierNode>({sink}, thread_pool);
+    dorado::SimpleExecutor<dorado::BarcodeClassifierNode> thread_pool(8);
+    pipeline_desc.add_node<dorado::BarcodeClassifierNode>({sink}, thread_pool.get());
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
     fs::path data1 = fs::path(get_data_dir("barcode_demux/double_end_variant")) /

@@ -573,11 +573,11 @@ auto create_writers(ProgressTracker& tracker,
 struct PipelineWorkers {
     explicit PipelineWorkers(const utils::ThreadAllocations& thread_allocations)
             : aligner_executor(thread_allocations.aligner_threads),
-              barcode_pool(thread_allocations.barcoder_threads, "barcode_pool"),
+              barcode_pool(thread_allocations.barcoder_threads),
               polya_pool(std::thread::hardware_concurrency(), "polya_pool") {}
 
     SimpleExecutor<AlignerNode> aligner_executor;
-    utils::concurrency::MultiQueueThreadPool barcode_pool;
+    SimpleExecutor<BarcodeClassifierNode> barcode_pool;
     utils::concurrency::MultiQueueThreadPool polya_pool;
 };
 
@@ -666,7 +666,7 @@ NewPipeline create_pipeline(
     if (barcoding_info) {
         client_info->contexts().register_context<const demux::BarcodingInfo>(barcoding_info);
         current_sink_node = pipeline_desc.add_node<BarcodeClassifierNode>(
-                {current_sink_node}, worker_pools.barcode_pool);
+                {current_sink_node}, worker_pools.barcode_pool.get());
     }
     if (adapter_trimming_enabled) {
         current_sink_node = pipeline_desc.add_node<AdapterDetectorNode>(

@@ -8,6 +8,7 @@
 #include "hts_utils/bam_utils.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/base/messages/ReadPair.h"
 #include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/BarcodeClassifierNode.h"
@@ -241,9 +242,9 @@ CATCH_TEST_CASE(
     const bool barcode_both_ends = GENERATE(true, false);
     CATCH_CAPTURE(barcode_both_ends);
     constexpr bool no_trim = false;
-    utils::concurrency::MultiQueueThreadPool thread_pool(8);
+    SimpleExecutor<BarcodeClassifierNode> thread_pool(8);
     auto trimmer = pipeline_desc.add_node<TrimmerNode>({sink}, 1, false);
-    pipeline_desc.add_node<BarcodeClassifierNode>({trimmer}, thread_pool);
+    pipeline_desc.add_node<BarcodeClassifierNode>({trimmer}, thread_pool.get());
 
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
@@ -401,9 +402,9 @@ CATCH_TEST_CASE("BarcodeClassifierNode: test for proper trimming and alignment d
     std::string kit = "SQK-16S024";
     constexpr bool barcode_both_ends = false;
     constexpr bool no_trim = false;
-    utils::concurrency::MultiQueueThreadPool thread_pool(8);
+    SimpleExecutor<BarcodeClassifierNode> thread_pool(8);
     auto trimmer = pipeline_desc.add_node<TrimmerNode>({sink}, 1, false);
-    pipeline_desc.add_node<BarcodeClassifierNode>({trimmer}, thread_pool);
+    pipeline_desc.add_node<BarcodeClassifierNode>({trimmer}, thread_pool.get());
 
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
     fs::path data_dir = fs::path(get_data_dir("barcode_demux"));
