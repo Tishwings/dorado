@@ -1,5 +1,6 @@
 #pragma once
 
+#include "flash_attention_module.h"
 #include "model_latent_space_lstm.h"
 #include "nn/RMSNorm.h"
 #include "secondary/architectures/model_torch_base.h"
@@ -14,9 +15,10 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
+
+#define ENABLE_LOCAL_ATTENTION_MASK 0
 
 namespace dorado::secondary {
 
@@ -52,8 +54,6 @@ protected:
     at::Tensor m_cos_freqs{nullptr};
     at::Tensor m_sin_freqs{nullptr};
 
-    at::Tensor rotate_half(const at::Tensor& x) const;
-
 private:
     void expand_freq_dims();
 };
@@ -66,9 +66,10 @@ public:
                                 int64_t max_read_depth,
                                 const at::TensorOptions& options);
 
-    at::Tensor forward(at::Tensor x);
+    at::Tensor forward(at::Tensor x, const at::Tensor& depths);
 
 private:
+    int64_t m_max_depth{0};
     void expand_freq_dims();
 };
 TORCH_MODULE(AbsoluteRotaryEmbedding);
@@ -77,7 +78,7 @@ class EmbeddingWrapperImpl : public torch::nn::Module {
 public:
     EmbeddingWrapperImpl(int64_t max_depth, int64_t dimension);
 
-    at::Tensor forward(at::Tensor x);
+    at::Tensor forward(at::Tensor x, const at::Tensor& depths);
 
 private:
     int64_t m_max_depth{0};
@@ -112,6 +113,7 @@ public:
                                 EmbeddingType embedding_type,
                                 bool qkv_bias,
                                 bool out_bias,
+                                bool use_varlen,
                                 const std::optional<int64_t>& rotary_dim,
                                 const std::optional<int64_t>& attn_window);
 
@@ -124,7 +126,10 @@ public:
      */
     at::Tensor forward(const at::Tensor& x,
                        const at::Tensor& y,
-                       const std::optional<at::Tensor>& pos_mask);
+                       const at::Tensor& x_depths,
+                       const at::Tensor& y_depths,
+                       const std::optional<at::Tensor>& x_pos_mask,
+                       const std::optional<at::Tensor>& y_pos_mask);
 
 private:
     int64_t m_nhead{0};
@@ -134,9 +139,21 @@ private:
     std::optional<int64_t> m_rotary_dim{std::nullopt};
     std::optional<int64_t> m_attn_window{std::nullopt};
 
+#if ENABLE_LOCAL_ATTENTION_MASK
+    mutable at::Tensor m_cached_local_mask{nullptr};
+    mutable c10::Device m_cached_local_mask_device{c10::kCPU};
+    mutable int64_t m_cached_local_mask_t{-1};
+    mutable int64_t m_cached_local_mask_num_q{-1};
+    mutable int64_t m_cached_local_mask_num_kv{-1};
+    mutable int64_t m_cached_local_mask_window{-1};
+#endif
+
+    const bool m_use_varlen{true};
+
     torch::nn::Linear m_kv_proj{nullptr};
     torch::nn::Linear m_q_proj{nullptr};
     torch::nn::Linear m_out_proj{nullptr};
+    FlashAttentionModule m_flash_attention{nullptr};
     RotaryEmbedding m_positional_embeddings{nullptr};
     torch::nn::Identity m_q_embedding_ident{nullptr};
     torch::nn::Identity m_k_embedding_ident{nullptr};
@@ -145,21 +162,29 @@ private:
     EmbeddingWrapper m_q_embedding_wrap{nullptr};
     EmbeddingWrapper m_k_embedding_wrap{nullptr};
 
+    std::pair<at::Tensor, at::Tensor> flatten_tensor(
+            const at::Tensor& x,
+            const at::Tensor& depths,
+            const std::optional<at::Tensor>& pos_mask) const;
+
+#if ENABLE_LOCAL_ATTENTION_MASK
     /**
      * \brief Implements the following masking logic:
      *          abs((query_pos % T) - (key_pos % T)) <= self.attn_window
-     *
-     * TODO: Cache results of the mask to avoid recomputation.
      */
     at::Tensor local_attention_mask(int64_t T,
                                     int64_t num_q_seqs,
                                     int64_t num_kv_seqs,
                                     int64_t attn_window) const;
+#endif
 
     at::Tensor attn_fn(const at::Tensor& q,
                        const at::Tensor& k,
                        const at::Tensor& v,
-                       const std::optional<at::Tensor>& pos_mask) const;
+                       const at::Tensor& q_depths,
+                       const at::Tensor& kv_depths,
+                       const std::optional<at::Tensor>& q_pos_mask,
+                       const std::optional<at::Tensor>& kv_pos_mask) const;
 };
 TORCH_MODULE(MultiHeadCrossAttention);
 
@@ -173,6 +198,7 @@ public:
                                          EmbeddingType embedding_type,
                                          bool qkv_bias,
                                          bool out_bias,
+                                         bool use_varlen,
                                          const std::optional<int64_t>& rotary_dim,
                                          const std::optional<int64_t>& attn_window,
                                          int64_t dim_feedforward,
@@ -180,7 +206,10 @@ public:
 
     at::Tensor forward(at::Tensor x,
                        const at::Tensor& y,
-                       const std::optional<at::Tensor>& pos_mask);
+                       const at::Tensor& x_depths,
+                       const at::Tensor& y_depths,
+                       const std::optional<at::Tensor>& x_pos_mask,
+                       const std::optional<at::Tensor>& y_pos_mask);
 
 private:
     at::Tensor m_deepnorm_alpha{torch::empty({})};
@@ -206,7 +235,7 @@ public:
                            int64_t dim_feedforward,
                            float deepnorm_alpha);
 
-    at::Tensor forward(const at::Tensor& x);
+    at::Tensor forward(const at::Tensor& x, const at::Tensor& depth);
 };
 TORCH_MODULE(SelfAttentionBlock);
 
@@ -224,14 +253,19 @@ public:
 
     /**
      * \brief Forward function of the MessagePassingBlock module.
-     * \param read_seqs Tensor of shape (batch_size, num_positions, num_sequences, dim).
-     * \param hap_seqs Tensor of shape (batch_size, num_positions, num_sequences, dim).
-     * \param mask Tensor of shape (batch_size, num_sequences (read), num_positions).
-     * \return out Tensor of shape (batch_size, num_positions, num_sequences, dim).
+     * \param read_seqs Tensor of shape (total_depth, num_positions, dim).
+     * \param hap_seqs Tensor of shape (batch_size, num_positions, dim).
+     * \param read_depths Tensor containing number of read rows for each sample in the batch, shape (batch_size).
+     * \param hap_depths Tensor containing number of haplotype embedding rows for each sample in the batch, shape (batch_size).
+     * \param pos_mask Bool tensor with false at positions in read_seqs that should be masked, shape (total_depth, num_positions).
+     * \return Updated read_seqs, shape (total_depth, num_positions, dim)
+     *         Updated hap_seqs, shape (batch_size, num_positions, dim).
      */
     std::pair<at::Tensor, at::Tensor> forward(at::Tensor read_seqs,
                                               at::Tensor hap_seqs,
-                                              const at::Tensor& mask);
+                                              const at::Tensor& read_depths,
+                                              const at::Tensor& hap_depths,
+                                              const at::Tensor& pos_mask);
 
 private:
     bool m_update_read_embeddings{false};
@@ -333,10 +367,11 @@ private:
     /**
      * \brief Preprocessing of input tensor.
      * \param in_x Tensor of shape (batch_size, num_positions, num_sequences, num_features).
-     * \return embedding tensor of shape (batch_size, num_positions, num_sequences, dim),
-               mask tensor of shape (batch_size, num_sequences, num_positions).
+     * \return embedding tensor of shape (total_depth, num_positions, dim),
+               mask tensor of shape (total_depth, num_positions).
+               batch depths tensor of shape (batch_size).
      */
-    std::pair<at::Tensor, at::Tensor> create_embedded_features(const at::Tensor& in_x);
+    std::tuple<at::Tensor, at::Tensor, at::Tensor> create_embedded_features(const at::Tensor& in_x);
 
     at::Tensor create_latent_embedding(const std::optional<at::Tensor>& ref_seq,
                                        int64_t N,

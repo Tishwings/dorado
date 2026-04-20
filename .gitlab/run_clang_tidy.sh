@@ -10,6 +10,7 @@ apply_fixits=
 cache_dir=
 type=
 preset=
+source_filter=
 while getopts "j:B:fc:t:p:" opt; do
   case $opt in
     j) # Number of jobs to use during build/analysis
@@ -41,12 +42,14 @@ script_dir="$(cd -- "$(dirname -- "$0")" >/dev/null 2>&1 && pwd -P)"
 if [[ $type == "dorado" ]] ; then
     # Assuming the current script is in .gitlab/
   source_dir=$(dirname $script_dir)
+  source_filter='^(?!.*\/dorado\/3rdparty\/).*$'
   if [[ -n $preset ]] ; then
     echo "Presets are not currently supported in dorado. This parameter will be ignored."
   fi
 elif [[ $type == "ont_core_cpp" ]] ; then
     # Assuming the current script is in dorado/.gitlab/
   source_dir=$(dirname $(dirname $script_dir))
+  source_filter='^(?!.*\/(dorado\/dorado\/3rdparty|third_party)\/).*$'
   if [[ -z $preset ]] ; then
     echo "A preset is required for ont_core_cpp. Please provide a supported preset value -p".
     exit 1
@@ -94,6 +97,11 @@ else
   find ${source_dir}/third_party/* -name .clang-tidy -delete
 fi
 
+run_clang_tidy_args=()
+if [[ -n $source_filter ]] ; then
+  run_clang_tidy_args+=("${source_filter}")
+fi
+
 # Print the current config to make sure it parses correctly.
 clang-tidy --dump-config
 
@@ -103,4 +111,5 @@ run-clang-tidy \
   -p ${build_dir} \
   -j ${num_jobs} \
   ${apply_fixits} \
-  -quiet
+  -quiet \
+  "${run_clang_tidy_args[@]}"

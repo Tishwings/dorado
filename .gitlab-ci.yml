@@ -119,6 +119,17 @@ variables:
     PARALLEL_JOBS=$(( 8 > PARALLEL_JOBS ? 8 : PARALLEL_JOBS ))
   - echo "PARALLEL_JOBS '${PARALLEL_JOBS}'"
 
+.set_flashattention_parallel_jobs:
+  - |
+    FLASHATTN3_BUILD_JOBS=""
+    if [[ -n "${DORADO_FLASHATTN3_BUILD_JOBS:-}" ]]; then
+      FLASHATTN3_BUILD_JOBS=${DORADO_FLASHATTN3_BUILD_JOBS}
+      if (( FLASHATTN3_BUILD_JOBS > PARALLEL_JOBS )); then
+        FLASHATTN3_BUILD_JOBS=${PARALLEL_JOBS}
+      fi
+    fi
+  - echo "FLASHATTN3_BUILD_JOBS '${FLASHATTN3_BUILD_JOBS}'"
+
 .setup_ccache:
   - if [[ -d '/data/gitlab-ci-cache' ]] && [[ $OSTYPE != 'darwin'* ]] && [[ $OSTYPE != 'msys' ]]; then
   -   export CCACHE_DIR=/data/gitlab-ci-cache
@@ -128,9 +139,14 @@ variables:
 .run_dorado_cmake_build:
   - echo Dorado build stage
   - !reference [.set_parallel_jobs]
+  - !reference [.set_flashattention_parallel_jobs]
   - !reference [.setup_ccache]
   - echo "BUILD_OPTIONS '${BUILD_OPTIONS}'"
   - eval cmake ${BUILD_OPTIONS} -S . -B ${BUILD_DIR} -D CMAKE_BUILD_TYPE=${BUILD_TYPE} -D DORADO_ENABLE_BENCHMARK_TESTS=ON -DDORADO_3RD_PARTY_DOWNLOAD=dorado-dependencies
+  - |
+    if [[ -n "${FLASHATTN3_BUILD_JOBS:-}" ]]; then
+      cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} --target dorado_flashattention3 -j ${FLASHATTN3_BUILD_JOBS}
+    fi
   - cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} --target ${BUILD_TARGET} -j ${PARALLEL_JOBS}
 
 .run_dorado_cmake_ctest:
@@ -220,7 +236,7 @@ variables:
   cache:
     key: dorado-dependencies-$CI_JOB_NAME_SLUG
     paths:
-      - dorado-dependencies    
+      - dorado-dependencies
 
 .sign_dorado:macos:
   script:
@@ -335,7 +351,7 @@ build:linux:x86:coverage:
     - !reference [.on_nightly_or_manual, rules]
   coverage: '/lines: \d+(?:\.\d+)?/'
   artifacts:
-    paths: 
+    paths:
       - build/dorado_test_coverage.xml
       - build/dorado_test_coverage/
     reports:
@@ -407,6 +423,7 @@ build:linux:arm64:jammy:
   image: ${DORADO_DOCKER_ROOT}/dorado-l4t-r36.4.0:1.0
   variables:
     BUILD_OPTIONS: "-DONT_MM2_EXE=ON"
+    DORADO_FLASHATTN3_BUILD_JOBS: "6"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
@@ -417,6 +434,7 @@ build:linux:arm64:cuda13:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
     BUILD_OPTIONS: "-DONT_MM2_EXE=ON"
+    DORADO_FLASHATTN3_BUILD_JOBS: "6"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
@@ -490,6 +508,7 @@ build:macos:arm:no_ccache:
 build_archive:linux:arm64:jammy:
   image: ${DORADO_DOCKER_ROOT}/dorado-l4t-r36.4.0:1.0
   variables:
+    DORADO_FLASHATTN3_BUILD_JOBS: "6"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
@@ -500,6 +519,7 @@ build_archive:linux:arm64:jammy:
 build_archive:linux:arm64:cuda13:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
+    DORADO_FLASHATTN3_BUILD_JOBS: "6"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
