@@ -177,6 +177,8 @@ if (_DORADO_FLASHATTN3_CAN_BUILD)
             target_compile_options(${target_name}
                 PRIVATE
                     $<$<COMPILE_LANGUAGE:CXX>:/W0>
+                    $<$<COMPILE_LANGUAGE:CUDA>:--forward-unknown-to-host-compiler>
+                    $<$<COMPILE_LANGUAGE:CUDA>:--forward-slash-prefix-opts>
                     $<$<COMPILE_LANGUAGE:CUDA>:--threads=${_DORADO_FLASHATTN3_NVCC_THREADS}>
                     $<$<COMPILE_LANGUAGE:CUDA>:-cudart=none>
                     $<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcudafe --diag_suppress=177>
