@@ -1,17 +1,26 @@
 set(_DORADO_FLASHATTN3_ROOT ${DORADO_3RD_PARTY_SOURCE}/flashattention)
 set(_DORADO_FLASHATTN3_HOPPER_DIR ${_DORADO_FLASHATTN3_ROOT}/hopper)
 set(_DORADO_FLASHATTN3_CUTLASS_INCLUDE ${_DORADO_FLASHATTN3_ROOT}/csrc/cutlass/include)
+set(_DORADO_FLASHATTN3_MIN_CUDA_VERSION 12.3)
 
 set(_DORADO_FLASHATTN3_CAN_BUILD OFF)
 if (NOT APPLE
     AND CUDAToolkit_FOUND
     AND EXISTS "${_DORADO_FLASHATTN3_HOPPER_DIR}/flash_api.cpp"
     AND EXISTS "${_DORADO_FLASHATTN3_CUTLASS_INCLUDE}/cutlass/cutlass.h")
-    include(CheckLanguage)
-    check_language(CUDA)
-    if (CMAKE_CUDA_COMPILER)
-        enable_language(CUDA)
-        set(_DORADO_FLASHATTN3_CAN_BUILD ON)
+    # Keep this aligned with the vendored FlashAttention3 Hopper package, whose
+    # setup.py and README require CUDA 12.3+.
+    if (CUDAToolkit_VERSION VERSION_GREATER_EQUAL ${_DORADO_FLASHATTN3_MIN_CUDA_VERSION})
+        include(CheckLanguage)
+        check_language(CUDA)
+        if (CMAKE_CUDA_COMPILER)
+            enable_language(CUDA)
+            set(_DORADO_FLASHATTN3_CAN_BUILD ON)
+        endif()
+    else()
+        message(STATUS
+            "Disabling dorado_flashattention3: CUDA ${CUDAToolkit_VERSION} is older than "
+            "the required ${_DORADO_FLASHATTN3_MIN_CUDA_VERSION}")
     endif()
 endif()
 
