@@ -370,7 +370,7 @@ varcall_result_t kadayashi_phase_and_varcall_wrapper(samFile *fp_bam,
                                                      const float max_gapcompressed_seqdiv,
                                                      const bool use_dvr_for_phasing);
 
-typedef dorado::secondary::ReadAlignmentData medaka_feature_matrix_t;
+typedef dorado::secondary::ReadAlignmentData MedakaFeatureMatrix;
 /*
  - Values: 0=uninitiated, 1234=ACGT, 5=del(or inside minor columns)
    If at position X, read#1 has an insertion of length five and read#2 has ins of
@@ -398,7 +398,7 @@ typedef dorado::secondary::ReadAlignmentData medaka_feature_matrix_t;
 
 enum haplotagsource { FORCE_UNPHASED, USE_BAM_HAP_TAG, USE_TAG_FROM_HASHTABLE };
 
-struct medaka_feature_matrix_options_t {
+struct MedakaFeatureMatrixOptions {
     bool include_dwells;
     bool include_haplotype_column;
     bool include_snp_qv;
@@ -426,23 +426,23 @@ struct medaka_feature_matrix_options_t {
     double min_snp_accuracy;
 };
 
-medaka_feature_matrix_t gen_medaka_feature_matrix(
+MedakaFeatureMatrix gen_medaka_feature_matrix(
         dorado::secondary::BamFileView &hf,
         std::string_view refname,
         const uint32_t itvl_start,
         const uint32_t itvl_end,
         const std::unordered_map<std::string, int32_t> &qname2hp,
-        const medaka_feature_matrix_options_t &options);
+        const MedakaFeatureMatrixOptions &options);
 
-medaka_feature_matrix_t gen_medaka_feature_matrix_wrapper(
+MedakaFeatureMatrix gen_medaka_feature_matrix_wrapper(
         dorado::secondary::BamFile &bam_file,
         std::string refname,
         uint32_t itvl_start,
         uint32_t itvl_end,
         const std::unordered_map<std::string, int32_t> &qname2hp,
-        const medaka_feature_matrix_options_t &options);
+        const MedakaFeatureMatrixOptions &options);
 
-void print_medaka_feature_matrix(const std::string &fn_out, const medaka_feature_matrix_t &mfm);
-std::string print_medaka_feature_matrix(const medaka_feature_matrix_t &mfm);
+void print_medaka_feature_matrix(const std::string &fn_out, const MedakaFeatureMatrix &mfm);
+std::string print_medaka_feature_matrix(const MedakaFeatureMatrix &mfm);
 
 }  // namespace kadayashi

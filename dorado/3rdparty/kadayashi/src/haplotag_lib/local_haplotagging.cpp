@@ -14,7 +14,6 @@
 #include <htslib/hts.h>
 #include <htslib/kfunc.h>
 #include <htslib/sam.h>
-#include <spdlog/fmt/bundled/format.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -1542,6 +1541,8 @@ bool read_downsampling_query_or_update_counter(read_downsampling_rw rw,
     //  the first slot is overflowing or not. This works reasonably ok when
     //  downsample_window is small (e.g. 1000).
 
+    assert(downsample_window > 0);
+
     bool read_may_be_accepted = true;
 
     const uint32_t effective_r_start = (r_start_pos > itvl_start ? r_start_pos - itvl_start : 0);
@@ -2498,6 +2499,8 @@ static medaka_feature_matrix_features_t gen_medaka_feature_matrix_parse_features
 }
 
 static inline bool sort_qa_t_ins_last(const qa_t &a, const qa_t &b) {
+    assert(!a.allele.empty());
+    assert(!b.allele.empty());
     if (a.pos != b.pos) {
         return a.pos < b.pos;
     } else {  // DEL<SNP<INS
@@ -2511,6 +2514,13 @@ static inline bool sort_qa_t_ins_last(const qa_t &a, const qa_t &b) {
     }
 }
 
+static size_t get_qa_t_allele_len(const qa_t &var) {
+    if (var.allele.size() < 2) {
+        throw std::runtime_error{"[kdys::" + std::string(__func__) + "] invalid allele size"};
+    }
+    return var.allele.size() - 1;
+}
+
 static int8_t get_snp_qv_medaka_style(const read_t &read) {
     int n_mismatches = 0;
     int n_ins = 0;
@@ -2518,7 +2528,7 @@ static int8_t get_snp_qv_medaka_style(const read_t &read) {
         if (var.allele.back() == VAR_OP_X) {
             n_mismatches++;
         } else if (var.allele.back() == VAR_OP_I) {
-            n_ins += var.allele.size() - 1;
+            n_ins += get_qa_t_allele_len(var);
         }
     }
 
@@ -2543,7 +2553,7 @@ static double get_snp_accuracy_dorado_style(const read_t &read, const char *qn) 
     int n_del = 0;
     for (const qa_t &var : read.vars) {
         const uint8_t cigar_op = var.allele.back();
-        const int cigar_size = static_cast<int>(var.allele.size() - 1);
+        const int cigar_size = static_cast<int>(get_qa_t_allele_len(var));
         if (cigar_op == VAR_OP_I) {
             n_ins += cigar_size;
         } else if (cigar_op == VAR_OP_D) {
@@ -2554,83 +2564,67 @@ static double get_snp_accuracy_dorado_style(const read_t &read, const char *qn) 
     }
     const int span = static_cast<int>(read.end_pos - read.start_pos);
     if (span <= n_del) {
-        spdlog::warn("[kdys::{}] read {} abnormal deletion length? aln start {} end {} del {}",
-                     __func__, qn, read.start_pos, read.end_pos, n_del);
+        throw std::runtime_error{"[kdys::" + std::string(__func__) +
+                                 "] read has abnormal deletion length? qn " + std::string(qn) +
+                                 "aln start " + std::to_string(read.start_pos) + " end " +
+                                 std::to_string(read.end_pos) + " del " + std::to_string(n_del)};
     }
     const int tot = span - n_del + n_ins;
     return static_cast<double>(n_mismatches) / tot;
 }
 
-medaka_feature_matrix_t gen_medaka_feature_matrix(
-        dorado::secondary::BamFileView &hf,
-        std::string_view refname,
-        const uint32_t itvl_start,
-        const uint32_t itvl_end,
-        const std::unordered_map<std::string, int32_t> &qname2hp,
-        const medaka_feature_matrix_options_t &options) {
-    // This function goes through the bam region once to collect the variants of the reads.
-    // After that we pack the reads into lanes (like pseudo reads), where each lane contain
-    // at least one non-overlapping reads. Since all variants in the query intervals
-    // are known, we know the lengths and the locations of minor columns.
-    // Feature matrix is then allocated.
-    // The feature matrix is in shape [n_pos, n_reads, n_features] and we stored
-    // the alignment as individual aligned reads, thus there will an implicit transposition.
-    // We iterate through reads. For each read we first store its info into
-    // a 1D array `expanded_read`, which in then inserted into the matrix in the transposed order.
+struct featmatgen_chunk_t {
+    // parameters
+    const std::string_view refname;
+    const uint32_t itvl_start;
+    const uint32_t itvl_end;
+    const MedakaFeatureMatrixOptions &options;
+    const int n_features;
 
-    constexpr bool WUT_VERBOSE = false;
-    if (itvl_end <= itvl_start) {
-        spdlog::error("[kdys::{}] invalid query region: ref {} start {} end {}. Skipping.",
-                      __func__, refname, itvl_start, itvl_end);
-        medaka_feature_matrix_t ret(0, 0, 0, 0, 1, 0);
-        return ret;
-    }
+    // helper stats
+    uint32_t n_downsample_filtered;
 
-    // input files
-    const std::string itvl = create_region_string(refname, itvl_start, itvl_end);
-    HtsItrPtr bamitr = HtsItrPtr(sam_itr_querys(hf.idx, hf.hdr, itvl.c_str()), HtsItrDestructor());
-    BamPtr aln = BamPtr(bam_init1(), BamDestructor());
+    // helper for collecting refseq from read pileup
+    std::vector<uint8_t> refseq_substring;
+    std::vector<uint8_t> read_seqi{};  // temp buffer to be used by bam_seqi
 
-    // input parameters
-    const int n_feature = 4 + (options.include_dwells ? 1 : 0) +
-                          (options.include_haplotype_column ? 1 : 0) +
-                          (options.include_snp_qv ? 1 : 0) + (options.num_dtypes > 1);
+    // helper declaration: depending on the flags, we might load haptag
+    // from bam rather than the ht from input.
+    str2int_t qname2hp_bam{};
 
-    // helpers for collecting refseq from read pileup
-    std::vector<uint8_t> refseq_substring(itvl_end - itvl_start, 0);
-    std::vector<uint8_t> read_seqi;  // temp buffer to be used by bam_seqi
+    // storage: reads and their auxiliary data
+    std::vector<read_t> all_reads{};
+    std::vector<int8_t> all_mapq{};    // can be put into read_t
+    std::vector<int8_t> all_snp_qv{};  // can be put into read_t
+    std::vector<int8_t> all_dtype{};
+    std::unordered_map<uint32_t, uint32_t> all_ins{};
+    std::unordered_map<uint32_t, std::string> readID2qn{};
+    std::vector<std::vector<uint8_t>> all_reads_quals{};
+    std::vector<std::vector<int8_t>> all_dwells{};
+};
+static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::BamFileView &hf,
+                                                           featmatgen_chunk_t &gck) {
     const uint8_t seqi2int[16] = {0,        1 /*A1*/, 2 /*C2*/, 0, 3 /*G4*/, 0, 0, 0,
                                   4 /*T8*/, 0,        0,        0, 0,        0, 0, 5 /*N15*/};
+
+    // input files
+    const std::string itvl = create_region_string(gck.refname, gck.itvl_start, gck.itvl_end);
+    HtsItrPtr bamitr = HtsItrPtr(sam_itr_querys(hf.idx, hf.hdr, itvl.c_str()), HtsItrDestructor());
+    BamPtr aln = BamPtr(bam_init1(), BamDestructor());
 
     // helpers for read downsampling (adapted from pileup_ht)
     const bool enable_downsample = true;
     const int downsample_window = 1000;
     const int downsample_readcap = 60;
-    int downsample_filtered = 0;
+    gck.n_downsample_filtered = 0;
     std::vector<int> downsample_counter;
-    const int n_counter = (itvl_end - itvl_start) / downsample_window + 1;
+    const int n_counter = (gck.itvl_end - gck.itvl_start) / downsample_window + 1;
     if (enable_downsample) {
         downsample_counter.resize(n_counter, 0);
     }
 
-    // helper declaration: depending on the flags, we might load haptag
-    // from bam rather than the ht from input.
-    str2int_t qname2hp_bam;
-
-    // helper for collecting variants of the read
-    std::vector<read_t> all_reads{};
-    std::vector<int8_t> all_mapq{};    // can be put into read_t
-    std::vector<int8_t> all_snp_qv{};  // can be put into read_t
-    std::unordered_map<uint32_t, uint32_t> all_ins{};
-    std::unordered_map<uint32_t, std::string> readID2qn;
-    std::vector<std::vector<uint8_t>> all_reads_quals{};
-    std::vector<std::vector<int8_t>> all_dwells{};
-
     uint32_t n_reads = 0;
-    uint32_t n_reads_unfiltered = 0;
     while (sam_itr_next(hf.fp, bamitr.get(), aln.get()) >= 0) {
-        n_reads_unfiltered++;
-
         const char *qn = bam_get_qname(aln.get());
         const uint32_t r_start_pos = static_cast<uint32_t>(aln.get()->core.pos);
         const uint32_t r_end_pos = static_cast<uint32_t>(bam_endpos(aln.get()));
@@ -2644,29 +2638,29 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
         if (to_exclude_by_flags(aln.get(), 4 | 256 | 2048)) {
             continue;
         }
-        if (to_exclude_by_low_mapq(aln.get(), options.min_mapq)) {
+        if (to_exclude_by_low_mapq(aln.get(), gck.options.min_mapq)) {
             continue;
         }
 
         // filter by readgroup (adapted from medaka_bamiter.cpp)
-        if (!options.readgroup.empty()) {
+        if (!gck.options.readgroup.empty()) {
             const uint8_t *rg = bam_aux_get(aln.get(), "RG");
             if (rg) {
                 const char *rg_val = bam_aux2Z(rg);
                 if (errno == EINVAL) {
                     continue;
                 }
-                if (strcmp(options.readgroup.c_str(), rg_val) != 0) {
+                if (strcmp(gck.options.readgroup.c_str(), rg_val) != 0) {
                     continue;
                 }
             }
         }
 
         // filter by one specified tag (adapted from medaka_bamiter.cpp)
-        if (!options.tag_name.empty()) {
-            const uint8_t *tag = bam_aux_get(aln.get(), options.tag_name.c_str());
+        if (!gck.options.tag_name.empty()) {
+            const uint8_t *tag = bam_aux_get(aln.get(), gck.options.tag_name.c_str());
             if (tag == nullptr) {
-                if (options.tag_keep_missing) {
+                if (gck.options.tag_keep_missing) {
                     break;
                 } else {
                     continue;
@@ -2676,7 +2670,7 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
             if (errno == EINVAL) {
                 continue;
             }
-            if (tag_value != options.tag_value) {
+            if (tag_value != gck.options.tag_value) {
                 continue;
             }
         }
@@ -2686,10 +2680,10 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
         // based on other criteria.
         if (enable_downsample) {
             const bool read_may_be_accepted = read_downsampling_query_or_update_counter(
-                    READ_DOWNSAMPLING_QUERY_ONLY, r_start_pos, r_end_pos, itvl_start, itvl_end,
-                    downsample_counter, downsample_window, downsample_readcap);
+                    READ_DOWNSAMPLING_QUERY_ONLY, r_start_pos, r_end_pos, gck.itvl_start,
+                    gck.itvl_end, downsample_counter, downsample_window, downsample_readcap);
             if (!read_may_be_accepted) {
-                downsample_filtered++;
+                gck.n_downsample_filtered++;
                 continue;  // go parse the next read
             }
         }
@@ -2714,26 +2708,26 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                 aln.get(), r.vars, 0 /*pp.min_base_quality*/, &r.left_clip_len, &r.right_clip_len,
                 false /*retain_SNP_only*/, nullptr);
         const double seqdiv_mismatch_only = get_snp_accuracy_dorado_style(r, qn);
-        if ((seqdiv_mismatch_only < options.min_snp_accuracy) || !parse_ok) {
+        if ((seqdiv_mismatch_only < gck.options.min_snp_accuracy) || !parse_ok) {
             continue;
         }
 
         // Read is accepted. Update the downsampling counter.
         read_downsampling_query_or_update_counter(
-                READ_DOWNSAMPLING_QUERY_AND_UPDATE, r_start_pos, r_end_pos, itvl_start, itvl_end,
-                downsample_counter, downsample_window, downsample_readcap);
+                READ_DOWNSAMPLING_QUERY_AND_UPDATE, r_start_pos, r_end_pos, gck.itvl_start,
+                gck.itvl_end, downsample_counter, downsample_window, downsample_readcap);
 
         // save haptag from the alignment record if requested.
-        if (options.include_haplotype_column && ((options.hap_source == USE_BAM_HAP_TAG))) {
+        if (gck.options.include_haplotype_column && ((gck.options.hap_source == USE_BAM_HAP_TAG))) {
             const uint8_t *const tag = bam_aux_get(aln.get(), "HP");
             if (tag) {
-                qname2hp_bam[qn] = static_cast<int>(bam_aux2i(tag));
+                gck.qname2hp_bam[qn] = static_cast<int>(bam_aux2i(tag));
             }
         }
 
         // calculate snp qv now, because we will adjust start_pos and
         // end_pos of read later.
-        all_snp_qv.push_back(get_snp_qv_medaka_style(r));
+        gck.all_snp_qv.push_back(get_snp_qv_medaka_style(r));
 
         // adjust insertion position
         for (qa_t &var : r.vars) {
@@ -2744,10 +2738,10 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
 
         // (workaround for lack of refseq)
         const uint8_t *seqdata = bam_get_seq(aln.get());
-        read_seqi.clear();
+        gck.read_seqi.clear();
         const int seq_len = aln.get()->core.l_qseq;
         for (int i = r.left_clip_len; i < seq_len; i++) {
-            read_seqi.push_back(seqi2int[bam_seqi(seqdata, i)]);  // unset0; ACGTN 12345
+            gck.read_seqi.push_back(seqi2int[bam_seqi(seqdata, i)]);  // unset0; ACGTN 12345
         }
 
         // Go through the read variants,
@@ -2768,14 +2762,14 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
 
             for (int i = 0; i < static_cast<int32_t>(r.vars.size()); i++) {
                 const qa_t &var = r.vars[i];
-                const uint32_t var_len = var.allele.size() - 1;
+                const uint32_t var_len = get_qa_t_allele_len(var);
                 const uint8_t cigar = var.allele.back();
-                if (var.pos < itvl_start) {
+                if (var.pos < gck.itvl_start) {
                     if (cigar == VAR_OP_I) {
                         readadj_offset_from_ins += var_len;
                     } else if (cigar == VAR_OP_D) {
-                        if (var.pos + var_len >= itvl_start) {
-                            readadj_first_del_shift = var.pos + var_len - itvl_start;
+                        if (var.pos + var_len >= gck.itvl_start) {
+                            readadj_first_del_shift = var.pos + var_len - gck.itvl_start;
                             readadj_offset_from_del += var_len;
                         } else {
                             readadj_offset_from_del += var_len;
@@ -2783,7 +2777,7 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                     }
                     continue;
                 }
-                if (var.pos >= itvl_end) {
+                if (var.pos >= gck.itvl_end) {
                     break;
                 }
 
@@ -2799,7 +2793,7 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                 }
 
                 if (cigar == VAR_OP_I) {
-                    auto [it, inserted] = all_ins.emplace(var.pos, var_len);
+                    auto [it, inserted] = gck.all_ins.emplace(var.pos, var_len);
                     if (!inserted && var_len > it->second) {
                         it->second = var_len;
                     }
@@ -2813,11 +2807,9 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                     r.vars.clear();
                 } else {
                     if (first_viable_i < 0 || last_viable_i < 0) {
-                        spdlog::error(
-                                "[kdys::{}] removing oob variants from read failed: first_viable_i "
-                                "{} , last_viable_i {}. Check code. Nothing done, matrix may be "
-                                "incorrect.",
-                                __func__, first_viable_i, last_viable_i);
+                        throw std::runtime_error{"[kdys::" + std::string(__func__) +
+                                                 "] removing oob variants from read failed: qn " +
+                                                 std::string(qn) + "interval " + itvl};
                     } else {
                         const uint32_t right = r.vars.size() - last_viable_i + 1;
                         if (first_viable_i > 0) {
@@ -2833,8 +2825,9 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
 
         // consider adjust read start and end position (read vars were truncated like so above)
         const uint32_t r_raw_start_pos = r.start_pos;
-        r.start_pos = itvl_start > r.start_pos ? itvl_start + readadj_first_del_shift : r.start_pos;
-        r.end_pos = std::min<uint32_t>(r.end_pos, itvl_end);
+        r.start_pos = gck.itvl_start > r.start_pos ? gck.itvl_start + readadj_first_del_shift
+                                                   : r.start_pos;
+        r.end_pos = std::min<uint32_t>(r.end_pos, gck.itvl_end);
 
         // (workaround for refseq: fill the substring refseq)
         // (we also need the `offset_on_read` to slice base qualities and dwells, though we don't
@@ -2842,29 +2835,30 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
         //  in the expanded read will have base quality anyways. As a result, this way we
         //   do not get the the exact on-read end position of them, which is fine.)
         uint32_t end_pos = r.vars.empty() ? r.end_pos : r.vars[0].pos;
-        uint32_t offset_on_ref = r.start_pos - itvl_start;
+        uint32_t offset_on_ref = r.start_pos - gck.itvl_start;
         uint32_t offset_on_read =
                 r.start_pos - r_raw_start_pos + readadj_offset_from_ins - readadj_offset_from_del;
 
         const uint8_t *quals = bam_get_qual(aln.get());
-        all_reads_quals.emplace_back(quals + offset_on_read + r.left_clip_len,
-                                     quals + aln.get()->core.l_qseq);
+        gck.all_reads_quals.emplace_back(quals + offset_on_read + r.left_clip_len,
+                                         quals + aln.get()->core.l_qseq);
 
         // (calculate dwell and shift it too)
         std::vector<int8_t> dwells;
         dorado::secondary::calculate_dwells(aln.get(), dwells);
-        all_dwells.emplace_back(dwells.begin() + offset_on_read + r.left_clip_len, dwells.end());
+        gck.all_dwells.emplace_back(dwells.begin() + offset_on_read + r.left_clip_len,
+                                    dwells.end());
         // (first)
         for (uint32_t i = r.start_pos; i < end_pos; i++) {
-            if (refseq_substring[offset_on_ref] != 0 &&
-                refseq_substring[offset_on_ref] != read_seqi[offset_on_read]) {
-                fprintf(stderr,
-                        "[wut][r %d %s] overwriting refseq substring (%d->%d) shouldn't "
-                        "happen#1 ; pos is %d\n",
-                        (int)n_reads, qn, (int)refseq_substring[offset_on_ref],
-                        (int)read_seqi[offset_on_read], (int)(offset_on_ref + itvl_start));
+            if (gck.refseq_substring[offset_on_ref] != 0 &&
+                gck.refseq_substring[offset_on_ref] != gck.read_seqi[offset_on_read]) {
+                spdlog::debug(
+                        "[wut][r {} {}] overwriting refseq substring ({}->{}) shouldn't "
+                        "happen#1 ; pos is {}\n",
+                        n_reads, qn, gck.refseq_substring[offset_on_ref],
+                        gck.read_seqi[offset_on_read], offset_on_ref + gck.itvl_start);
             }
-            refseq_substring[offset_on_ref] = read_seqi[offset_on_read];
+            gck.refseq_substring[offset_on_ref] = gck.read_seqi[offset_on_read];
             offset_on_ref++;
             offset_on_read++;
         }
@@ -2872,7 +2866,7 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
         // (rest: var-matches-var-matches...end)
         for (uint32_t i = 0; i < r.vars.size(); i++) {
             const qa_t &var = r.vars[i];
-            const uint32_t var_len = var.allele.size() - 1;
+            const uint32_t var_len = get_qa_t_allele_len(var);
             const uint8_t cigar = var.allele.back();
 
             end_pos = (i + 1 >= r.vars.size()) ? r.end_pos : r.vars[i + 1].pos;
@@ -2882,53 +2876,254 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                 offset_on_ref++;
                 offset_on_read++;
             } else if (cigar == VAR_OP_I) {
-                refseq_substring[offset_on_ref] = read_seqi[offset_on_read];
+                bool skip_ref_base_before_ins = false;
+                if (i > 0) {
+                    const qa_t &prev_var = r.vars[i - 1];
+                    const uint8_t prev_cigar = prev_var.allele.back();
+                    const size_t prev_len = get_qa_t_allele_len(prev_var);
+                    const uint32_t prev_pos = prev_var.pos;
+                    if ((prev_cigar == VAR_OP_X) && (prev_pos == var.pos)) {
+                        skip_ref_base_before_ins = true;
+                    } else if ((prev_cigar == VAR_OP_D) && (prev_pos + prev_len > var.pos)) {
+                        skip_ref_base_before_ins = true;
+                    }
+                }
+                if (!skip_ref_base_before_ins) {
+                    gck.refseq_substring[offset_on_ref] = gck.read_seqi[offset_on_read];
+                }
                 offset_on_ref++;
                 offset_on_read++;
                 offset_on_read += var_len;
             } else {
                 spdlog::error("[kdys::{}] r {} saw invalid cigar {}\n", __func__, qn, cigar);
             }
-            for (uint32_t j = offset_on_ref + itvl_start; j < end_pos; j++) {
-                if (refseq_substring[offset_on_ref] != 0 &&
-                    refseq_substring[offset_on_ref] != read_seqi[offset_on_read]) {
+            for (uint32_t j = offset_on_ref + gck.itvl_start; j < end_pos; j++) {
+                if (gck.refseq_substring[offset_on_ref] != 0 &&
+                    gck.refseq_substring[offset_on_ref] != gck.read_seqi[offset_on_read]) {
                     spdlog::error(
                             "[kdys::{}] r {} overwriting refseq substring ({}->{}) "
                             "shouldn't happen#2; pos is {}\n",
-                            __func__, qn, refseq_substring[offset_on_ref],
-                            read_seqi[offset_on_read], offset_on_ref + itvl_start);
+                            __func__, qn, gck.refseq_substring[offset_on_ref],
+                            gck.read_seqi[offset_on_read], offset_on_ref + gck.itvl_start);
                 }
-                refseq_substring[offset_on_ref] = read_seqi[offset_on_read];
+                gck.refseq_substring[offset_on_ref] = gck.read_seqi[offset_on_read];
                 offset_on_ref++;
                 offset_on_read++;
             }
         }
-        all_mapq.push_back(static_cast<int8_t>(aln.get()->core.qual));
-        all_reads.emplace_back(std::move(r));
-        readID2qn[n_reads] = bam_get_qname(aln.get());
+        gck.readID2qn[n_reads] = bam_get_qname(aln.get());
+        gck.all_mapq.push_back(static_cast<int8_t>(aln.get()->core.qual));
+        gck.all_reads.emplace_back(std::move(r));
+
+        // adapted from medaka
+        int32_t dtype = 0;
+        if (gck.options.num_dtypes > 1) {
+            bool failed = false;
+            if (gck.options.num_dtypes > 1) {
+                char *tag_val = nullptr;
+                const uint8_t *tag = bam_aux_get(aln.get(), "DT");
+                if (tag == NULL) {  // tag isn't present
+                    failed = true;
+                } else {
+                    tag_val = bam_aux2Z(tag);
+                    failed = errno == EINVAL;
+                }
+                if (!failed) {
+                    bool found = false;
+                    for (dtype = 0; dtype < gck.options.num_dtypes; ++dtype) {
+                        if (tag_val && ((gck.options.dtypes[dtype] == tag_val))) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    failed = !found;
+                }
+                if (failed) {
+                    spdlog::error("[kdys::{}] Datatype not found for read {}", __func__, qn);
+                }
+            }
+        }
+        gck.all_dtype.push_back(static_cast<int8_t>(dtype));
+
         n_reads++;
     }  // iterate through all reads
+}
 
-    if (n_reads == 0) {
+static void gen_medaka_feature_matrix_insert_to_matrix(
+        MedakaFeatureMatrix &mfm,
+        const std::unordered_map<std::string, int32_t> &qname2hp,
+        const featmatgen_chunk_t &gck,
+        uint32_t i_read,
+        int laneID,
+        uint32_t read_offset_start,
+        uint32_t read_offset,
+        const std::vector<int8_t> &expanded_read,
+        const std::vector<int8_t> &expanded_read_quals,
+        const std::vector<int8_t> &expanded_read_dwells) {
+    std::vector<int8_t> &matrix = mfm.matrix;
+    std::vector<int64_t> &majors = mfm.major;
+    std::vector<int64_t> &minors = mfm.minor;
+
+    // prep other scalar fields
+    const read_t read = gck.all_reads[i_read];
+    const uint8_t strand = read.strand;
+    const int8_t mapq = gck.all_mapq[i_read];
+    const int8_t snp_qv = gck.all_snp_qv[i_read];
+    const int8_t dtype = gck.all_dtype[i_read];
+    uint8_t haptag = HAPTAG_UNPHASED;
+    if (gck.options.include_haplotype_column) {
+        if (gck.options.hap_source == FORCE_UNPHASED) {
+            ;
+        } else if (gck.options.hap_source == USE_BAM_HAP_TAG) {
+            const auto it = gck.readID2qn.find(i_read);
+            assert(it != gck.readID2qn.cend());
+            const auto it_hp = gck.qname2hp_bam.find(it->second);
+            if (it_hp != gck.qname2hp_bam.cend()) {
+                haptag = static_cast<uint8_t>(it_hp->second);
+            }
+        } else {  // USE_TAG_FROM_HASHTABLE
+            const auto it = gck.readID2qn.find(i_read);
+            assert(it != gck.readID2qn.cend());
+            const auto it_hp = qname2hp.find(it->second);
+            if (it_hp != qname2hp.cend()) {
+                haptag = static_cast<uint8_t>(it_hp->second);
+            }
+        }
+    }
+
+    // now migrate to the matrix
+    const uint32_t i_pos_left = read_offset_start;
+    const uint32_t i_pos_right = std::min<uint32_t>(read_offset, expanded_read.size());
+    const uint32_t shift_step = mfm.buffer_reads * mfm.featlen;
+    uint32_t shift_base = shift_step * i_pos_left + mfm.featlen * laneID;
+    uint32_t ref_pos = majors[i_pos_left] - gck.itvl_start;
+    for (uint32_t i = i_pos_left; i < i_pos_right; i++) {
+        uint32_t shift = shift_base;
+
+        // the base
+        if (expanded_read[i] == 6) {
+            if (minors[i] != 0) {
+                spdlog::error(
+                        "[kdys::{}] impossible: match is minor pos {} (minor={}) "
+                        "{}:{}-{} . Matrix will be incorrect .\n",
+                        __func__, majors[i], minors[i], gck.refname, gck.itvl_start, gck.itvl_end);
+            }
+            matrix[shift] = gck.refseq_substring[ref_pos];
+            shift++;
+            ref_pos++;
+        } else {
+            matrix[shift] = expanded_read[i];
+            shift++;
+            if ((minors[i] == 0) && (expanded_read[i] == 5)) {  // deletion
+                ref_pos++;
+            } else if ((expanded_read[i] != 0) && (expanded_read[i] != 5) &&
+                       (minors[i] == 0)) {  // mismatch
+                ref_pos++;
+            }
+        }
+
+        // other entires
+        matrix[shift] = expanded_read_quals[i];
+        shift++;
+
+        matrix[shift] = strand == 0 ? 1 : -1;  // medaka convention
+        shift++;
+
+        matrix[shift] = mapq;
+        shift++;
+
+        if (gck.options.include_dwells) {
+            matrix[shift] = expanded_read_dwells[i];
+            shift++;
+        }
+        if (gck.options.include_haplotype_column) {
+            matrix[shift] = (haptag == HAPTAG_UNPHASED ? 0 : haptag);  // medaka convention
+            shift++;
+        }
+        if (gck.options.include_snp_qv) {
+            matrix[shift] = snp_qv;
+            shift++;
+        }
+        if (gck.options.num_dtypes > 1) {
+            matrix[shift] = dtype;
+            shift++;
+        }
+
+        shift_base += shift_step;
+    }
+}
+
+MedakaFeatureMatrix gen_medaka_feature_matrix(
+        dorado::secondary::BamFileView &hf,
+        std::string_view refname,
+        const uint32_t itvl_start,
+        const uint32_t itvl_end,
+        const std::unordered_map<std::string, int32_t> &qname2hp,
+        const MedakaFeatureMatrixOptions &options) {
+    // This function goes through the bam region once to collect the variants of the reads.
+    // After that we pack the reads into lanes (like pseudo reads), where each lane contain
+    // at least one non-overlapping reads. Since all variants in the query intervals
+    // are known, we know the lengths and the locations of minor columns.
+    // Feature matrix is then allocated.
+    // The feature matrix is in shape [n_pos, n_reads, n_features] and we stored
+    // the alignment as individual aligned reads, thus there will an implicit transposition.
+    // We iterate through reads. For each read we first store its info into
+    // a 1D array `expanded_read`, which in then inserted into the matrix in the transposed order.
+
+    constexpr bool WUT_VERBOSE = false;
+    if (itvl_end <= itvl_start) {
+        spdlog::error("[kdys::{}] invalid query region: ref {} start {} end {}. Skipping.",
+                      __func__, refname, itvl_start, itvl_end);
+        MedakaFeatureMatrix ret(0, 0, 0, 0, 1, 0);
+        return ret;
+    }
+
+    featmatgen_chunk_t gck = {
+            // pars
+            .refname = refname,
+            .itvl_start = itvl_start,
+            .itvl_end = itvl_end,
+            .options = options,
+            .n_features = 4 + (options.include_dwells ? 1 : 0) +
+                          (options.include_haplotype_column ? 1 : 0) +
+                          (options.include_snp_qv ? 1 : 0) + (options.num_dtypes > 1),
+            // helper: stats
+            .n_downsample_filtered = 0,
+            // helper: refseq
+            .refseq_substring = std::vector<uint8_t>(itvl_end - itvl_start, 0),
+            .read_seqi = {},
+            // helper: optional holder of haptags
+            .qname2hp_bam = {},
+            // read variant storages
+            .all_reads = {},
+            .all_mapq = {},
+            .all_snp_qv = {},
+            .all_dtype = {},
+            .all_ins = {},
+            .readID2qn = {},
+            .all_reads_quals = {},
+            .all_dwells = {}};
+    gen_medaka_feature_matrix_store_reads_from_bam(hf, gck);
+
+    if (gck.all_reads.empty()) {
         spdlog::warn("[kdys::{}] requested interval {}:{}-{} inserted no reads", __func__, refname,
                      itvl_start, itvl_end);
-        medaka_feature_matrix_t ret(0, 0, 0, 0, 1, 0);
+        MedakaFeatureMatrix ret(0, 0, 0, 0, 1, 0);
         return ret;
     } else {
         if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
-            spdlog::info(
-                    "[kdys::{}] requested interval {}:{}-{} inserted {} reads (unfiltered count "
-                    "{}; "
-                    "downsample filtered {})",
-                    __func__, refname, itvl_start, itvl_end, all_reads.size(), n_reads_unfiltered,
-                    downsample_filtered);
+            spdlog::debug(
+                    "[kdys::{}] requested interval {}:{}-{} inserted {} reads (downsample filtered "
+                    "{})",
+                    __func__, refname, itvl_start, itvl_end, gck.all_reads.size(),
+                    gck.n_downsample_filtered);
         }
     }
 
     // figure out what columns need expansion, and the total size of column expansion
     std::vector<medaka_feature_matrix_expansion_entry_t> expansions;
     uint32_t tot_expansion = 0;
-    for (const auto &[pos, var_len] : all_ins) {
+    for (const auto &[pos, var_len] : gck.all_ins) {
         expansions.push_back({.pos = pos, .len = var_len});
         tot_expansion += var_len;
     }
@@ -2942,7 +3137,7 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
     // Reads that overlap with the left or the right boundary of
     // the query interval also need to have their names stored.
     int n_lanes = 0;
-    std::vector<int> read2lane(n_reads);
+    std::vector<int> read2lane(gck.all_reads.size());
     std::vector<std::string> left_qnames;
     std::vector<std::string> right_qnames;
     {
@@ -2953,18 +3148,18 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
         read2lane[0] = laneID;
         lane_lookup.push_back(
                 {.laneID = laneID,
-                 .last_pos = all_reads[0].end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN});
-        if (all_reads[0].start_pos <= itvl_start) {
-            left_qnames.push_back(readID2qn[0]);
+                 .last_pos = gck.all_reads[0].end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN});
+        if (gck.all_reads[0].start_pos <= itvl_start) {
+            left_qnames.push_back(gck.readID2qn[0]);
         } else {
             left_qnames.push_back("");
         }
-        if (all_reads[0].end_pos >= itvl_end) {
-            tmp_lane2rightqn[0] = readID2qn[0];
+        if (gck.all_reads[0].end_pos >= itvl_end) {
+            tmp_lane2rightqn[0] = gck.readID2qn[0];
         }
         // (all others)
-        for (size_t i = 1; i < all_reads.size(); i++) {
-            const read_t &read = all_reads[i];
+        for (size_t i = 1; i < gck.all_reads.size(); i++) {
+            const read_t &read = gck.all_reads[i];
 
             bool need_new_lane = true;
             int &read_laneID = read2lane[i];
@@ -2986,14 +3181,14 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                         .laneID = laneID,
                         .last_pos = read.end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN});
                 if (read.start_pos <= itvl_start) {
-                    left_qnames.push_back(readID2qn[i]);
+                    left_qnames.push_back(gck.readID2qn[i]);
                 } else {
                     left_qnames.push_back("");
                 }
             }
 
             if (read.end_pos >= itvl_end) {  // `>` is wrong because end_pos was capped at itvl_end.
-                tmp_lane2rightqn[read_laneID] = readID2qn[i];
+                tmp_lane2rightqn[read_laneID] = gck.readID2qn[i];
             }
         }
         n_lanes = laneID + 1;
@@ -3025,8 +3220,8 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
     // Allocate the matrix and major & minor positions.
     uint32_t n_pos = tot_expansion + itvl_end - itvl_start;
     n_lanes = std::min<int>({n_lanes, 100, options.max_reads});  // limit max depth
-    medaka_feature_matrix_t ret(n_pos, n_lanes, n_pos, n_lanes, n_feature - 4,
-                                0);  // medaka impl also hardcodes the last parameter to 0
+    MedakaFeatureMatrix ret(n_pos, n_lanes, n_pos, n_lanes, gck.n_features - 4,
+                            0);  // medaka impl also hardcodes the last parameter to 0
     ret.read_ids_left = std::move(left_qnames);
     ret.read_ids_right = std::move(right_qnames);
     std::vector<int8_t> &matrix = ret.matrix;
@@ -3034,12 +3229,12 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
     std::vector<int64_t> &majors = ret.major;
     std::vector<int64_t> &minors = ret.minor;
     if constexpr (WUT_VERBOSE) {
-        fprintf(stderr,
-                "[wut] alloc: n_pos=%d (tot_exp=%d) n_reads=%d n_lanes(clampped)=%d n_feature=%d; "
+        spdlog::debug(
+                "[wut] alloc: n_pos={} (tot_exp={}) n_reads={} n_lanes(clampped)={} n_feature={}; "
                 "mat and "
-                "poss sizes: %d %d %d\n",
-                (int)n_pos, (int)tot_expansion, (int)n_reads, (int)n_lanes, (int)n_feature,
-                (int)matrix.size(), (int)majors.size(), (int)minors.size());
+                "poss sizes: {} {} {}\n",
+                n_pos, tot_expansion, gck.all_reads.size(), n_lanes, gck.n_features, matrix.size(),
+                majors.size(), minors.size());
     }
 
     // fill major and minor positions
@@ -3104,14 +3299,14 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
     std::vector<int8_t> expanded_read(ret.buffer_pos, 0);
     std::vector<int8_t> expanded_read_quals(ret.buffer_pos, 0);
     std::vector<int8_t> expanded_read_dwells(ret.buffer_pos, 0);
-    for (size_t i_read = 0; i_read < all_reads.size(); i_read++) {
+    for (size_t i_read = 0; i_read < gck.all_reads.size(); i_read++) {
         // Limit the max number of lanes.
         const int laneID = read2lane[i_read];
         if (laneID >= n_lanes) {
             continue;
         }
 
-        const read_t &read = all_reads[i_read];
+        const read_t &read = gck.all_reads[i_read];
 
         // count expanded columns prior to the read's start position
         uint32_t offset = read.start_pos - itvl_start;
@@ -3122,9 +3317,8 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
             offset += exp.len;
         }
         if constexpr (WUT_VERBOSE) {
-            fprintf(stderr, "[wut][r %s] start %d , offset %d, offset-start %d\n",
-                    readID2qn[i_read].c_str(), (int)read.start_pos, (int)offset,
-                    (int)majors[offset]);
+            spdlog::debug("[wut][r {}] start {} , offset {}, offset-start {}\n",
+                          gck.readID2qn[i_read], read.start_pos, offset, majors[offset]);
         }
         const uint32_t offset0 = offset;
 
@@ -3149,9 +3343,8 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
             // the variant
             if (var.allele.back() == VAR_OP_X) {
                 if constexpr (WUT_VERBOSE) {
-                    fprintf(stderr, "[wut][r %s] pushing X: pos %d offset %d val %d\n",
-                            readID2qn[i_read].c_str(), (int)var.pos, (int)offset,
-                            var.allele[0] + 1);
+                    spdlog::debug("[wut][r {}] pushing X: pos {} offset {} val {}\n",
+                                  gck.readID2qn[i_read], var.pos, offset, var.allele[0] + 1);
                 }
                 expanded_read[offset] = var.allele[0] + 1;
                 offset++;
@@ -3174,11 +3367,10 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                 }
             } else if (var.allele.back() == VAR_OP_D) {
                 if constexpr (WUT_VERBOSE) {
-                    fprintf(stderr, "[wut][r %s] pushing DEL: pos %d offset %d len %d\n",
-                            readID2qn[i_read].c_str(), (int)var.pos, (int)offset,
-                            (int)var.allele.size() - 1);
+                    spdlog::debug("[wut][r {}] pushing DEL: pos {} offset {} len {}\n",
+                                  gck.readID2qn[i_read], var.pos, offset, get_qa_t_allele_len(var));
                 }
-                for (uint32_t i = 0; i < var.allele.size() - 1; i++) {
+                for (uint32_t i = 0; i < get_qa_t_allele_len(var); i++) {
                     if (offset >= expanded_read.size()) {
                         break;
                     }
@@ -3204,9 +3396,9 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
             } else if (var.allele.back() == VAR_OP_I) {
                 // fill in the ref base first , then the right-aligned insertion w/ col exp
                 if constexpr (WUT_VERBOSE) {
-                    fprintf(stderr, "[wut][r %s] insertion at %d (offset %d major %d) length %d\n",
-                            readID2qn[i_read].c_str(), (int)var.pos, (int)offset,
-                            (int)majors[offset], (int)var.allele.size() - 1);
+                    spdlog::debug("[wut][r {}] insertion at {} (offset {} major {}) length {}\n",
+                                  gck.readID2qn[i_read].c_str(), var.pos, offset, majors[offset],
+                                  get_qa_t_allele_len(var));
                 }
 
                 //(ref base; need to check if we have a mismatch or a del previously)
@@ -3217,7 +3409,7 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                 if (i_var > 0) {
                     const qa_t &prev_var = read.vars[i_var - 1];
                     prev_cigar = prev_var.allele.back();
-                    prev_len = prev_var.allele.size() - 1;
+                    prev_len = get_qa_t_allele_len(prev_var);
                     prev_pos = prev_var.pos;
                     if ((prev_cigar == VAR_OP_X) && (prev_pos == var.pos)) {
                         skip_ref_base_before_ins = true;
@@ -3227,18 +3419,18 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                 }
                 if (skip_ref_base_before_ins) {
                     if constexpr (WUT_VERBOSE) {
-                        fprintf(stderr,
-                                "[wut][r %s] pushing INS(1) first: skipped ref base at offset %d "
-                                "(major pos %d; prev cigar %d; prev pos %d; prev var len %d)\n",
-                                readID2qn[i_read].c_str(), (int)offset, (int)majors[offset],
-                                (int)prev_cigar, (int)prev_pos, (int)prev_len);
+                        spdlog::debug(
+                                "[wut][r {}] pushing INS(1) first: skipped ref base at offset {} "
+                                "(major pos {}; prev cigar {}; prev pos {}; prev var len {})\n",
+                                gck.readID2qn[i_read], offset, majors[offset], prev_cigar, prev_pos,
+                                prev_len);
                     }
                 } else {
                     if constexpr (WUT_VERBOSE) {
-                        fprintf(stderr,
-                                "[wut][r %s] pushing INS(1) first: filled ref base at offset %d "
-                                "(major pos %d)\n",
-                                readID2qn[i_read].c_str(), (int)offset, (int)majors[offset]);
+                        spdlog::debug(
+                                "[wut][r {}] pushing INS(1) first: filled ref base at offset {} "
+                                "(major pos {})\n",
+                                gck.readID2qn[i_read], offset, majors[offset]);
                     }
                     if (offset < majors.size()) {
                         expanded_read[offset] = 6;
@@ -3248,9 +3440,9 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                 // (no need to touch i_var_incre)
 
                 // (insertion bases, right-align)
-                const uint32_t exp_size = all_ins[read.vars[i_var].pos];
+                const uint32_t exp_size = gck.all_ins[read.vars[i_var].pos];
                 if (options.right_align_insertions) {
-                    const uint32_t space_size = exp_size - (var.allele.size() - 1);
+                    const uint32_t space_size = exp_size - (get_qa_t_allele_len(var));
                     for (uint32_t i = 0; i < space_size && offset < majors.size(); i++, offset++) {
                         expanded_read[offset] = 5;
                     }
@@ -3260,7 +3452,7 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                         offset++;
                     }
                 } else {  // left-align
-                    const uint32_t var_size = var.allele.size() - 1;
+                    const uint32_t var_size = get_qa_t_allele_len(var);
                     for (uint32_t i = 0, j = 0; i < var_size && offset < majors.size();
                          i++, j++, offset++) {
                         expanded_read[offset] = var.allele[j] + 1;
@@ -3273,7 +3465,7 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                 i_var_incre = 1;
             } else {
                 spdlog::error("[kdys::{}] r {} has unknown cigar (op {} var pos {})", __func__,
-                              readID2qn[i_read], var.allele.back(), var.pos);
+                              gck.readID2qn[i_read], var.allele.back(), var.pos);
             }
 
             // the matches after it
@@ -3282,20 +3474,19 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
                                                    ? read.end_pos
                                                    : read.vars[i_var + i_var_incre].pos;
                 if constexpr (WUT_VERBOSE) {
-                    fprintf(stderr,
-                            "[wut][r %s] pushing match: pos %d - %d (read end pos is %d, itvl_end "
-                            "is "
-                            "%d)\n",
-                            readID2qn[i_read].c_str(), (int)majors[offset], (int)pos_right,
-                            (int)read.end_pos, (int)itvl_end);
+                    spdlog::debug(
+                            "[wut][r {}] pushing match: pos {} - {} (read end pos is {}, itvl_end "
+                            "is {})\n",
+                            gck.readID2qn[i_read], majors[offset], pos_right, read.end_pos,
+                            itvl_end);
                 }
                 for (uint32_t pos = majors[offset]; pos < pos_right; pos++) {
                     if constexpr (WUT_VERBOSE) {
-                        fprintf(stderr,
-                                "[wut][r %s] push match (offset %d pos %d) (ref base should be "
-                                "%c)\n",
-                                readID2qn[i_read].c_str(), (int)offset, (int)majors[offset],
-                                "0ACGT-"[refseq_substring[pos - itvl_start]]);
+                        spdlog::debug(
+                                "[wut][r {}] push match (offset {} pos {}) (ref base should be "
+                                "{})\n",
+                                gck.readID2qn[i_read], offset, majors[offset],
+                                "0ACGT-"[gck.refseq_substring[pos - itvl_start]]);
                     }
                     expanded_read[offset] = 6;
                     offset++;
@@ -3311,10 +3502,9 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
         }
 
         // We have collected the expanded read.
-
         // Fill the base quals and dwells.
-        const std::vector<uint8_t> &quals = all_reads_quals[i_read];
-        const std::vector<int8_t> &dwells = all_dwells[i_read];
+        const std::vector<uint8_t> &quals = gck.all_reads_quals[i_read];
+        const std::vector<int8_t> &dwells = gck.all_dwells[i_read];
         for (uint32_t i = offset0, j_qual = 0, j_dwell = 0;
              i < offset && j_qual < quals.size() && j_dwell < dwells.size(); i++) {
             if (expanded_read[i] != 0 && expanded_read[i] != 5) {
@@ -3328,117 +3518,10 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
             }
         }
 
-        // prep other scalar fields
-        const uint8_t strand = read.strand;
-        const int8_t mapq = all_mapq[i_read];
-        const int8_t snp_qv = all_snp_qv[i_read];
-        uint8_t haptag = HAPTAG_UNPHASED;
-        if (options.include_haplotype_column) {
-            if (options.hap_source == FORCE_UNPHASED) {
-                ;
-            } else if (options.hap_source == USE_BAM_HAP_TAG) {
-                const auto it_hp = qname2hp_bam.find(readID2qn[i_read]);
-                if (it_hp != qname2hp_bam.cend()) {
-                    haptag = static_cast<uint8_t>(it_hp->second);
-                }
-            } else {  // USE_TAG_FROM_HASHTABLE
-                const auto it_hp = qname2hp.find(readID2qn[i_read]);
-                if (it_hp != qname2hp.cend()) {
-                    haptag = static_cast<uint8_t>(it_hp->second);
-                }
-            }
-            haptag = haptag == HAPTAG_UNPHASED ? 0 : haptag;  // medaka convention
-        }
-
-        int32_t dtype = 0;
-        if (options.num_dtypes > 1) {  // adapted from medaka
-            bool failed = false;
-            if (options.num_dtypes > 1) {
-                char *tag_val = nullptr;
-                const uint8_t *tag = bam_aux_get(aln.get(), "DT");
-                if (tag == NULL) {  // tag isn't present
-                    failed = true;
-                } else {
-                    tag_val = bam_aux2Z(tag);
-                    failed = errno == EINVAL;
-                }
-                if (!failed) {
-                    bool found = false;
-                    for (dtype = 0; dtype < options.num_dtypes; ++dtype) {
-                        if (tag_val && ((options.dtypes[dtype] == tag_val))) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    failed = !found;
-                }
-                if (failed) {
-                    spdlog::error("[kdys::{}] Datatype not found for read {}", __func__,
-                                  readID2qn[i_read]);
-                }
-            }
-        }
-
-        // now migrate to the matrix
-        const uint32_t i_pos_left = offset0;
-        const uint32_t i_pos_right = std::min<uint32_t>(offset, expanded_read.size());
-        const uint32_t shift_step = ret.buffer_reads * ret.featlen;
-        uint32_t shift_base = shift_step * i_pos_left + ret.featlen * laneID;
-        uint32_t ref_pos = majors[i_pos_left] - itvl_start;
-        for (uint32_t i = i_pos_left; i < i_pos_right; i++) {
-            uint32_t shift = shift_base;
-
-            // the base
-            if (expanded_read[i] == 6) {
-                if (minors[i] != 0) {
-                    spdlog::error(
-                            "[kdys::{}] impossible: match is minor pos {} (minor={}) "
-                            "{}:{}-{} . Matrix will be incorrect .\n",
-                            __func__, majors[i], minors[i], refname, itvl_start, itvl_end);
-                }
-                matrix[shift] = refseq_substring[ref_pos];
-                shift++;
-                ref_pos++;
-            } else {
-                matrix[shift] = expanded_read[i];
-                shift++;
-                if ((minors[i] == 0) && (expanded_read[i] == 5)) {  // deletion
-                    ref_pos++;
-                } else if ((expanded_read[i] != 0) && (expanded_read[i] != 5) &&
-                           (minors[i] == 0)) {  // mismatch
-                    ref_pos++;
-                }
-            }
-
-            // other entires
-            matrix[shift] = expanded_read_quals[i];
-            shift++;
-
-            matrix[shift] = strand == 0 ? 1 : -1;  // medaka convention
-            shift++;
-
-            matrix[shift] = mapq;
-            shift++;
-
-            if (options.include_dwells) {
-                matrix[shift] = expanded_read_dwells[i];
-                shift++;
-            }
-            if (options.include_haplotype_column) {
-                matrix[shift] = haptag;
-                shift++;
-            }
-            if (options.include_snp_qv) {
-                matrix[shift] = snp_qv;
-                shift++;
-            }
-            if (options.num_dtypes > 1) {
-                matrix[shift] = dtype;
-                shift++;
-            }
-
-            shift_base += shift_step;
-        }
+        // Copy over to the matrix. Implicit transposition.
+        gen_medaka_feature_matrix_insert_to_matrix(ret, qname2hp, gck, i_read, laneID, offset0,
+                                                   offset, expanded_read, expanded_read_quals,
+                                                   expanded_read_dwells);
 
         // cleanup buffers
         std::fill(expanded_read.begin() + offset0, expanded_read.begin() + offset, 0);
@@ -3449,20 +3532,20 @@ medaka_feature_matrix_t gen_medaka_feature_matrix(
     return ret;
 }
 
-medaka_feature_matrix_t gen_medaka_feature_matrix_wrapper(
+MedakaFeatureMatrix gen_medaka_feature_matrix_wrapper(
         dorado::secondary::BamFile &bam_file,
         std::string refname,
         uint32_t itvl_start,
         uint32_t itvl_end,
         const std::unordered_map<std::string, int32_t> &qname2hp,
-        const medaka_feature_matrix_options_t &options) {
+        const MedakaFeatureMatrixOptions &options) {
     // refname and interval start & end are needed only for the
     // coordinates and debugging. They are not used to retrieve ref seq.
     dorado::secondary::BamFileView hf = bam_file.get_view();
     return gen_medaka_feature_matrix(hf, refname, itvl_start, itvl_end, qname2hp, options);
 }
 
-static void print_medaka_feature_matrix1(std::ostream &out, const medaka_feature_matrix_t &mfm) {
+static void print_medaka_feature_matrix1(std::ostream &out, const MedakaFeatureMatrix &mfm) {
     out << "#buffer_pos,buffer_reads,num_dtypes,n_pos,n_reads,featlen,mat size,major size,minor "
            "size\n";
     out << mfm.buffer_pos << ',' << mfm.buffer_reads << ',' << mfm.num_dtypes << ',' << mfm.n_pos
@@ -3502,12 +3585,12 @@ static void print_medaka_feature_matrix1(std::ostream &out, const medaka_feature
     }
 }
 
-void print_medaka_feature_matrix(const std::string &fn_out, const medaka_feature_matrix_t &mfm) {
+void print_medaka_feature_matrix(const std::string &fn_out, const MedakaFeatureMatrix &mfm) {
     std::ofstream fp(fn_out);
     print_medaka_feature_matrix1(fp, mfm);
 }
 
-std::string print_medaka_feature_matrix(const medaka_feature_matrix_t &mfm) {
+std::string print_medaka_feature_matrix(const MedakaFeatureMatrix &mfm) {
     std::ostringstream oss;
     print_medaka_feature_matrix1(oss, mfm);
     return std::move(oss).str();

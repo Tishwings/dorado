@@ -383,7 +383,7 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
 }
 
 CATCH_TEST_CASE("kadayashi_featmatgen normal case", TEST_GROUP) {
-    kadayashi::medaka_feature_matrix_options_t medaka_feature_matrix_options = {
+    kadayashi::MedakaFeatureMatrixOptions medaka_feature_matrix_options = {
             .include_dwells = true,
             .include_haplotype_column = true,
             .include_snp_qv = true,
@@ -435,7 +435,7 @@ CATCH_TEST_CASE("kadayashi_featmatgen no input", TEST_GROUP) {
             get_data_dir("variant") / "test-04-kadayashi-featmatgen";
     const std::filesystem::path fn_in_empty = test_data_dir / "in_aln_almostempty.bam";
     dorado::secondary::BamFile bam_file(fn_in_empty, 1);
-    kadayashi::medaka_feature_matrix_options_t medaka_feature_matrix_options{
+    kadayashi::MedakaFeatureMatrixOptions medaka_feature_matrix_options{
             .include_dwells = true,
             .include_haplotype_column = true,
             .include_snp_qv = true,

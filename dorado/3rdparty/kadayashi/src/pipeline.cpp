@@ -2,13 +2,13 @@
 
 #include "bam_record_parsing.h"
 #include "bam_tagging.h"
+#include "haplotag_lib/string_utils.h"
+#include "haplotag_lib/variant_graph.h"
 #include "hts_utils/FastxRandomReader.h"
 #include "kadayashi_utils.h"
 #include "resources.h"
 #include "sequence_utility.h"
-#include "string_utils.h"
 #include "types.h"
-#include "variant_graph.h"
 
 #include <cxxpool.h>
 #include <htslib/bgzf.h>

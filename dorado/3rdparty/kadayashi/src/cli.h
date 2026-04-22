@@ -101,14 +101,14 @@ struct cliopt_featmatgen_t {
     // toggle
     bool is_use_medaka{false};
 
-    // to init medaka_feature_matrix_options_t
+    // to init MedakaFeatureMatrixOptions
     // (omitted: dypte, tag, hap_source)
     bool include_dwells{true};
     bool include_haplotype_column{true};
     bool include_snp_qv{true};
     int min_mapq{1};
     std::string readgroup{};
-    bool disable_read_packing{false};  // see medaka_feature_matrix_options_t comment
+    bool disable_read_packing{false};  // see MedakaFeatureMatrixOptions comment
     int max_lanes{100};
     bool right_align_insertions{true};
     double min_snp_accuracy{0.0};

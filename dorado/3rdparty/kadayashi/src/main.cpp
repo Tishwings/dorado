@@ -1,12 +1,12 @@
 #include "bam_tagging.h"
 #include "cli.h"
 #include "faidx_utils.h"
+#include "haplotag_lib/string_utils.h"
 #include "kadayashi_utils.h"
 #include "local_haplotagging.h"
 #include "pipeline.h"
 #include "resources.h"
 #include "secondary/common/bam_file.h"
-#include "string_utils.h"
 
 #include <htslib/faidx.h>
 #include <htslib/sam.h>
@@ -58,12 +58,12 @@ int main_featmatgen(const std::filesystem::path &fn_ref,
                     const std::string &itvl_str,  // 1-index []
                     int n_threads,
                     bool is_use_medaka_featmatgen,
-                    kadayashi::medaka_feature_matrix_options_t mfm_options) {
+                    kadayashi::MedakaFeatureMatrixOptions mfm_options) {
     // note: output will be written to file only if -r or --region is specified
-    constexpr uint32_t stride = 500000;
-    double timestamp = kadayashi::get_timestamp();
+    constexpr uint32_t STRIDE = 500000;
 
     if (!itvl_str.empty()) {
+        double timestamp = kadayashi::get_timestamp();
         std::string ref_name;
         uint32_t ref_start, ref_end;  // 0-index [)
         const bool itvl_str_parse_ok =
@@ -76,7 +76,7 @@ int main_featmatgen(const std::filesystem::path &fn_ref,
         dorado::secondary::BamFileView hf_view = hf.get_view();
 
         const std::unordered_map<std::string, int32_t> qname2hp{};
-        kadayashi::medaka_feature_matrix_t mfm =
+        kadayashi::MedakaFeatureMatrix mfm =
                 is_use_medaka_featmatgen
                         ? dorado::secondary::calculate_read_alignment(
                                   hf, ref_name, ref_start, ref_end, qname2hp,
@@ -122,7 +122,7 @@ int main_featmatgen(const std::filesystem::path &fn_ref,
             // (lambda)
             std::atomic<int> next_jobID{0};
             const int job_stride = 10;
-            const int n_jobs = (int)end / stride;
+            const int n_jobs = (int)end / STRIDE;
             auto worker = [&] {
                 dorado::secondary::BamFile hf{fn_bam.string().c_str(), n_cpu_per_worker};
                 dorado::secondary::BamFileView hf_view = hf.get_view();
@@ -133,9 +133,9 @@ int main_featmatgen(const std::filesystem::path &fn_ref,
                         break;
                     }
                     for (int i_job = jobID_start; i_job < jobID_start + job_stride; i_job++) {
-                        uint32_t ref_start = i_job * stride;
-                        uint32_t ref_end = (i_job + 1) * stride;
-                        kadayashi::medaka_feature_matrix_t mfm =
+                        uint32_t ref_start = i_job * STRIDE;
+                        uint32_t ref_end = (i_job + 1) * STRIDE;
+                        kadayashi::MedakaFeatureMatrix mfm =
                                 is_use_medaka_featmatgen
                                         ? dorado::secondary::calculate_read_alignment(
                                                   hf, chrom, ref_start, ref_end, qname2hp,
@@ -301,7 +301,7 @@ int main(int argc, char *argv[]) {
         if ((!clio.is_valid) || clio.is_print_help) {
             return 1;
         }
-        kadayashi::medaka_feature_matrix_options_t mfm_options = {
+        kadayashi::MedakaFeatureMatrixOptions mfm_options = {
                 .include_dwells = clio.include_dwells,
                 .include_haplotype_column = clio.include_haplotype_column,
                 .include_snp_qv = clio.include_snp_qv,

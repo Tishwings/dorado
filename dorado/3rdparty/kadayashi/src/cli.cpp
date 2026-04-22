@@ -1,8 +1,8 @@
 #include "cli.h"
 
+#include "haplotag_lib/string_utils.h"
 #include "ketopt.h"
 #include "resources.h"
-#include "string_utils.h"
 
 #include <spdlog/spdlog.h>
 #include <sys/stat.h>

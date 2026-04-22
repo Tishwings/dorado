@@ -73,7 +73,8 @@ add_library(haplotag_lib STATIC
     include/hts_types.h
     include/types.h
     include/blocked_bloom_filter.h
-    include/string_utils.h
+    #src/haplotag_lib/variant_graph.h
+    #src/haplotag_lib/string_utils.h
 )
 
 set_target_properties(haplotag_lib PROPERTIES LINKER_LANGUAGE CXX)
