@@ -259,7 +259,7 @@ std::vector<CUDADeviceInfo> get_cuda_device_info(const std::string &device_strin
     // Now inspect all the devices on the host to create the CUDADeviceInfo
     std::vector<CUDADeviceInfo> results;
     for (int device_id = 0; device_id < int(num_devices); device_id++) {
-        CUDADeviceInfo device_info;
+        CUDADeviceInfo device_info{};
         device_info.device_id = device_id;
         device_info.in_use = std::find(requested_device_ids.begin(), requested_device_ids.end(),
                                        device_id) != requested_device_ids.end();
