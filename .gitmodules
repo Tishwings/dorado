@@ -46,3 +46,4 @@
 [submodule "dorado/3rdparty/flashattention"]
 	path = dorado/3rdparty/flashattention
 	url = https://github.com/Dao-AILab/flash-attention.git
+	ignore = dirty

@@ -1,11 +1,17 @@
 
 # Helper to apply patches to 3rdparty libs.
-function (apply_3rdparty_patch NAME)
+function (apply_3rdparty_patch_file NAME PATCH_NAME)
+    cmake_parse_arguments(PATCH "" "WORKING_DIRECTORY" "" ${ARGN})
     find_package(Git REQUIRED QUIET)
-    set(PATCH_FILE ${CMAKE_CURRENT_LIST_DIR}/patches/${NAME}.patch)
+    set(PATCH_FILE ${CMAKE_CURRENT_LIST_DIR}/patches/${PATCH_NAME})
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PATCH_FILE})
+    set(PATCH_WORK_TREE ${CMAKE_CURRENT_LIST_DIR}/${NAME})
+    if (PATCH_WORKING_DIRECTORY)
+        set(PATCH_WORK_TREE ${PATCH_WORK_TREE}/${PATCH_WORKING_DIRECTORY})
+    endif()
     execute_process(
         COMMAND ${GIT_EXECUTABLE} apply --reverse --check ${PATCH_FILE}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/${NAME}
+        WORKING_DIRECTORY ${PATCH_WORK_TREE}
         RESULT_VARIABLE NOT_ALREADY_APPLIED
         ERROR_QUIET
     )
@@ -13,13 +19,17 @@ function (apply_3rdparty_patch NAME)
         message(STATUS "Applying patch ${PATCH_FILE}")
         execute_process(
             COMMAND ${GIT_EXECUTABLE} apply ${PATCH_FILE}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/${NAME}
+            WORKING_DIRECTORY ${PATCH_WORK_TREE}
             RESULT_VARIABLE PATCH_FAILED
         )
         if (PATCH_FAILED)
             message(FATAL_ERROR "Failed to apply patch ${PATCH_FILE}")
         endif()
     endif()
+endfunction()
+
+function (apply_3rdparty_patch NAME)
+    apply_3rdparty_patch_file(${NAME} ${NAME}.patch)
 endfunction()
 
 # argparse
@@ -100,6 +110,10 @@ add_subdirectory(date EXCLUDE_FROM_ALL)
 
 # FlashAttention3 integration wrapper
 apply_3rdparty_patch(flashattention)
+apply_3rdparty_patch_file(flashattention flashattention_cutlass_windows_cuda13_tma.patch
+    WORKING_DIRECTORY csrc/cutlass
+)
+apply_3rdparty_patch_file(flashattention flashattention_windows_cuda13_tma.patch)
 add_subdirectory(flashattention_dorado)
 
 # toml11
