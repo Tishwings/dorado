@@ -81,6 +81,7 @@ int parse_cigar(std::string_view cigar, dorado::AlignmentResult& result) {
     result.num_insertions = 0;
     result.num_deletions = 0;
     result.num_aligned = 0;
+    result.num_gaps = 0;
     char type;
     int length;
     int hard_clipped = 0;
@@ -105,8 +106,11 @@ int parse_cigar(std::string_view cigar, dorado::AlignmentResult& result) {
         case 'M':
             result.num_aligned += length;
             break;
+        case 'N':
+            result.num_gaps += length;
+            break;
         default:
-            throw std::runtime_error("Currently only supporting HSIDM in SAM cigar string.");
+            throw std::runtime_error("Currently only supporting HSIDMN in SAM cigar string.");
         }
         first = false;
     }
@@ -229,7 +233,8 @@ std::vector<AlignmentResult> parse_sam_lines(std::string_view sam_content,
                 }
                 res.coverage = float(res.num_aligned) /
                                float(std::min(full_len, reference_length[res.genome]));
-                res.genome_end = res.genome_start + res.num_aligned + res.num_deletions;
+                res.genome_end =
+                        res.genome_start + res.num_aligned + res.num_deletions + res.num_gaps;
                 res.strand_end = res.strand_start + res.num_aligned + res.num_insertions;
                 auto opt_NM = opt_values.find("NM");
                 if (opt_NM == opt_values.end()) {
