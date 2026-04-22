@@ -8,12 +8,31 @@
     - !reference [.create_venv]
     - pip install -U "conan<2"
     - conan --version
+    # Merged-result MR pipelines run against a synthetic merge commit which
+    # does not exist in the Dorado repo that ont_core clones. In that case
+    # build against the source branch tip instead.
+    - |
+      if [[ "${CI_PIPELINE_SOURCE}" == "merge_request_event" ]]; then
+        DORADO_FETCH_REF="${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}"
+        DORADO_CHECKOUT_SHA="${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-${CI_COMMIT_SHA}}"
+      else
+        DORADO_FETCH_REF="${CI_COMMIT_REF_NAME}"
+        DORADO_CHECKOUT_SHA="${CI_COMMIT_SHA}"
+      fi
+      if [[ -z "${DORADO_FETCH_REF}" || -z "${DORADO_CHECKOUT_SHA}" ]]; then
+        echo "Failed to resolve Dorado ref/SHA for ont_core compatibility build."
+        exit 1
+      fi
+      echo "Using Dorado ref '${DORADO_FETCH_REF}' at commit '${DORADO_CHECKOUT_SHA}'"
+      export DORADO_FETCH_REF
+      export DORADO_CHECKOUT_SHA
     # Clone the repo
     - time git clone --depth 1 https://gitlab-ci-token:${CI_JOB_TOKEN}@${ONT_CORE_REPO_URL} ont_core_cpp
     - pushd ont_core_cpp
     -   time git submodule update --init --recursive
     -   pushd dorado
-    -     time git checkout ${CI_COMMIT_SHA}
+    -     time git fetch origin ${DORADO_FETCH_REF}
+    -     time git checkout --detach ${DORADO_CHECKOUT_SHA}
     -     time git submodule update --init --recursive
     -   popd
     - popd
