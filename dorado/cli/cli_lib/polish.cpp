@@ -116,6 +116,7 @@ struct Options {
     float pass_min_qual = 3.0f;
     bool write_consensus = false;
     bool continue_on_error = false;
+    bool legacy_feature_gen = true;
     const secondary::HaplotagSource haplotag_source = secondary::HaplotagSource::UNPHASED;
 };
 
@@ -1296,7 +1297,8 @@ int polish(int argc, char* argv[]) {
         polisher::PolisherResources resources = polisher::create_resources(
                 model_config, opt.in_draft_fastx_fn, opt.in_aln_bam_fn, opt.device_str, opt.threads,
                 opt.infer_threads, opt.full_precision, opt.read_group, opt.tag_name, opt.tag_value,
-                0.0, opt.tag_keep_missing, opt.min_mapq, std::nullopt, std::nullopt, {});
+                0.0, opt.tag_keep_missing, opt.min_mapq, std::nullopt, std::nullopt, {},
+                opt.legacy_feature_gen);
 
         // Progress bar.
         secondary::Stats stats;

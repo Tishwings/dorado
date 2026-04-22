@@ -272,7 +272,8 @@ EncoderReadAlignment::EncoderReadAlignment(const std::filesystem::path& in_ref_f
                                            const HaplotagSource hap_source,
                                            const std::optional<std::filesystem::path>& phasing_bin,
                                            const bool include_snp_qv_column,
-                                           const KadayashiOptions& kadayashi_opt)
+                                           const KadayashiOptions& kadayashi_opt,
+                                           const bool legacy_feature_gen)
         : m_fastx_reader{in_ref_fn},
           m_bam_file{secondary::BamFile(in_bam_aln_fn, 1)},
           m_dtypes{dtypes},
@@ -291,6 +292,7 @@ EncoderReadAlignment::EncoderReadAlignment(const std::filesystem::path& in_ref_f
           m_hap_source{hap_source},
           m_clip_to_zero{clip_to_zero},
           m_right_align_insertions{right_align_insertions},
+          m_legacy_feature_gen{legacy_feature_gen},
           m_phasing_bin{phasing_bin},
           m_kadayashi_opt{kadayashi_opt},
           m_feature_column_map{produce_feature_column_map(include_dwells,
@@ -350,12 +352,41 @@ secondary::Sample EncoderReadAlignment::encode_region(
     try {
         std::unique_lock<std::mutex> lock(m_mtx);
 
-        ReadAlignmentData counts = calculate_read_alignment(
-                m_bam_file, ref_name, ref_start, ref_end, haplotags, m_num_dtypes, m_dtypes,
-                m_tag_name, m_tag_value, m_tag_keep_missing, m_read_group, m_min_mapq,
-                m_row_per_read, m_include_dwells, m_include_haplotype_column,
-                m_include_snp_qv_column, m_hap_source, m_max_reads, m_right_align_insertions,
-                m_min_snp_accuracy);
+        ReadAlignmentData counts = [&]() {
+            if (m_legacy_feature_gen) {
+                return calculate_read_alignment(
+                        m_bam_file, ref_name, ref_start, ref_end, haplotags, m_num_dtypes, m_dtypes,
+                        m_tag_name, m_tag_value, m_tag_keep_missing, m_read_group, m_min_mapq,
+                        m_row_per_read, m_include_dwells, m_include_haplotype_column,
+                        m_include_snp_qv_column, m_hap_source, m_max_reads,
+                        m_right_align_insertions, m_min_snp_accuracy);
+            }
+
+            kadayashi::MedakaFeatureMatrixOptions mfm_options = {
+                    .include_dwells = m_include_dwells,
+                    .include_haplotype_column = m_include_haplotype_column,
+                    .include_snp_qv = m_include_snp_qv_column,
+                    .min_mapq = m_min_mapq,
+                    .num_dtypes = m_num_dtypes,
+                    .dtypes = m_dtypes,
+                    .tag_name = m_tag_name,
+                    .tag_value = m_tag_value,
+                    .tag_keep_missing = m_tag_keep_missing,
+                    .readgroup = m_read_group,
+                    .disable_read_packing = m_row_per_read,
+                    .hap_source = m_hap_source == secondary::HaplotagSource::UNPHASED
+                                          ? kadayashi::FORCE_UNPHASED
+                                          : (m_hap_source == secondary::HaplotagSource::BAM_HAP_TAG
+                                                     ? kadayashi::USE_BAM_HAP_TAG
+                                                     : kadayashi::USE_TAG_FROM_HASHTABLE),
+                    .max_reads = m_max_reads,
+                    .right_align_insertions = m_right_align_insertions,
+                    .min_snp_accuracy = m_min_snp_accuracy,
+            };
+
+            return kadayashi::gen_medaka_feature_matrix_wrapper(m_bam_file, ref_name, ref_start,
+                                                                ref_end, haplotags, mfm_options);
+        }();
 
         // Create Torch tensors from the pileup.
         tensors = read_matrix_data_to_tensors(counts);

@@ -174,7 +174,7 @@ std::unique_ptr<secondary::EncoderBase> make_haplotagging_encoder(
 
     return secondary::encoder_factory(model_config, in_ref_fn, in_bam_aln_fn, read_group, tag_name,
                                       tag_value, clip_to_zero, min_snp_accuracy, std::nullopt,
-                                      std::nullopt, hap_source, phasing_bin, kadayashi_opt);
+                                      std::nullopt, hap_source, phasing_bin, kadayashi_opt, false);
 }
 
 secondary::Sample make_sample(const int32_t seq_id,
@@ -298,7 +298,7 @@ CATCH_TEST_CASE("variant_impl workflow worker functions", TEST_GROUP) {
         CATCH_REQUIRE_THROWS_WITH(
                 create_resources(model_config, std::filesystem::path{}, std::filesystem::path{},
                                  "metal", 1, 1, true, "", "", 0, 0.0, std::nullopt, std::nullopt,
-                                 std::nullopt, std::nullopt, {}),
+                                 std::nullopt, std::nullopt, {}, false),
                 Catch::Matchers::ContainsSubstring("Unsupported device: metal"));
     }
 
