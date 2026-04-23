@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string_view>
 
 namespace dorado::utils::concurrency {
 
@@ -21,13 +22,14 @@ private:
 
 private:
     void worker_thread(size_t worker_idx);
+    TaskPool* get_task_pool() const;
     void set_task_pool(TaskPool* pool);
 
     void bind_task_pool(TaskPool& pool);
     void unbind_task_pool();
 
 public:
-    explicit WorkerPool(size_t num_workers);
+    explicit WorkerPool(size_t num_workers, std::string_view name);
     ~WorkerPool();
 
     // Bind the given task pool to this worker pool.

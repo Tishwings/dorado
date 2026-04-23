@@ -41,6 +41,9 @@ public:
 
     // Wait for all existing tasks to finish.
     void flush();
+
+    // How many tasks are yet to be completed.
+    std::size_t tasks_in_flight() const;
 };
 
 }  // namespace dorado::utils::concurrency

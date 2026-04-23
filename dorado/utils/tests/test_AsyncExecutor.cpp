@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <latch>
+#include <optional>
 #include <random>
 #include <thread>
 
@@ -55,7 +56,7 @@ DEFINE_TEST("Rebind task pools") {
     CATCH_CAPTURE(num_workers, num_producers, queue_capacity);
 
     // Create the workers.
-    WorkerPool workers(num_workers);
+    WorkerPool workers(num_workers, "test");
 
     std::atomic_size_t jobs_run = 0;
     for (std::size_t repeat = 0; repeat < rebind_count; repeat++) {
@@ -88,11 +89,11 @@ DEFINE_TEST("Rebind task pools") {
 }
 
 DEFINE_TEST("Limits are followed") {
-    const std::size_t num_workers = 1;
+    const std::size_t num_workers = GENERATE(1, 2);
     const std::size_t num_producers = 1;
 
     // Create the workers.
-    WorkerPool workers(num_workers);
+    WorkerPool workers(num_workers, "test");
 
     for (std::size_t queue_capacity : {1, 2, 5, 10}) {
         // The main thread will block the tasks.
@@ -106,13 +107,14 @@ DEFINE_TEST("Limits are followed") {
         AsyncExecutor producer(tasks, 0);
 
         // Push as many tasks as the pool should be able to hold.
-        // The worker will pop one of the tasks, so we get an extra one.
-        for (std::size_t task_id = 0; task_id <= queue_capacity; task_id++) {
+        // The workers will each pop one of the tasks, so we push that many more.
+        for (std::size_t task_id = 0; task_id < queue_capacity + num_workers; task_id++) {
             producer.send([&latch] { latch.wait(); });
         }
 
         // We can't push another task to the queue without it blocking, but we can check that it's full.
         CATCH_CHECK(tasks.queue_size(0) == queue_capacity);
+        CATCH_CHECK(tasks.tasks_in_flight(0) == queue_capacity + num_workers);
 
         // Unpause the workers.
         latch.count_down();
@@ -125,7 +127,7 @@ DEFINE_TEST("All workers take from all producers") {
     const std::size_t queue_capacity = 2;
 
     // Create the workers.
-    WorkerPool workers(num_workers);
+    WorkerPool workers(num_workers, "test");
 
     for (std::size_t mask = 0; mask < 4; mask++) {
         const std::size_t idx_a = (mask & 1) ? 1 : 0;
@@ -159,7 +161,7 @@ DEFINE_TEST("Per-producer flushing works") {
     const std::chrono::microseconds task_time(100);
 
     // Create the workers.
-    WorkerPool workers(num_workers);
+    WorkerPool workers(num_workers, "test");
 
     for (std::size_t num_producers : {1, 2}) {
         // Per-producer counters.
@@ -221,6 +223,27 @@ DEFINE_TEST("Bad queue index") {
     CATCH_CHECK_NOTHROW(make_executor(0));
     CATCH_CHECK_NOTHROW(make_executor(1));
     CATCH_CHECK_THROWS_AS(make_executor(2), std::logic_error);
+}
+
+DEFINE_TEST("Empty pools don't crash") {
+    const std::size_t num_workers = GENERATE(0, 1);
+    const std::size_t num_queues = GENERATE(0, 1);
+    const std::size_t queue_capacity = GENERATE(0, 1);
+    const bool with_bind = GENERATE(false, true);
+    const bool with_wait = GENERATE(false, true);
+    CATCH_CAPTURE(num_workers, num_queues, queue_capacity, with_bind, with_wait);
+
+    WorkerPool workers(num_workers, "test");
+    TaskPool tasks(num_queues, queue_capacity);
+
+    std::optional<WorkerPool::BindTasks> binder;
+    if (with_bind) {
+        binder.emplace(workers, tasks);
+    }
+
+    if (with_wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 }
 
 #if DORADO_ENABLE_BENCHMARK_TESTS
@@ -345,7 +368,7 @@ DEFINE_TEMPLATE_TEST("Benchmarking", NewThreadPool, OldThreadPool) {
     }
 
     // Create the worker pool.
-    typename TestType::ThreadPool thread_pool(num_workers);
+    typename TestType::ThreadPool thread_pool(num_workers, "test");
 
     // Typically we have a small number of producers vs a large number of workers.
     for (std::size_t num_producers : {1, 2, 4}) {

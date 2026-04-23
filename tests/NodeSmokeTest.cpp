@@ -12,6 +12,7 @@
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/AdapterDetectorNode.h"
 #include "read_pipeline/nodes/BarcodeClassifierNode.h"
@@ -394,7 +395,8 @@ DEFINE_TEST(NodeSmokeTestRead, "BarcodeClassifierNode") {
 
     set_pipeline_restart(pipeline_restart);
 
-    run_smoke_test<dorado::BarcodeClassifierNode>(2);
+    dorado::SimpleExecutor<dorado::BarcodeClassifierNode> thread_pool(2);
+    run_smoke_test<dorado::BarcodeClassifierNode>(thread_pool.get());
 }
 
 DEFINE_TEST(NodeSmokeTestRead, "AdapterDetectorNode") {
@@ -419,9 +421,10 @@ CATCH_TEST_CASE("BarcodeClassifierNode: test simple pipeline with fastq and sam 
     std::vector<dorado::Message> messages;
     auto sink = pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
     std::string kit = {"EXP-PBC096"};
-    bool barcode_both_ends = GENERATE(true, false);
-    bool no_trim = GENERATE(true, false);
-    pipeline_desc.add_node<dorado::BarcodeClassifierNode>({sink}, 8);
+    const bool barcode_both_ends = GENERATE(true, false);
+    const bool no_trim = GENERATE(true, false);
+    dorado::SimpleExecutor<dorado::BarcodeClassifierNode> thread_pool(8);
+    pipeline_desc.add_node<dorado::BarcodeClassifierNode>({sink}, thread_pool.get());
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
     fs::path data1 = fs::path(get_data_dir("barcode_demux/double_end_variant")) /
@@ -470,7 +473,8 @@ DEFINE_TEST(NodeSmokeTestRead, "PolyACalculatorNode") {
                                    0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 1};
     });
 
-    run_smoke_test<dorado::PolyACalculatorNode>(8, 1000);
+    dorado::SimpleExecutor<dorado::PolyACalculatorNode> thread_pool(8);
+    run_smoke_test<dorado::PolyACalculatorNode>(thread_pool.get(), 1000);
 }
 
 }  // namespace

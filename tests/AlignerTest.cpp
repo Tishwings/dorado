@@ -9,10 +9,10 @@
 #include "hts_utils/header_sq_record.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/base/messages/DuplexRead.h"
 #include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/AlignerNode.h"
-#include "utils/concurrency/multi_queue_thread_pool.h"
 #include "utils/sequence_utils.h"
 #include "utils/string_utils.h"
 
@@ -63,7 +63,8 @@ protected:
     void create_pipeline(Args&&... args) {
         dorado::PipelineDescriptor pipeline_desc;
         auto sink = pipeline_desc.add_node<MessageSinkToVector>({}, 100, m_output_messages);
-        aligner_node_handle = pipeline_desc.add_node<dorado::AlignerNode>({sink}, args...);
+        aligner_node_handle =
+                pipeline_desc.add_node<dorado::AlignerNode>({sink}, std::forward<Args>(args)...);
         pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
     }
 
@@ -78,8 +79,9 @@ protected:
         if (!bed_file.empty()) {
             bed_file_access->load_bedfile(bed_file);
         }
+        dorado::SimpleExecutor<dorado::AlignerNode> executor(threads);
         create_pipeline(index_file_access, bed_file_access, reference_file, bed_file, options,
-                        threads);
+                        executor.get());
 
         auto client_info = std::make_shared<dorado::DefaultClientInfo>();
         auto alignment_info = std::make_shared<dorado::alignment::AlignmentInfo>();
@@ -111,9 +113,8 @@ protected:
         CATCH_CHECK(index_file_access->load_index(loaded_align_info->reference_file,
                                                   loaded_align_info->minimap_options, 2) ==
                     dorado::alignment::IndexLoadResult::success);
-        auto thread_pool = std::make_shared<dorado::utils::concurrency::MultiQueueThreadPool>(2);
-        create_pipeline(index_file_access, bed_file_access, thread_pool,
-                        dorado::utils::concurrency::TaskPriority::normal);
+        dorado::SimpleExecutor<dorado::AlignerNode> executor(2);
+        create_pipeline(index_file_access, bed_file_access, executor.get());
 
         auto client_info = std::make_shared<dorado::DefaultClientInfo>();
         client_info->contexts().register_context<const dorado::alignment::AlignmentInfo>(

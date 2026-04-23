@@ -36,6 +36,9 @@ public:
 
     std::size_t num_queues() const { return m_task_qs.size(); }
     std::size_t queue_size(std::size_t q_idx) const { return m_task_qs.at(q_idx).size(); }
+    std::size_t tasks_in_flight(std::size_t q_idx) const {
+        return m_q_counters.at(q_idx).value.load(std::memory_order_relaxed);
+    }
 
     // Push a task into the pool.
     template <typename Func>
@@ -45,7 +48,7 @@ public:
 
         // Keep track of the number of tasks in flight so that we can wait on them during a flush.
         counter.fetch_add(1, std::memory_order_relaxed);
-        q.try_push([task = std::forward<Func>(func), &counter] {
+        q.try_push([task = std::forward<Func>(func), &counter]() mutable {
             task();
 
             // We only need to wake waiters when this value hits 0, so avoid unnecessary notifies.

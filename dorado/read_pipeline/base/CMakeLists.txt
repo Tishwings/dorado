@@ -7,14 +7,15 @@ dorado_add_library(
         chunk.h
         ClientInfo.h
         DefaultClientInfo.h
-        terminate_options.h
         HtsReader.h
         messages.h
         MessageSink.h
         read_utils.h
         ReadInitialiser.h
         ReadPipeline.h
+        SimpleExecutor.h
         stitch.h
+        terminate_options.h
     SOURCES_PRIVATE
         chunk.cpp
         HtsReader.cpp

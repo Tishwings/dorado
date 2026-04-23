@@ -3,7 +3,6 @@
 #include "config/BasecallModelConfig.h"
 #include "read_pipeline/base/MessageSink.h"
 
-#include <atomic>
 #include <string>
 
 namespace dorado {
@@ -25,9 +24,6 @@ private:
 
     const config::SignalNormalisationParams m_scaling_params;
     const models::SampleType m_model_type;
-
-    // A flag to warn only once if the basecall model and read SampleType differ
-    std::atomic<bool> m_log_once_inconsistent_read_model{true};
 };
 
 }  // namespace dorado

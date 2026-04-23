@@ -25,6 +25,7 @@
 #include "models/models.h"
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/base/messages/ReadCommon.h"
 #include "read_pipeline/nodes/AdapterDetectorNode.h"
 #include "read_pipeline/nodes/AlignerNode.h"
@@ -569,6 +570,17 @@ auto create_writers(ProgressTracker& tracker,
     return writers;
 }
 
+struct PipelineWorkers {
+    explicit PipelineWorkers(const utils::ThreadAllocations& thread_allocations)
+            : aligner_executor(thread_allocations.aligner_threads),
+              barcode_pool(thread_allocations.barcoder_threads),
+              polya_pool(std::thread::hardware_concurrency()) {}
+
+    SimpleExecutor<AlignerNode> aligner_executor;
+    SimpleExecutor<BarcodeClassifierNode> barcode_pool;
+    SimpleExecutor<PolyACalculatorNode> polya_pool;
+};
+
 struct NewPipeline {
     std::unique_ptr<Pipeline> pipeline;
     NodeHandle aligner_idx;
@@ -586,6 +598,7 @@ NewPipeline create_pipeline(
         const std::shared_ptr<const dorado::demux::BarcodingInfo>& barcoding_info,
         const std::shared_ptr<const dorado::demux::AdapterInfo>& adapter_info,
         const utils::ThreadAllocations& thread_allocations,
+        PipelineWorkers& worker_pools,
         bool adapter_trimming_enabled,
         const BasecallModelConfig& model_config) {
     spdlog::info("> Creating basecall pipeline");
@@ -607,7 +620,7 @@ NewPipeline create_pipeline(
         aligner = pipeline_desc.add_node<AlignerNode>({current_sink_node}, index_file_access,
                                                       bed_file_access, options.alignment_reference,
                                                       options.bed_file, aligner_options,
-                                                      thread_allocations.aligner_threads);
+                                                      worker_pools.aligner_executor.get());
         current_sink_node = aligner;
     }
     current_sink_node = pipeline_desc.add_node<ReadToBamTypeNode>(
@@ -647,13 +660,13 @@ NewPipeline create_pipeline(
             client_info->contexts().register_context<const poly_tail::PolyTailCalculatorSelector>(
                     poly_tail_calc_selector);
             current_sink_node = pipeline_desc.add_node<PolyACalculatorNode>(
-                    {current_sink_node}, std::thread::hardware_concurrency(), 1000);
+                    {current_sink_node}, worker_pools.polya_pool.get(), 1000);
         }
     }
     if (barcoding_info) {
         client_info->contexts().register_context<const demux::BarcodingInfo>(barcoding_info);
         current_sink_node = pipeline_desc.add_node<BarcodeClassifierNode>(
-                {current_sink_node}, thread_allocations.barcoder_threads);
+                {current_sink_node}, worker_pools.barcode_pool.get());
     }
     if (adapter_trimming_enabled) {
         current_sink_node = pipeline_desc.add_node<AdapterDetectorNode>(
@@ -957,12 +970,15 @@ void run(const BasecallerOptions& options,
     std::vector<std::unique_ptr<hts_writer::IWriter>> writers =
             create_writers(tracker, options, writer_flags, thread_allocations);
 
+    // Setup pools. These are referenced by the pipeline so must outlive it.
+    PipelineWorkers worker_pools(thread_allocations);
+
     // Create the Pipeline from our description.
     std::vector<dorado::stats::StatsReporter> stats_reporters{dorado::stats::sys_stats_report};
     auto [pipeline, aligner_idx, hts_writer_idx, client_info] = create_pipeline(
             stats_reporters, std::move(writers), std::move(runners), std::move(modbase_runners),
             options, modbase_params, aligner_options, barcoding_info, adapter_info,
-            thread_allocations, adapter_trimming_enabled, model_config);
+            thread_allocations, worker_pools, adapter_trimming_enabled, model_config);
     if (pipeline == nullptr) {
         throw std::runtime_error("Failed to create pipeline");
     }

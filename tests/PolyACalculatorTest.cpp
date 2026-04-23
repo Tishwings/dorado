@@ -3,6 +3,7 @@
 #include "poly_tail/poly_tail_calculator_selector.h"
 #include "poly_tail/poly_tail_config.h"
 #include "read_pipeline/base/DefaultClientInfo.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/base/messages/SimplexRead.h"
 #include "read_pipeline/nodes/PolyACalculatorNode.h"
 
@@ -38,8 +39,9 @@ CATCH_TEST_CASE("PolyACalculator: Test polyT tail estimation", TEST_GROUP) {
     CATCH_CAPTURE(data);
     dorado::PipelineDescriptor pipeline_desc;
     std::vector<dorado::Message> messages;
+    SimpleExecutor<PolyACalculatorNode> thread_pool(2);
     auto sink = pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
-    pipeline_desc.add_node<PolyACalculatorNode>({sink}, 2, 1000);
+    pipeline_desc.add_node<PolyACalculatorNode>({sink}, thread_pool.get(), 1000);
 
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
@@ -76,8 +78,9 @@ CATCH_TEST_CASE("PolyACalculator: Test polyT tail estimation with custom config"
 
     dorado::PipelineDescriptor pipeline_desc;
     std::vector<dorado::Message> messages;
+    SimpleExecutor<PolyACalculatorNode> thread_pool(2);
     auto sink = pipeline_desc.add_node<MessageSinkToVector>({}, 100, messages);
-    pipeline_desc.add_node<PolyACalculatorNode>({sink}, 2, 1000);
+    pipeline_desc.add_node<PolyACalculatorNode>({sink}, thread_pool.get(), 1000);
 
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 

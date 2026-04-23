@@ -2,7 +2,7 @@
 
 #include "demux/BarcodeClassifierSelector.h"
 #include "read_pipeline/base/MessageSink.h"
-#include "utils/concurrency/async_task_executor.h"
+#include "utils/concurrency/AsyncExecutor.h"
 
 #include <atomic>
 #include <map>
@@ -15,15 +15,13 @@ namespace demux {
 struct BarcodingInfo;
 }
 
-namespace utils::concurrency {
-class MultiQueueThreadPool;
-}  // namespace utils::concurrency
-
 class BarcodeClassifierNode : public MessageSink {
 public:
-    BarcodeClassifierNode(std::shared_ptr<utils::concurrency::MultiQueueThreadPool> thread_pool,
-                          utils::concurrency::TaskPriority pipeline_priority);
-    BarcodeClassifierNode(int threads);
+    static inline constexpr std::size_t MAX_INPUT_QUEUE_SIZE{10000};
+    static inline constexpr std::size_t MAX_PROCESSING_QUEUE_SIZE{MAX_INPUT_QUEUE_SIZE / 2};
+    static inline constexpr char QUEUE_THREAD_NAME[] = "barcoding";
+
+    BarcodeClassifierNode(utils::concurrency::AsyncExecutor&& task_executor);
 
     ~BarcodeClassifierNode();
 
@@ -33,8 +31,7 @@ public:
     void restart() override;
 
 private:
-    std::shared_ptr<utils::concurrency::MultiQueueThreadPool> m_thread_pool{};
-    utils::concurrency::AsyncTaskExecutor m_task_executor;
+    utils::concurrency::AsyncExecutor m_task_executor;
 
     std::atomic<int> m_num_records{0};
     demux::BarcodeClassifierSelector m_barcoder_selector{};

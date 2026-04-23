@@ -6,7 +6,6 @@
 #include "cli/utils/cli_utils.h"
 #include "dorado_version.h"
 #include "hts_utils/HeaderMapper.h"
-#include "hts_utils/KString.h"
 #include "hts_utils/bam_utils.h"
 #include "hts_utils/hts_types.h"
 #include "hts_writer/HtsFileWriterBuilder.h"
@@ -17,12 +16,12 @@
 #include "read_pipeline/base/HtsReader.h"
 #include "read_pipeline/base/ReadInitialiser.h"
 #include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/nodes/AlignerNode.h"
 #include "read_pipeline/nodes/WriterNode.h"
 #include "summary_info.h"
 #include "utils/log_utils.h"
 #include "utils/stats.h"
-#include "utils/string_utils.h"
 #include "utils/tty_utils.h"
 
 #include <minimap.h>
@@ -30,15 +29,10 @@
 
 #include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-
-#ifndef _WIN32
-#include <unistd.h>
-#endif
 
 using namespace std::chrono_literals;
 
@@ -307,11 +301,14 @@ int aligner(int argc, char* argv[]) {
         writers.push_back(std::move(summary_writer));
     }
 
+    // Setup pools. These are referenced by the pipeline so must outlive it.
+    SimpleExecutor<AlignerNode> aligner_pool(aligner_threads);
+
     PipelineDescriptor pipeline_desc;
     auto writer_node = pipeline_desc.add_node<WriterNode>({}, std::move(writers));
     auto aligner_node = pipeline_desc.add_node<AlignerNode>(
             {writer_node}, index_file_access, bed_file_access, align_info->reference_file,
-            align_info->bed_file, align_info->minimap_options, aligner_threads);
+            align_info->bed_file, align_info->minimap_options, aligner_pool.get());
 
     // Create the Pipeline from our description.
     std::vector<dorado::stats::StatsReporter> stats_reporters;

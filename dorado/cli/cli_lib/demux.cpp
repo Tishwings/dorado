@@ -16,35 +16,29 @@
 #include "read_pipeline/base/HtsReader.h"
 #include "read_pipeline/base/ReadInitialiser.h"
 #include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/SimpleExecutor.h"
 #include "read_pipeline/nodes/BarcodeClassifierNode.h"
 #include "read_pipeline/nodes/TrimmerNode.h"
 #include "read_pipeline/nodes/WriterNode.h"
 #include "summary_info.h"
 #include "utils/SampleSheet.h"
-#include "utils/arg_parse_ext.h"
 #include "utils/barcode_kits.h"
 #include "utils/basecaller_utils.h"
 #include "utils/log_utils.h"
 #include "utils/stats.h"
-#include "utils/tty_utils.h"
 
 #include <argparse/argparse.hpp>
 #include <htslib/sam.h>
 #include <spdlog/spdlog.h>
 
 #include <chrono>
-#include <fstream>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
 #include <thread>
 #include <vector>
-using namespace std::chrono_literals;
 
-#ifndef _WIN32
-#include <unistd.h>
-#endif
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -262,6 +256,9 @@ int demuxer(int argc, char* argv[]) {
         writers.push_back(std::move(summary_writer));
     }
 
+    // Setup pools. These are referenced by the pipeline so must outlive it.
+    SimpleExecutor<BarcodeClassifierNode> demux_pool(demux_threads);
+
     auto client_info = std::make_shared<DefaultClientInfo>();
 
     PipelineDescriptor pipeline_desc;
@@ -294,7 +291,7 @@ int demuxer(int argc, char* argv[]) {
             current_node =
                     pipeline_desc.add_node<TrimmerNode>({writer_node}, 1, kit_info.rna_barcodes);
         }
-        pipeline_desc.add_node<BarcodeClassifierNode>({current_node}, demux_threads);
+        pipeline_desc.add_node<BarcodeClassifierNode>({current_node}, demux_pool.get());
     }
 
     // Create the Pipeline from our description.
