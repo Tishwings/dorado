@@ -426,7 +426,6 @@ build:linux:arm64:jammy:
   image: ${DORADO_DOCKER_ROOT}/dorado-l4t-r36.4.0:1.0
   variables:
     BUILD_OPTIONS: "-DONT_MM2_EXE=ON"
-    DORADO_FLASHATTN3_BUILD_JOBS: "6"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
@@ -437,7 +436,6 @@ build:linux:arm64:cuda13:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
     BUILD_OPTIONS: "-DONT_MM2_EXE=ON"
-    DORADO_FLASHATTN3_BUILD_JOBS: "6"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
@@ -511,7 +509,6 @@ build:macos:arm:no_ccache:
 build_archive:linux:arm64:jammy:
   image: ${DORADO_DOCKER_ROOT}/dorado-l4t-r36.4.0:1.0
   variables:
-    DORADO_FLASHATTN3_BUILD_JOBS: "6"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
@@ -522,7 +519,6 @@ build_archive:linux:arm64:jammy:
 build_archive:linux:arm64:cuda13:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-arm64-cuda-13.0.0:1.0
   variables:
-    DORADO_FLASHATTN3_BUILD_JOBS: "6"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_ARM64_313}
   extends:
     - .linux_build_dependencies
