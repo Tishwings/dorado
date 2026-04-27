@@ -182,7 +182,6 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
 
     auto& merged_headers = *m_merged_headers_map;
     std::unordered_map<std::string, HtsData::ReadAttributes> rg_to_attrs_lut;
-    std::unordered_map<std::string, ReadGroup> id_to_rg_lut;
 
     SamHdrPtr hdr(sam_hdr_init());
     while (reader.get_next(record)) {
@@ -253,7 +252,6 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
             };
         }
         merged_header_ptr->add_rg(rg_data.id, rg_data.data, kv_pairs);
-        id_to_rg_lut[rg_data.id] = std::move(rg_data.data);
     }
 
     // Add the new read attrs and merge the headers for each output
