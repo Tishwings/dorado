@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cassert>
 #include <charconv>
 #include <cstdio>
 
@@ -51,7 +52,42 @@ const unsigned char md_op_table[256]={
 
 }  // namespace
 
+float get_tag_de_f(const bam1_t *aln) {
+    assert(aln);
+    float de = 0.0f;
+    uint8_t *tmp = bam_aux_get(aln, "de");
+    if (tmp) {
+        de = static_cast<float>(bam_aux2f(tmp));
+    }
+    return de;
+}
+
+bool to_exclude_by_flags(const bam1_t *aln, uint16_t unwanted_flags) {
+    assert(aln);
+    if (aln->core.flag & unwanted_flags) {
+        return true;
+    }
+    return false;
+}
+
+bool to_exclude_by_low_mapq(const bam1_t *aln, int min_mapq) {
+    assert(aln);
+    if (static_cast<int>(aln->core.qual) < min_mapq) {
+        return true;
+    }
+    return false;
+}
+bool to_exlucde_by_high_de_tag(const bam1_t *aln, float max_gapcompressed_seqdiv) {
+    assert(aln);
+    float de = get_tag_de_f(aln);
+    if (de > max_gapcompressed_seqdiv) {
+        return true;
+    }
+    return false;
+}
+
 bool sancheck_MD_tag_exists_and_is_valid(const bam1_t *aln) {
+    assert(aln);
     const uint8_t *tmp = bam_aux_get(aln, "MD");
     if (!tmp) {
         return false;
@@ -102,6 +138,7 @@ bool parse_variants_for_one_read(const bam1_t *aln,
     //        initial unphased pileup, and caller should ensure no race.
     //        (2)If the bloom filter is provided and is frozen, we will check
     //        with it and only collect known variants.
+    assert(aln);
     bool failed = false;
 
     int self_start = 0;
@@ -119,6 +156,11 @@ bool parse_variants_for_one_read(const bam1_t *aln,
     for (uint32_t i = 0; i < aln->core.n_cigar; i++) {
         op = bam_cigar_op(cigar[i]);
         op_l = bam_cigar_oplen(cigar[i]);
+        if (op_l == 0) {
+            throw std::runtime_error{"[kdys::" + std::string(__func__) +
+                                     "] cigar oplen cannot be 0, qn is " +
+                                     std::string(bam_get_qname(aln))};
+        }
         if (op == BAM_CREF_SKIP) {
             ref_pos += op_l;
         } else if (op == BAM_CSOFT_CLIP) {

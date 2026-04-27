@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <map>
@@ -370,6 +371,10 @@ AlignmentAccuracy compute_accuracy_from_cigar(const bam1_t* record) {
                            : std::clamp((1.0 - (static_cast<double>(nm)) / aln_len), 0.0, 1.0);
 
     return AlignmentAccuracy{.total = acc_total, .snp = acc_x};
+}
+
+double compute_quality_score(const double error_prob) {
+    return (error_prob <= 0.0) ? 60.0 : (error_prob >= 1.0) ? 0.0 : (-10.0 * log10(error_prob));
 }
 
 std::map<std::string, std::string> extract_pg_keys_from_hdr(const std::string& filename,

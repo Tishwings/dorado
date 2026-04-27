@@ -67,11 +67,14 @@ add_library(haplotag_lib STATIC
     src/haplotag_lib/sequence_utility.cpp
     src/haplotag_lib/variant_graph.cpp
     src/haplotag_lib/bam_record_parsing.cpp
+    src/haplotag_lib/string_utils.cpp
     include/local_haplotagging.h
     include/faidx_utils.h
     include/hts_types.h
     include/types.h
     include/blocked_bloom_filter.h
+    #src/haplotag_lib/variant_graph.h
+    #src/haplotag_lib/string_utils.h
 )
 
 set_target_properties(haplotag_lib PROPERTIES LINKER_LANGUAGE CXX)
@@ -83,8 +86,6 @@ target_include_directories(haplotag_lib
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../hts_utils/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../secondary/common/include/secondary/common/
         ${CMAKE_CURRENT_SOURCE_DIR}/src/haplotag_lib
 )
 
@@ -133,13 +134,7 @@ if (BUILD_KADAYASHI_EXE OR BUILD_KADAYASHI_TESTS)
             src/pipeline.cpp
             src/resources.cpp
     )
-    target_include_directories(kadayashi_main_lib
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/haplotag_lib
-            ${CMAKE_CURRENT_SOURCE_DIR}/../cxxpool/src
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../hts_utils/include/
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../secondary/common/include/secondary/common/
-    )
+
     target_link_libraries(kadayashi_main_lib
         PUBLIC
             dorado_hts_utils
@@ -150,6 +145,7 @@ if (BUILD_KADAYASHI_EXE OR BUILD_KADAYASHI_TESTS)
             ${HTSLIB_LIBRARIES}
             ${ZLIB_LIBRARIES}
             spdlog::spdlog
+            cxxpool
     )
     enable_gcov(kadayashi_main_lib)
     enable_wall(kadayashi_main_lib)

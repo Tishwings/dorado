@@ -2,14 +2,15 @@
 
 #include "bam_record_parsing.h"
 #include "bam_tagging.h"
-#include "cxxpool.h"
+#include "haplotag_lib/string_utils.h"
+#include "haplotag_lib/variant_graph.h"
 #include "hts_utils/FastxRandomReader.h"
 #include "kadayashi_utils.h"
 #include "resources.h"
 #include "sequence_utility.h"
 #include "types.h"
-#include "variant_graph.h"
 
+#include <cxxpool.h>
 #include <htslib/bgzf.h>
 #include <htslib/faidx.h>
 #include <htslib/hts.h>
@@ -319,7 +320,7 @@ void local_haptagging_write_tsv2(std::ofstream &fp,
     //              - informative site positions
     //              - phasing votes of each read
     // clang-format on
-    const std::string itvl = create_region_string(refname, ref_start, ref_end);
+    const std::string itvl = kadayashi::create_region_string(refname, ref_start, ref_end);
     HtsItrPtr bamitr =
             HtsItrPtr(sam_itr_querys(hf.idx(), hf.hdr(), itvl.c_str()), HtsItrDestructor());
 
@@ -446,7 +447,7 @@ void local_haplotagging_callback(void *data, int job_i) {
     }
 
     // store variants
-    for (const auto &varcall : ck.varcalls) {
+    for (const ta_t &varcall : ck.varcalls) {
         d->informative_sites[job_i].push_back(varcall.pos);
     }
 }
@@ -495,8 +496,8 @@ void local_haplotagging_phase_and_write(worker_2a2p_pl *pl) {
                                        st->success[i_chunk], st->haptags[i_chunk].size(),
                                        st->qnames[i_chunk], st->haptags[i_chunk],
                                        st->votes_diploid[i_chunk], st->informative_sites[i_chunk]);
-            spdlog::info("[kdys::{}] done processing interval {}:{}-{}", __func__,
-                         pl->refname.data(), start, end);
+            spdlog::info("[kdys::{}] done processing interval {}:{}-{}", __func__, pl->refname,
+                         start, end);
         }
     }
 }
@@ -680,7 +681,7 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
     double T2 = T;
     worker_simple_2a2p_st st = {.ck = ck, .seedreadID = {}, .arr_read2hp = {}};
 
-    for (auto var : ck.varcalls) {
+    for (const ta_t &var : ck.varcalls) {
         LOG_TRACE("[kdys::{}] info site pos {}", __func__, var.pos);
     }
 
@@ -790,7 +791,7 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
         }
     }
     for (uint32_t i_read = 0; i_read < ck.reads.size(); i_read++) {
-        const auto &cnt = cnts[i_read];
+        const std::array<float, 3> &cnt = cnts[i_read];
         if ((cnt[0] > 3 && cnt[1] > 3 &&
              static_cast<float>(std::max(cnt[0], cnt[1])) / std::min(cnt[0], cnt[1]) < 1.5f) ||
             (cnt[0] + cnt[1] < 0.5f) || (cnt[0] == cnt[1])) {
@@ -842,7 +843,7 @@ chunk_t kadayashi_global_phasing_simple1(dorado::secondary::BamFileView &hf_view
 
             int n_reads = 0;
             int n_haps[2] = {0, 0};
-            for (const auto &read : ck.reads) {
+            for (const read_t &read : ck.reads) {
                 if (read.hp != HAPTAG_UNPHASED) {
                     n_haps[read.hp] += 1;
                 }
@@ -1958,15 +1959,14 @@ int local_haplotagging(const std::filesystem::path &fn_bam,
 
         if (!dbg_region_str.empty()) {
             if (region_string_is_sane(dbg_region_str, dbg_region_str.size()) == IS_MALFORMAT) {
-                spdlog::error("[kdys::{}] --region was malformatted: {}", __func__,
-                              dbg_region_str.data());
+                spdlog::error("[kdys::{}] --region was malformatted: {}", __func__, dbg_region_str);
                 exit(1);
             }
 
             region_string_t region = parse_region_string2(dbg_region_str);
             if (!region.is_parse_success) {
                 spdlog::error("[kdys::{}] failed to parse region string {}", __func__,
-                              dbg_region_str.data());
+                              dbg_region_str);
                 exit(1);
             }
             if (region.is_whole_chrom) {
@@ -2298,8 +2298,7 @@ std::vector<std::string> bam_region_to_seqs(const std::filesystem::path &fn_ref,
     int region_size = 0;
     const region_string_t region = parse_region_string2(interval_string);
     if (!region.is_parse_success) {
-        spdlog::error("[kdys::{}] failed to parse region string {}", __func__,
-                      interval_string.data());
+        spdlog::error("[kdys::{}] failed to parse region string {}", __func__, interval_string);
         return {};
     } else {
         region_size = region.end - region.start;

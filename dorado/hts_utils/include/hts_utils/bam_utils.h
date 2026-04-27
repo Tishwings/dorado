@@ -130,6 +130,16 @@ AlignmentOps get_alignment_op_counts(const bam1_t* record);
 AlignmentAccuracy compute_accuracy_from_cigar(const bam1_t* record);
 
 /**
+ * @brief Calculates quality score (-10*log10(error_probability)).
+ * This function takes an error probability and returns the corresponding quality score
+ * if the probability is within (0.0, 1.0), otherwise clamps to 0.0 or 60.0.
+ * 
+ * @param p the error probability. 
+ * @return double the quality score.
+*/
+double compute_quality_score(double error_prob);
+
+/**
  * Extract keys for PG header from BAM header.
  *
  * @param filepath Path to input BAM file.
@@ -260,6 +270,7 @@ void remove_alignment_tags_from_record(bam1_t* record);
 
 /*
  * Get the "dx" tag from the bam record
+
  *
  * @param record BAM record.
  * @return The "dx" tag value - 0 if not found

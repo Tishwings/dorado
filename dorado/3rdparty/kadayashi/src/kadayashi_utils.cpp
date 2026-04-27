@@ -172,7 +172,7 @@ void write_binary_given_tsv(const std::filesystem::path &fn_tsv,
             fp_bin.flush();
             assert(fp_bin.tellp() == (header_offset1));
             // (chunk interval infos: ref_start, ref_end, start_pos_in_bin, storage_n)
-            for (const auto &info : chunkinfos) {
+            for (const lite_chunk_info_t &info : chunkinfos) {
                 const uint32_t ref_s = info.start;
                 const uint32_t ref_e = info.end;
                 const uint64_t pos_infile = info.start_pos_in_bin;
