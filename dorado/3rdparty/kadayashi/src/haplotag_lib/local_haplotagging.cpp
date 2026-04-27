@@ -31,6 +31,7 @@
 #include <ostream>
 #include <span>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 #ifdef NDEBUG
@@ -2627,6 +2628,7 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
     }
 
     uint32_t n_reads = 0;
+    std::unordered_set<std::string> seen_qnames;
     while (sam_itr_next(hf.fp, bamitr.get(), aln.get()) >= 0) {
         const char *qn = bam_get_qname(aln.get());
         const uint32_t r_start_pos = static_cast<uint32_t>(aln.get()->core.pos);
@@ -2712,6 +2714,9 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
                 false /*retain_SNP_only*/, nullptr);
         const double seqdiv_mismatch_only = get_snp_accuracy_dorado_style(r, qn);
         if ((seqdiv_mismatch_only < gck.options.min_snp_accuracy) || !parse_ok) {
+            continue;
+        }
+        if (!seen_qnames.emplace(qn).second) {
             continue;
         }
 
