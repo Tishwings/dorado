@@ -3173,7 +3173,7 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
             int &read_laneID = read2lane[i];
             if (!options.disable_read_packing) {  // then try to place read into an existing lane
                 for (medaka_feature_matrix_lane_tracker_t &record : lane_lookup) {
-                    if (record.last_pos < read.start_pos) {
+                    if (record.last_pos <= read.start_pos) {
                         need_new_lane = false;
                         read_laneID = record.laneID;
                         record.last_pos = read.end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN;
