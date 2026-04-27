@@ -3,6 +3,7 @@
 #include "encoder_counts.h"
 #include "encoder_read_alignment.h"
 #include "secondary/architectures/model_config.h"
+#include "secondary/architectures/model_config_validation.h"
 
 #include <spdlog/spdlog.h>
 
@@ -12,26 +13,12 @@
 namespace dorado::secondary {
 
 namespace {
-std::string get_value(const std::unordered_map<std::string, std::string>& dict,
-                      const std::string& key,
-                      const bool throw_on_fail) {
-    const auto it = dict.find(key);
-    if (it == std::cend(dict)) {
-        if (!throw_on_fail) {
-            return {};
-        }
-        throw std::runtime_error{"Cannot find key '" + key + "' in kwargs!"};
-    }
-    if ((std::size(it->second) >= 2) && (it->second.front() == '"') && (it->second.back() == '"')) {
-        return it->second.substr(1, std::size(it->second) - 2);
-    }
-    return it->second;
+inline std::string get_value(const ModelConfig& config, const std::string& key) {
+    return get_model_config_feature_encoder_value(config, key);
 }
 
-bool get_bool_value(const std::unordered_map<std::string, std::string>& dict,
-                    const std::string& key,
-                    const bool throw_on_fail) {
-    return (get_value(dict, key, throw_on_fail) == "true") ? true : false;
+inline bool get_bool_value(const ModelConfig& config, const std::string& key) {
+    return get_model_config_feature_encoder_value(config, key) == "true";
 }
 }  // namespace
 
@@ -61,17 +48,14 @@ std::unique_ptr<EncoderBase> encoder_factory(
     const FeatureEncoderType feature_encoder_type =
             parse_feature_encoder_type(config.feature_encoder_type);
 
-    const auto& kwargs = config.feature_encoder_kwargs;
-
     if (feature_encoder_type == FeatureEncoderType::COUNTS_FEATURE_ENCODER) {
-        const std::string normalise = get_value(kwargs, "normalise", true);
+        const std::string normalise = get_value(config, "normalise");
         const bool tag_keep_missing = (tag_keep_missing_override)
                                               ? *tag_keep_missing_override
-                                              : get_bool_value(kwargs, "tag_keep_missing", true);
-        const int32_t min_mapq = (min_mapq_override)
-                                         ? *min_mapq_override
-                                         : std::stoi(get_value(kwargs, "min_mapq", true));
-        const bool sym_indels = get_bool_value(kwargs, "sym_indels", true);
+                                              : get_bool_value(config, "tag_keep_missing");
+        const int32_t min_mapq =
+                (min_mapq_override) ? *min_mapq_override : std::stoi(get_value(config, "min_mapq"));
+        const bool sym_indels = get_bool_value(config, "sym_indels");
 
         NormaliseType normalise_type = parse_normalise_type(normalise);
 
@@ -90,19 +74,18 @@ std::unique_ptr<EncoderBase> encoder_factory(
     } else if (feature_encoder_type == FeatureEncoderType::READ_ALIGNMENT_FEATURE_ENCODER) {
         const bool tag_keep_missing = (tag_keep_missing_override)
                                               ? *tag_keep_missing_override
-                                              : get_bool_value(kwargs, "tag_keep_missing", true);
-        const int32_t min_mapq = (min_mapq_override)
-                                         ? *min_mapq_override
-                                         : std::stoi(get_value(kwargs, "min_mapq", true));
-        const int32_t max_reads = std::stoi(get_value(kwargs, "max_reads", true));
-        const bool row_per_read = get_bool_value(kwargs, "row_per_read", true);
-        const bool include_dwells = get_bool_value(kwargs, "include_dwells", true);
-        const bool include_haplotype_column = get_bool_value(kwargs, "include_haplotype", true);
-        const bool include_snp_qv_column = get_bool_value(kwargs, "include_snp_qv", false);
+                                              : get_bool_value(config, "tag_keep_missing");
+        const int32_t min_mapq =
+                (min_mapq_override) ? *min_mapq_override : std::stoi(get_value(config, "min_mapq"));
+        const int32_t max_reads = std::stoi(get_value(config, "max_reads"));
+        const bool row_per_read = get_bool_value(config, "row_per_read");
+        const bool include_dwells = get_bool_value(config, "include_dwells");
+        const bool include_haplotype_column = get_bool_value(config, "include_haplotype");
+        const bool include_snp_qv_column = get_bool_value(config, "include_snp_qv");
         HaplotagSource hap_source_final = hap_source ? *hap_source : HaplotagSource::UNPHASED;
 
         // Optional. Config version >= 3 feature.
-        const bool right_align_insertions = get_bool_value(kwargs, "right_align_insertions", false);
+        const bool right_align_insertions = get_bool_value(config, "right_align_insertions");
 
         if ((hap_source_final == HaplotagSource::BIN_FILE) && !phasing_bin_fn) {
             spdlog::warn(
@@ -131,10 +114,9 @@ FeatureColumnMap feature_column_map_factory(const ModelConfig& config) {
         return EncoderCounts::produce_feature_column_map();
 
     } else if (feature_encoder_type == FeatureEncoderType::READ_ALIGNMENT_FEATURE_ENCODER) {
-        const auto& kwargs = config.feature_encoder_kwargs;
-        const bool include_dwells = get_bool_value(kwargs, "include_dwells", false);
-        const bool include_haplotype_column = get_bool_value(kwargs, "include_haplotype", false);
-        const bool include_snp_qv_column = get_bool_value(kwargs, "include_snp_qv", false);
+        const bool include_dwells = get_bool_value(config, "include_dwells");
+        const bool include_haplotype_column = get_bool_value(config, "include_haplotype");
+        const bool include_snp_qv_column = get_bool_value(config, "include_snp_qv");
         const int64_t num_dtypes = std::ssize(config.feature_encoder_dtypes) + 1;
         return EncoderReadAlignment::produce_feature_column_map(
                 include_dwells, include_haplotype_column, include_snp_qv_column, (num_dtypes > 1));

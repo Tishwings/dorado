@@ -6,6 +6,7 @@
 #include "model_slot_attention_consensus.h"
 #include "model_torch_script.h"
 #include "model_variant_perceiver.h"
+#include "secondary/architectures/model_config_validation.h"
 #include "secondary/features/encoder_base.h"
 #include "secondary/features/encoder_factory.h"
 #include "torch_utils/tensor_utils.h"
@@ -164,17 +165,12 @@ void load_parameters(ModelTorchBase& model, const std::filesystem::path& in_pt) 
 
 std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
                                               const ParameterLoadingStrategy param_strategy) {
-    const auto get_value = [](const std::unordered_map<std::string, std::string>& dict,
-                              const std::string& key) -> std::string {
-        const auto it = dict.find(key);
-        if (it == std::cend(dict)) {
-            throw std::runtime_error{"Cannot find key '" + key + "' in kwargs!"};
-        }
-        if ((std::size(it->second) >= 2) && (it->second.front() == '"') &&
-            (it->second.back() == '"')) {
-            return it->second.substr(1, std::size(it->second) - 2);
-        }
-        return it->second;
+    const auto get_value = [&config](const std::string& key) -> std::string {
+        return get_model_config_model_value(config, key);
+    };
+
+    const auto get_bool_value = [&config](const std::string& key) -> bool {
+        return get_model_config_model_value(config, key) == "true";
     };
 
     const ModelType model_type = parse_model_type(config.model_type);
@@ -207,11 +203,11 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
     if (model_type == ModelType::GRU) {
         spdlog::debug("Constructing a GRU model.");
 
-        const int32_t num_features = std::stoi(get_value(config.model_kwargs, "num_features"));
-        const int32_t num_classes = std::stoi(get_value(config.model_kwargs, "num_classes"));
-        const int32_t gru_size = std::stoi(get_value(config.model_kwargs, "gru_size"));
-        const int32_t n_layers = std::stoi(get_value(config.model_kwargs, "n_layers"));
-        const bool bidirectional = (get_value(config.model_kwargs, "bidirectional") == "true");
+        const int32_t num_features = std::stoi(get_value("num_features"));
+        const int32_t num_classes = std::stoi(get_value("num_classes"));
+        const int32_t gru_size = std::stoi(get_value("gru_size"));
+        const int32_t n_layers = std::stoi(get_value("n_layers"));
+        const bool bidirectional = get_bool_value("bidirectional");
 
         model = ModelGRU::make<ModelGRU>(num_features, num_classes, gru_size, n_layers,
                                          bidirectional);
@@ -219,23 +215,16 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
     } else if (model_type == ModelType::LATENT_SPACE_LSTM) {
         spdlog::debug("Constructing a LATENT_SPACE_LSTM model.");
 
-        const int32_t num_classes = std::stoi(get_value(config.model_kwargs, "num_classes"));
-        const int32_t lstm_size = std::stoi(get_value(config.model_kwargs, "lstm_size"));
-        const int32_t cnn_size = std::stoi(get_value(config.model_kwargs, "cnn_size"));
-        const std::string pooler_type = get_value(config.model_kwargs, "pooler_type");
-        const int32_t bases_alphabet_size =
-                std::stoi(get_value(config.model_kwargs, "bases_alphabet_size"));
-        const int32_t bases_embedding_size =
-                std::stoi(get_value(config.model_kwargs, "bases_embedding_size"));
+        const int32_t num_classes = std::stoi(get_value("num_classes"));
+        const int32_t lstm_size = std::stoi(get_value("lstm_size"));
+        const int32_t cnn_size = std::stoi(get_value("cnn_size"));
+        const std::string pooler_type = get_value("pooler_type");
+        const int32_t bases_alphabet_size = std::stoi(get_value("bases_alphabet_size"));
+        const int32_t bases_embedding_size = std::stoi(get_value("bases_embedding_size"));
         const std::vector<int32_t> kernel_sizes =
-                utils::parse_int32_vector(get_value(config.model_kwargs, "kernel_sizes"), ',');
-        const bool use_dwells = (get_value(config.model_kwargs, "use_dwells") == "true");
-
-        // Optionally parse the 'bidirectional' option to support older configs.
-        bool bidirectional = true;
-        if (config.model_kwargs.find("bidirectional") != std::cend(config.model_kwargs)) {
-            bidirectional = (get_value(config.model_kwargs, "bidirectional") == "true");
-        }
+                utils::parse_int32_vector(get_value("kernel_sizes"), ',');
+        const bool use_dwells = get_bool_value("use_dwells");
+        const bool bidirectional = get_bool_value("bidirectional");
 
         model = ModelLatentSpaceLSTM::make<ModelLatentSpaceLSTM>(
                 num_classes, lstm_size, cnn_size, kernel_sizes, pooler_type, use_dwells,
@@ -244,29 +233,21 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
     } else if (model_type == ModelType::SLOT_ATTENTION_CONSENSUS) {
         spdlog::debug("Constructing a SLOT_ATTENTION_CONSENSUS model.");
 
-        const int32_t num_slots = std::stoi(get_value(config.model_kwargs, "num_slots"));
-        const int32_t classes_per_slot =
-                std::stoi(get_value(config.model_kwargs, "classes_per_slot"));
-        const int32_t read_embedding_size =
-                std::stoi(get_value(config.model_kwargs, "read_embedding_size"));
-        const int32_t cnn_size = std::stoi(get_value(config.model_kwargs, "cnn_size"));
+        const int32_t num_slots = std::stoi(get_value("num_slots"));
+        const int32_t classes_per_slot = std::stoi(get_value("classes_per_slot"));
+        const int32_t read_embedding_size = std::stoi(get_value("read_embedding_size"));
+        const int32_t cnn_size = std::stoi(get_value("cnn_size"));
         const std::vector<int32_t> kernel_sizes =
-                utils::parse_int32_vector(get_value(config.model_kwargs, "kernel_sizes"), ',');
-        const std::string pooler_type = get_value(config.model_kwargs, "pooler_type");
-        const bool use_mapqc = (get_value(config.model_kwargs, "use_mapqc") == "true");
-        const bool use_dwells = (get_value(config.model_kwargs, "use_dwells") == "true");
-        const bool use_haplotags = (get_value(config.model_kwargs, "use_haplotags") == "true");
-        const int32_t bases_alphabet_size =
-                std::stoi(get_value(config.model_kwargs, "bases_alphabet_size"));
-        const int32_t bases_embedding_size =
-                std::stoi(get_value(config.model_kwargs, "bases_embedding_size"));
-        const bool add_lstm = (get_value(config.model_kwargs, "add_lstm") == "true");
-        const bool use_reference = (get_value(config.model_kwargs, "use_reference") == "true");
-
-        bool use_snp_qv = false;
-        if (config.model_kwargs.find("use_snp_qv") != std::cend(config.model_kwargs)) {
-            use_snp_qv = (get_value(config.model_kwargs, "use_snp_qv") == "true");
-        }
+                utils::parse_int32_vector(get_value("kernel_sizes"), ',');
+        const std::string pooler_type = get_value("pooler_type");
+        const bool use_mapqc = get_bool_value("use_mapqc");
+        const bool use_dwells = get_bool_value("use_dwells");
+        const bool use_haplotags = get_bool_value("use_haplotags");
+        const bool use_snp_qv = get_bool_value("use_snp_qv");
+        const int32_t bases_alphabet_size = std::stoi(get_value("bases_alphabet_size"));
+        const int32_t bases_embedding_size = std::stoi(get_value("bases_embedding_size"));
+        const bool add_lstm = get_bool_value("add_lstm");
+        const bool use_reference = get_bool_value("use_reference");
 
         const std::unordered_map<std::string, std::string> pooler_args;
 
@@ -283,49 +264,31 @@ std::shared_ptr<ModelTorchBase> model_factory(const ModelConfig& config,
     } else if (model_type == ModelType::VARIANT_PERCEIVER) {
         spdlog::debug("Constructing a VARIANT_PERCEIVER model.");
 
-        const int32_t read_max_depth = std::stoi(get_value(config.model_kwargs, "read_max_depth"));
-        const int32_t ploidy = std::stoi(get_value(config.model_kwargs, "ploidy"));
-        const int32_t num_classes = std::stoi(get_value(config.model_kwargs, "num_classes"));
-        const int32_t cnn_size = std::stoi(get_value(config.model_kwargs, "cnn_size"));
+        const int32_t read_max_depth = std::stoi(get_value("read_max_depth"));
+        const int32_t ploidy = std::stoi(get_value("ploidy"));
+        const int32_t num_classes = std::stoi(get_value("num_classes"));
+        const int32_t cnn_size = std::stoi(get_value("cnn_size"));
         const std::vector<int32_t> kernel_sizes =
-                utils::parse_int32_vector(get_value(config.model_kwargs, "kernel_sizes"), ',');
-        const int32_t dimension = std::stoi(get_value(config.model_kwargs, "dimension"));
-        const int32_t num_blocks = std::stoi(get_value(config.model_kwargs, "num_blocks"));
-        const int32_t num_heads = std::stoi(get_value(config.model_kwargs, "num_heads"));
+                utils::parse_int32_vector(get_value("kernel_sizes"), ',');
+        const int32_t dimension = std::stoi(get_value("dimension"));
+        const int32_t num_blocks = std::stoi(get_value("num_blocks"));
+        const int32_t num_heads = std::stoi(get_value("num_heads"));
         const int32_t self_attn_layers_per_block =
-                std::stoi(get_value(config.model_kwargs, "self_attn_layers_per_block"));
+                std::stoi(get_value("self_attn_layers_per_block"));
 
-        const bool use_mapqc = (get_value(config.model_kwargs, "use_mapqc") == "true");
-        const bool use_dwells = (get_value(config.model_kwargs, "use_dwells") == "true");
-        const bool use_haplotags = (get_value(config.model_kwargs, "use_haplotags") == "true");
-        bool use_snp_qv = false;
-        if (config.model_kwargs.find("use_snp_qv") != std::cend(config.model_kwargs)) {
-            use_snp_qv = (get_value(config.model_kwargs, "use_snp_qv") == "true");
-        }
+        const bool use_mapqc = get_bool_value("use_mapqc");
+        const bool use_dwells = get_bool_value("use_dwells");
+        const bool use_haplotags = get_bool_value("use_haplotags");
+        const bool use_snp_qv = get_bool_value("use_snp_qv");
 
-        const int32_t bases_alphabet_size =
-                std::stoi(get_value(config.model_kwargs, "bases_alphabet_size"));
-        const int32_t bases_embedding_size =
-                std::stoi(get_value(config.model_kwargs, "bases_embedding_size"));
+        const int32_t bases_alphabet_size = std::stoi(get_value("bases_alphabet_size"));
+        const int32_t bases_embedding_size = std::stoi(get_value("bases_embedding_size"));
 
-        const bool use_decoder_lstm =
-                (get_value(config.model_kwargs, "use_decoder_lstm") == "true");
-        const bool update_read_embeddings =
-                (get_value(config.model_kwargs, "update_read_embeddings") == "true");
-
-        const bool use_per_read_embedding(
-                get_value(config.model_kwargs, "use_per_read_embedding") == "true");
-
-        EmbeddingType embedding_type = EmbeddingType::IDENTITY;
-        if (config.model_kwargs.find("embedding_type") != std::cend(config.model_kwargs)) {
-            embedding_type = parse_embedding_type(get_value(config.model_kwargs, "embedding_type"));
-        }
-
-        bool latent_ref_init = false;
-        if (config.model_kwargs.find("latent_init_method") != std::cend(config.model_kwargs)) {
-            latent_ref_init = parse_latent_init_from_ref(
-                    get_value(config.model_kwargs, "latent_init_method"));
-        }
+        const bool use_decoder_lstm = get_bool_value("use_decoder_lstm");
+        const bool update_read_embeddings = get_bool_value("update_read_embeddings");
+        const bool use_per_read_embedding = get_bool_value("use_per_read_embedding");
+        const EmbeddingType embedding_type = parse_embedding_type(get_value("embedding_type"));
+        const bool latent_ref_init = parse_latent_init_from_ref(get_value("latent_init_method"));
 
         model = ModelVariantPerceiver::make<ModelVariantPerceiver>(
                 read_max_depth, ploidy, num_classes, cnn_size, kernel_sizes, dimension, num_blocks,

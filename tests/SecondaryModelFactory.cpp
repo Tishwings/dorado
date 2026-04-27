@@ -139,6 +139,8 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
                 .feature_encoder_kwargs =
                         {
                                 {"include_dwells", "true"},
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -157,7 +159,7 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
 
     CATCH_SECTION("SlotAttentionConsensus model") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "SlotAttentionConsensus",
                 .model_file = "weights.pt",
@@ -183,6 +185,7 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
                         {
                                 {"include_dwells", "true"},
                                 {"include_haplotype", "true"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -201,7 +204,7 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
 
     CATCH_SECTION("VariantPerceiver model") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -227,6 +230,10 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -275,7 +282,12 @@ CATCH_TEST_CASE("LatentSpaceLSTM-FeatureColumns", TEST_GROUP) {
                                 {"bidirectional", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
-                .feature_encoder_kwargs = {},  // <- No param for dwells
+                .feature_encoder_kwargs =
+                        {
+                                {"include_dwells", "false"},     // <- No dwells
+                                {"include_haplotype", "false"},  // <- No haplotags
+                                {"include_snp_qv", "false"},     // <- No snp_qv
+                        },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
         };
@@ -306,6 +318,8 @@ CATCH_TEST_CASE("LatentSpaceLSTM-FeatureColumns", TEST_GROUP) {
                 .feature_encoder_kwargs =
                         {
                                 {"include_dwells", "true"},  // <- Include dwells
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -337,7 +351,12 @@ CATCH_TEST_CASE("LatentSpaceLSTM-FeatureColumns", TEST_GROUP) {
                                 {"bidirectional", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
-                .feature_encoder_kwargs = {},  // <- No param for dwells
+                .feature_encoder_kwargs =
+                        {
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
+                        },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
         };
@@ -374,6 +393,7 @@ CATCH_TEST_CASE("LatentSpaceLSTM-FeatureColumns", TEST_GROUP) {
                                 {"include_dwells", "true"},  // <- Include dwells
                                 {"include_haplotype",
                                  "true"},  // <- Add the haplotags but this isn't used by this model.
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -413,7 +433,12 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
                                 {"use_reference", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
-                .feature_encoder_kwargs = {},  // <- No param for dwells or haplotags
+                .feature_encoder_kwargs =
+                        {
+                                {"include_dwells", "false"},     // <- No dwells
+                                {"include_haplotype", "false"},  // <- No haplotags
+                                {"include_snp_qv", "false"},     // <- No snp_qv
+                        },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
         };
@@ -447,7 +472,9 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_dwells", "true"},  // <- No param for haplotags
+                                {"include_dwells", "true"},  // <- Include dwells
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -482,7 +509,9 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_haplotype", "true"},  // <- No param for dwells
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "true"},  // <- Include haplotags
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -493,7 +522,7 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
 
     CATCH_SECTION("Feature tensor does not contain snp_qv, but the model needs it.") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "SlotAttentionConsensus",
                 .model_file = "weights.pt",
@@ -520,6 +549,7 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
                         {
                                 {"include_dwells", "true"},
                                 {"include_haplotype", "true"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -553,7 +583,12 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
                                 {"use_reference", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
-                .feature_encoder_kwargs = {},  // <- No param for dwells or haplotags
+                .feature_encoder_kwargs =
+                        {
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
+                        },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
         };
@@ -591,7 +626,9 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_dwells", "true"},  // <- No param for haplotags
+                                {"include_dwells", "true"},  // <- Include dwells
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -630,7 +667,9 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_haplotype", "true"},  // <- No param for haplotags
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "true"},  // <- Include haplotags
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -645,7 +684,7 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
             "Has snp_qvs in features but no dwells or haplotags. Model needs only the snp_qv "
             "column. Should pass.") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "SlotAttentionConsensus",
                 .model_file = "weights.pt",
@@ -670,7 +709,9 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_snp_qv", "true"},  // <- No param for haplotags
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "true"},  // <- Include snp_qv
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -683,7 +724,7 @@ CATCH_TEST_CASE("SlotAttentionConsensus-FeatureColumns", TEST_GROUP) {
 
     CATCH_SECTION("Feature tensor contains snp_qv, dwells and haplotags. Model uses all three.") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "SlotAttentionConsensus",
                 .model_file = "weights.pt",
@@ -728,7 +769,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
 
     CATCH_SECTION("Missing dwells, missing haplotags, missing snp_qv") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -754,9 +795,18 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
-                .feature_encoder_kwargs = {},  // <- No param for dwells or haplotags
+                .feature_encoder_kwargs =
+                        {
+                                {"include_dwells", "false"},     // <- No dwells
+                                {"include_haplotype", "false"},  // <- No haplotags
+                                {"include_snp_qv", "false"},     // <- No snp_qv
+                        },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
         };
@@ -766,7 +816,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
 
     CATCH_SECTION("Has dwells, but missing haplotags and snp_qv") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -792,11 +842,17 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_dwells", "true"},  // <- No param for haplotags or snp_qv
+                                {"include_dwells", "true"},  // <- Include dwells
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -807,7 +863,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
 
     CATCH_SECTION("Missing dwells and snp_qv, but has the haplotags column") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -833,11 +889,17 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_haplotype", "true"},  // <- No param for dwells or snp_qv
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "true"},  // <- Include haplotags
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -848,7 +910,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
 
     CATCH_SECTION("Feature tensor does not contain snp_qv, but the model needs it.") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -874,12 +936,17 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
                                 {"include_dwells", "true"},
                                 {"include_haplotype", "true"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -891,7 +958,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
     CATCH_SECTION(
             "Missing all optional columns but the model does not require them so it should pass") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -917,9 +984,18 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
-                .feature_encoder_kwargs = {},  // <- No param for dwells or haplotags
+                .feature_encoder_kwargs =
+                        {
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
+                        },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
         };
@@ -933,7 +1009,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
             "Has dwells in features but no haplotags or snp_qv. Model needs the dwells column "
             "only. Should pass.") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -952,18 +1028,24 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},      // <- Use dwells
                                 {"use_haplotags", "false"},  // <- No haplotags
-                                // {"use_snp_qv", "false"},     // <- No snp_qv. Intentionally not explicitly added, should be false by default.
+                                {"use_snp_qv", "false"},     // <- No snp_qv
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_dwells", "true"},  // <- No param for haplotags or snp_qvs
+                                {"include_dwells", "true"},  // <- Include dwells
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -978,7 +1060,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
             "Has haplotags in features but no dwells or snp_qv. Model needs the haplotags column "
             "only. Should pass.") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -1004,11 +1086,17 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_haplotype", "true"},  // <- No param for dwells or snp_qv
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "true"},  // <- Include haplotags
+                                {"include_snp_qv", "false"},
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -1023,7 +1111,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
             "Has snp_qvs in features but no dwells or haplotags. Model needs only the snp_qv "
             "column. Should pass.") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -1049,11 +1137,17 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
                         {
-                                {"include_snp_qv", "true"},  // <- No param for haplotags or dwells
+                                {"include_dwells", "false"},
+                                {"include_haplotype", "false"},
+                                {"include_snp_qv", "true"},  // <- Include snp_qv
                         },
                 .feature_encoder_dtypes = {},
                 .label_scheme_type = "DiploidLabelScheme",
@@ -1066,7 +1160,7 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
 
     CATCH_SECTION("Feature tensor contains snp_qv, dwells and haplotags. Model uses all three.") {
         const ModelConfig config{
-                .version = 1,
+                .version = 4,
                 .supported_basecallers = {"dna_r10.4.1_e8.2_400bps_hac@v5.0.0"},
                 .model_type = "VariantPerceiver",
                 .model_file = "weights.pt",
@@ -1085,13 +1179,17 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"use_mapqc", "true"},
                                 {"use_dwells", "true"},     // <- Has dwells
                                 {"use_haplotags", "true"},  // <- Has haplotags
-                                {"use_snp_qv", "true"},     // <- Hassnp_qv
+                                {"use_snp_qv", "true"},     // <- Has snp_qv
                                 {"bases_alphabet_size", "6"},
                                 {"bases_embedding_size", "6"},
                                 {"use_decoder_lstm", "false"},
                                 {"use_per_read_embedding", "false"},
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
+                                {"latent_init_method", "ref_seq"},
+                                {"shuffle_embeddings", "false"},
+                                {"mask_partial_rows", "true"},
+                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
