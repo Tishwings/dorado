@@ -28,11 +28,15 @@ struct KitInfo {
     bool rear_only_barcodes;
     bool rna_barcodes;
     std::string top_front_flank;
+    std::string top_mid_flank;
     std::string top_rear_flank;
     std::string bottom_front_flank;
+    std::string bottom_mid_flank;
     std::string bottom_rear_flank;
     std::vector<std::string> barcodes;
     std::vector<std::string> barcodes2;
+    std::vector<std::string> barcodes_inner1;
+    std::vector<std::string> barcodes_inner2;
     BarcodeKitScoringParams scoring_params;
 };
 

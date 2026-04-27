@@ -345,14 +345,14 @@ void HeaderMapper::add_barcodes() {
         const auto& base_header = merged_headers[read_attrs];
         const auto& kit_info_map = barcode_kits::get_kit_infos();
         const auto& kit_info = kit_info_map.at(*m_kit_name);
-        for (const auto& barcode_name : kit_info.barcodes) {
-            const auto normalized_barcode_name = barcode_kits::normalize_barcode_name(barcode_name);
-            const auto standard_barcode_name =
-                    barcode_kits::generate_standard_barcode_name(*m_kit_name, barcode_name);
+
+        auto add_bc_header = [&](const std::string& barcode_name,
+                                 const std::string& normalized_barcode_name,
+                                 const std::string& standard_barcode_name) {
             std::string alias;
             if (m_sample_sheet) {
                 if (!m_sample_sheet->barcode_is_permitted(normalized_barcode_name)) {
-                    continue;
+                    return;
                 }
                 alias = m_sample_sheet->get_alias(read_attrs.flowcell_id, read_attrs.position_id,
                                                   read_attrs.experiment_id,
@@ -366,7 +366,7 @@ void HeaderMapper::add_barcodes() {
             auto& merged_header_ptr = merged_headers[read_attrs];
             if (merged_header_ptr) {
                 // we already found this barcode header in an input file
-                continue;
+                return;
             }
 
             SamHdrPtr header(sam_hdr_dup(base_header->get_merged_header()));
@@ -384,6 +384,29 @@ void HeaderMapper::add_barcodes() {
             merged_header_ptr = std::make_unique<MergeHeaders>(m_strip_alignment);
             merged_header_ptr->add_header(header.get(), "", new_read_group_id);
             merged_header_ptr->finalize_merge();
+        };
+
+        for (const auto& barcode_name : kit_info.barcodes) {
+            const auto normalized_barcode_name = barcode_kits::normalize_barcode_name(barcode_name);
+            const auto standard_barcode_name =
+                    barcode_kits::generate_standard_barcode_name(*m_kit_name, barcode_name);
+            if (kit_info.barcodes_inner1.empty()) {
+                add_bc_header(barcode_name, normalized_barcode_name, standard_barcode_name);
+            } else {
+                for (const auto& inner_barcode_name : kit_info.barcodes_inner1) {
+                    const auto normalized_inner_barcode_name =
+                            barcode_kits::normalize_barcode_name(inner_barcode_name);
+                    // Note that we don't include the barcode kit again in the standard barcode name for dual.
+
+                    add_bc_header(std::string(barcode_name).append("_").append(inner_barcode_name),
+                                  std::string(normalized_barcode_name)
+                                          .append("_")
+                                          .append(normalized_inner_barcode_name),
+                                  std::string(standard_barcode_name)
+                                          .append("_")
+                                          .append(normalized_inner_barcode_name));
+                }
+            }
         }
 
         unclassified_rg_it =

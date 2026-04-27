@@ -65,8 +65,8 @@ std::pair<std::string, barcode_kits::KitInfo> parse_custom_arrangement(
         throw std::runtime_error("first_index must be <= last_index in the arrangement file.");
     }
 
-    auto fill_bc_sequences = [bc_start_idx, bc_end_idx](const std::string& pattern,
-                                                        std::vector<std::string>& bc_names) {
+    auto fill_bc_sequences = [](const std::string& pattern, std::vector<std::string>& bc_names,
+                                int start_idx, int end_idx) {
         if (!check_normalized_id_pattern(pattern)) {
             throw std::runtime_error("Barcode pattern must be prefix%\\d+i, e.g. BC%02i");
         }
@@ -75,7 +75,7 @@ std::pair<std::string, barcode_kits::KitInfo> parse_custom_arrangement(
         auto seq_name_prefix = pattern.substr(0, modulo_pos);
         auto format_str = pattern.substr(modulo_pos);
 
-        for (int i = bc_start_idx; i <= bc_end_idx; i++) {
+        for (int i = start_idx; i <= end_idx; i++) {
             char num[256];
             snprintf(num, 256, format_str.c_str(), i);
             bc_names.push_back(seq_name_prefix + std::string(num));
@@ -90,7 +90,7 @@ std::pair<std::string, barcode_kits::KitInfo> parse_custom_arrangement(
         throw std::runtime_error(
                 "At least one of mask1_front or mask1_rear needs to be specified.");
     }
-    fill_bc_sequences(barcode1_pattern, new_kit.barcodes);
+    fill_bc_sequences(barcode1_pattern, new_kit.barcodes, bc_start_idx, bc_end_idx);
 
     // If any of the 2nd barcode settings are set, ensure ALL second barcode
     // settings are set.
@@ -111,12 +111,67 @@ std::pair<std::string, barcode_kits::KitInfo> parse_custom_arrangement(
         }
         std::string barcode2_pattern = toml::find<std::string>(config, "barcode2_pattern");
 
-        fill_bc_sequences(barcode2_pattern, new_kit.barcodes2);
+        fill_bc_sequences(barcode2_pattern, new_kit.barcodes2, bc_start_idx, bc_end_idx);
 
         new_kit.double_ends = true;
         new_kit.ends_different = (new_kit.bottom_front_flank != new_kit.top_front_flank) ||
                                  (new_kit.bottom_rear_flank != new_kit.top_rear_flank) ||
                                  (barcode1_pattern != barcode2_pattern);
+    }
+
+    // If any of the essential inner barcode settings are set, ensure they are all set correctly.
+    if (config.contains("first_index_inner") || config.contains("last_index_inner") ||
+        config.contains("mask1_mid") || config.contains("barcode_inner1_pattern")) {
+        if (!(config.contains("first_index_inner") && config.contains("last_index_inner") &&
+              config.contains("mask1_mid") && config.contains("barcode_inner1_pattern"))) {
+            throw std::runtime_error(
+                    "For dual barcodes, first_index_inner, last_index_inner, mask1_mid and "
+                    "barcode_inner1_pattern must all be set.");
+        }
+
+        if (new_kit.ends_different || !new_kit.double_ends) {
+            throw std::runtime_error(
+                    "For dual barcodes, only double-ended kits where both ends are the same are "
+                    "currently supported.");
+        }
+
+        // Fetch inner barcode context
+        std::string barcode_inner1_pattern =
+                toml::find<std::string>(config, "barcode_inner1_pattern");
+        int bc_inner_start_idx = toml::find<int>(config, "first_index_inner");
+        int bc_inner_end_idx = toml::find<int>(config, "last_index_inner");
+        new_kit.top_mid_flank = toml::find<std::string>(config, "mask1_mid");
+        fill_bc_sequences(barcode_inner1_pattern, new_kit.barcodes_inner1, bc_inner_start_idx,
+                          bc_inner_end_idx);
+
+        // If any of the 2nd inner barcode settings are set, ensure ALL second barcode inner
+        // settings are set.
+        if (config.contains("mask2_mid") || config.contains("barcode_inner2_pattern")) {
+            if (!(config.contains("mask2_mid") && config.contains("barcode_inner2_pattern"))) {
+                throw std::runtime_error(
+                        "For double ended inner barcodes, mask2_mid and barcode_inner2_pattern "
+                        "must "
+                        "both be set.");
+            }
+            if (!new_kit.double_ends) {
+                throw std::runtime_error(
+                        "Inner barcodes cannot be specified as double ended if the outer barcodes "
+                        "are not double ended.");
+            }
+            // Fetch inner barcode 2 context.
+            new_kit.bottom_mid_flank = toml::find<std::string>(config, "mask2_mid");
+            std::string barcode_inner2_pattern =
+                    toml::find<std::string>(config, "barcode_inner2_pattern");
+            fill_bc_sequences(barcode_inner2_pattern, new_kit.barcodes_inner2, bc_inner_start_idx,
+                              bc_inner_end_idx);
+
+            if (!new_kit.ends_different && ((new_kit.bottom_mid_flank != new_kit.top_mid_flank) ||
+                                            (barcode_inner1_pattern != barcode_inner2_pattern))) {
+                throw std::runtime_error(
+                        "For dual barcodes, if the outer barcodes match, the inner barcodes must "
+                        "also match.");
+            }
+        }
     }
 
     if (config.contains("rear_only_barcodes")) {

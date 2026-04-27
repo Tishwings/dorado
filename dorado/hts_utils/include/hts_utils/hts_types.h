@@ -197,6 +197,7 @@ struct BarcodeScoreResult {
     float bottom_flank_score = -1.f;
     bool use_top = false;
     std::string barcode_name = UNCLASSIFIED_STR;
+    std::string normalized_barcode_name = UNCLASSIFIED_STR;
     std::string kit = UNCLASSIFIED_STR;
     std::string barcode_kit = UNCLASSIFIED_STR;
     std::string variant = "n/a";

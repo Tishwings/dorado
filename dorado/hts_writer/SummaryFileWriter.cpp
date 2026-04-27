@@ -291,8 +291,7 @@ void SummaryFileWriter::handle(const HtsData& data) const {
 
         if (data.barcoding_result) {
             // retrieve data from barcoding result
-            barcode_arrangement =
-                    barcode_kits::normalize_barcode_name(data.barcoding_result->barcode_name);
+            barcode_arrangement = data.barcoding_result->normalized_barcode_name;
             alias = data.barcoding_result->alias.empty() ? barcode_arrangement
                                                          : data.barcoding_result->alias;
             type = data.barcoding_result->type;
