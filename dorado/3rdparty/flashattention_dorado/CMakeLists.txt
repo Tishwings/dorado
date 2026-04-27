@@ -1,4 +1,11 @@
+#
+# Helper for downloading and setting up prebuilt flash-attention targets.
+#
+# Manual builds can be used by specifying the install path via DORADO_FLASHATTENTION_PATH.
+#
+
 set(FLASHATTENTION_VERSION "fa4-v4.0.0.beta10")
+
 
 
 # Work out what we need to download.
@@ -28,15 +35,27 @@ elseif (WIN32)
 endif()
 
 
-if (DEFINED FLASHATTENTION_PATCH_SUFFIX)
-    # Download the library.
-    set(FLASHATTENTION_LIB_DIR "flashattention-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}")
-    set(FLASHATTENTION_URL "${DORADO_CDN_URL}/FLASHATTENTION-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}.zip")
-    download_and_extract("${FLASHATTENTION_URL}" "${FLASHATTENTION_LIB_DIR}" ${FLASHATTENTION_HASH})
-    set(FLASHATTENTION_LIB "${DORADO_3RD_PARTY_DOWNLOAD}/${FLASHATTENTION_LIB_DIR}")
 
+# Check for manual build, otherwise we'll download it.
+unset(FLASHATTENTION_PATH)
+if (DEFINED DORADO_FLASHATTENTION_PATH)
+    message(STATUS "Using local flashattention at: ${DORADO_FLASHATTENTION_PATH}")
+    set(FLASHATTENTION_PATH "${DORADO_FLASHATTENTION_PATH}")
+
+elseif (DEFINED FLASHATTENTION_PATCH_SUFFIX)
+    # Download the library.
+    set(dir_name "flashattention-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}")
+    set(url "${DORADO_CDN_URL}/FLASHATTENTION-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}.zip")
+    download_and_extract("${url}" "${dir_name}" ${FLASHATTENTION_HASH})
+    set(FLASHATTENTION_PATH "${DORADO_3RD_PARTY_DOWNLOAD}/${dir_name}")
+
+endif()
+
+
+
+if (DEFINED FLASHATTENTION_PATH)
     # Check that the torch builds match.
-    file(READ "${FLASHATTENTION_LIB}/share/torch-hash" FLASHATTENTION_TORCH_HASH)
+    file(READ "${FLASHATTENTION_PATH}/share/torch-hash" FLASHATTENTION_TORCH_HASH)
     if (NOT TORCH_HASH STREQUAL FLASHATTENTION_TORCH_HASH)
         message(FATAL_ERROR "Mismatch between torch builds: flashattention expects ${FLASHATTENTION_TORCH_HASH} but we're using ${TORCH_HASH}")
     endif()
@@ -51,25 +70,25 @@ if (DEFINED FLASHATTENTION_PATCH_SUFFIX)
     endif()
 
     # Make the target.
-    message(STATUS "Using flashattention: ${FLASHATTENTION_LIB_DIR}")
+    message(STATUS "Using flashattention: ${FLASHATTENTION_PATH}")
     add_library(dorado_flashattention3 STATIC IMPORTED)
     set_target_properties(dorado_flashattention3
         PROPERTIES
-            IMPORTED_LOCATION ${FLASHATTENTION_LIB}/lib/${lib_prefix}flashattention3.${lib_suffix}
-            INTERFACE_INCLUDE_DIRECTORIES ${FLASHATTENTION_LIB}/include
+            IMPORTED_LOCATION ${FLASHATTENTION_PATH}/lib/${lib_prefix}flashattention3.${lib_suffix}
+            INTERFACE_INCLUDE_DIRECTORIES ${FLASHATTENTION_PATH}/include
     )
     target_link_libraries(dorado_flashattention3
-        PRIVATE
+        INTERFACE
             torch_lib
     )
     if (NOT WIN32)
         target_link_libraries(dorado_flashattention3
-            PRIVATE
+            INTERFACE
                 CUDA::cudart
         )
     endif()
     target_compile_definitions(dorado_flashattention3
-        PUBLIC
+        INTERFACE
             DORADO_HAS_FLASHATTENTION3=1
     )
 
