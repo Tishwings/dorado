@@ -1,250 +1,85 @@
-set(_DORADO_FLASHATTN3_ROOT ${DORADO_3RD_PARTY_SOURCE}/flashattention)
-set(_DORADO_FLASHATTN3_HOPPER_DIR ${_DORADO_FLASHATTN3_ROOT}/hopper)
-set(_DORADO_FLASHATTN3_CUTLASS_INCLUDE ${_DORADO_FLASHATTN3_ROOT}/csrc/cutlass/include)
-set(_DORADO_FLASHATTN3_MIN_CUDA_VERSION 12.3)
+set(FLASHATTENTION_VERSION "fa4-v4.0.0.beta10")
 
-set(_DORADO_FLASHATTN3_CAN_BUILD OFF)
-if (NOT APPLE
-    AND CUDAToolkit_FOUND
-    AND EXISTS "${_DORADO_FLASHATTN3_HOPPER_DIR}/flash_api.cpp"
-    AND EXISTS "${_DORADO_FLASHATTN3_CUTLASS_INCLUDE}/cutlass/cutlass.h")
-    # Keep this aligned with the vendored FlashAttention3 Hopper package, whose
-    # setup.py and README require CUDA 12.3+.
-    if (CUDAToolkit_VERSION VERSION_GREATER_EQUAL ${_DORADO_FLASHATTN3_MIN_CUDA_VERSION})
-        include(CheckLanguage)
-        check_language(CUDA)
-        if (CMAKE_CUDA_COMPILER)
-            enable_language(CUDA)
-            set(_DORADO_FLASHATTN3_CAN_BUILD ON)
+
+# Work out what we need to download.
+unset(FLASHATTENTION_PATCH_SUFFIX)
+unset(FLASHATTENTION_HASH)
+if (LINUX)
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64*|^arm*")
+        if (CUDAToolkit_VERSION VERSION_GREATER_EQUAL 13.0)
+            set(FLASHATTENTION_PATCH_SUFFIX "0-cu13.0-Linux-aarch64")
+            set(FLASHATTENTION_HASH "aaa433668c65476d60143e80ef4303b55e7866cad13fc39e38f278e960ebb43a")
         endif()
+    elseif (CUDAToolkit_VERSION VERSION_GREATER_EQUAL 13.0)
+        set(FLASHATTENTION_PATCH_SUFFIX "0-cu13.0-Linux-x86_64")
+        set(FLASHATTENTION_HASH "45a16c86fc24c61d5fc45e542cc2c6708cbce2875afae361d7726e8f49cfcac2")
+    elseif (CUDAToolkit_VERSION VERSION_GREATER_EQUAL 12.8)
+        set(FLASHATTENTION_PATCH_SUFFIX "0-cu12.8-Linux-x86_64")
+        set(FLASHATTENTION_HASH "d931a7457b1951b6c83f2a9f04e33654266eec437201cbfc369cf8bc2496d1fa")
+    endif()
+elseif (WIN32)
+    if (CUDAToolkit_VERSION VERSION_GREATER_EQUAL 13.0)
+        set(FLASHATTENTION_PATCH_SUFFIX "0-cu13.0-Windows-x86_64")
+        set(FLASHATTENTION_HASH "9097855ecbafff81b9589e375f81f179d1c53fdde6d81cd8d15c64dafc3e6d03")
     else()
-        message(STATUS
-            "Disabling dorado_flashattention3: CUDA ${CUDAToolkit_VERSION} is older than "
-            "the required ${_DORADO_FLASHATTN3_MIN_CUDA_VERSION}")
+        set(FLASHATTENTION_PATCH_SUFFIX "0-cu12.8-Windows-x86_64")
+        set(FLASHATTENTION_HASH "22c47360e2aa28988d17ea14a891645cf984d9c1e785a3b48dc71b4f3a6601c6")
     endif()
 endif()
 
-if (_DORADO_FLASHATTN3_CAN_BUILD)
-    # FlashAttention3 manages its own supported architectures via explicit
-    # per-file -gencode flags below. Disable CMake's CUDA arch propagation in
-    # this directory so we don't inherit stale defaults such as compute_50.
-    set(CMAKE_CUDA_ARCHITECTURES OFF)
-    if (WIN32)
-        # Match the rest of the Windows build, which already links shared cudart
-        # through LibTorch. Disable nvcc's implicit runtime selection here so the
-        # wrapper does not inject cudart_static into downstream link lines.
-        set(CMAKE_CUDA_RUNTIME_LIBRARY None)
 
-        # FlashAttention's CUDA sources are expensive template instantiations and
-        # the Windows debug jobs do not rely on stepping through these kernels.
-        # Strip CUDA-specific debug flags for this wrapper to reduce compile
-        # time, but do not force full release flags because those conflict with
-        # Visual Studio's normal Debug host settings (e.g. /RTC1).
-        set(_DORADO_FLASHATTN3_SAVED_CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG}")
-        set(CMAKE_CUDA_FLAGS_DEBUG "")
+if (DEFINED FLASHATTENTION_PATCH_SUFFIX)
+    # Download the library.
+    set(FLASHATTENTION_LIB_DIR "flashattention-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}")
+    set(FLASHATTENTION_URL "${DORADO_CDN_URL}/FLASHATTENTION-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}.zip")
+    download_and_extract("${FLASHATTENTION_URL}" "${FLASHATTENTION_LIB_DIR}" ${FLASHATTENTION_HASH})
+    set(FLASHATTENTION_LIB "${DORADO_3RD_PARTY_DOWNLOAD}/${FLASHATTENTION_LIB_DIR}")
 
-        # Let nvcc parallelize its own internal compilation work on Windows.
-        set(_DORADO_FLASHATTN3_NVCC_THREADS 4)
-        if (DEFINED WIN_THREADS)
-            set(_DORADO_FLASHATTN3_NVCC_THREADS "${WIN_THREADS}")
-        endif()
+    # Check that the torch builds match.
+    file(READ "${FLASHATTENTION_LIB}/share/torch-hash" FLASHATTENTION_TORCH_HASH)
+    if (NOT TORCH_HASH STREQUAL FLASHATTENTION_TORCH_HASH)
+        message(FATAL_ERROR "Mismatch between torch builds: flashattention expects ${FLASHATTENTION_TORCH_HASH} but we're using ${TORCH_HASH}")
     endif()
 
-    # Torch's bundled Caffe2/FindCUDA logic can also inject its own -gencode flags
-    # via CMAKE_CUDA_FLAGS. Strip any inherited architecture selection in this
-    # directory and rely on the explicit per-file gencode flags below instead.
-    function(_dorado_flashattention3_strip_inherited_gencode_flags out_var in_var)
-        set(_DORADO_FLASHATTN3_FILTERED_FLAGS "${${in_var}}")
-        string(REGEX REPLACE "(^| )(-gencode|--generate-code)=[^ ]+" "\\1"
-               _DORADO_FLASHATTN3_FILTERED_FLAGS "${_DORADO_FLASHATTN3_FILTERED_FLAGS}")
-        string(REGEX REPLACE "(^| )(-gencode|--generate-code) +[^ ]+" "\\1"
-               _DORADO_FLASHATTN3_FILTERED_FLAGS "${_DORADO_FLASHATTN3_FILTERED_FLAGS}")
-        string(REGEX REPLACE "  +" " "
-               _DORADO_FLASHATTN3_FILTERED_FLAGS "${_DORADO_FLASHATTN3_FILTERED_FLAGS}")
-        string(STRIP "${_DORADO_FLASHATTN3_FILTERED_FLAGS}" _DORADO_FLASHATTN3_FILTERED_FLAGS)
-        set(${out_var} "${_DORADO_FLASHATTN3_FILTERED_FLAGS}" PARENT_SCOPE)
-    endfunction()
+    # Handle platform differences.
+    if (WIN32)
+        set(lib_prefix "")
+        set(lib_suffix "lib")
+    else()
+        set(lib_prefix "lib")
+        set(lib_suffix "a")
+    endif()
 
-    foreach (_DORADO_FLASHATTN3_CUDA_FLAG_VAR
-             CMAKE_CUDA_FLAGS
-             CMAKE_CUDA_FLAGS_DEBUG
-             CMAKE_CUDA_FLAGS_RELEASE
-             CMAKE_CUDA_FLAGS_RELWITHDEBINFO
-             CMAKE_CUDA_FLAGS_MINSIZEREL)
-        if (DEFINED ${_DORADO_FLASHATTN3_CUDA_FLAG_VAR})
-            _dorado_flashattention3_strip_inherited_gencode_flags(
-                _DORADO_FLASHATTN3_SANITIZED_FLAGS
-                ${_DORADO_FLASHATTN3_CUDA_FLAG_VAR})
-            set(${_DORADO_FLASHATTN3_CUDA_FLAG_VAR} "${_DORADO_FLASHATTN3_SANITIZED_FLAGS}")
-        endif()
-    endforeach()
-
-    set(_DORADO_FLASHATTN3_SRCS_COMMON
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/flash_api.cpp
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/flash_prepare_scheduler.cu
+    # Make the target.
+    message(STATUS "Using flashattention: ${FLASHATTENTION_LIB_DIR}")
+    add_library(dorado_flashattention3 STATIC IMPORTED)
+    set_target_properties(dorado_flashattention3
+        PROPERTIES
+            IMPORTED_LOCATION ${FLASHATTENTION_LIB}/lib/${lib_prefix}flashattention3.${lib_suffix}
+            INTERFACE_INCLUDE_DIRECTORIES ${FLASHATTENTION_LIB}/include
     )
-
-    set(_DORADO_FLASHATTN3_SRCS_SM8X
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim64_bf16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim64_fp16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim96_bf16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim96_fp16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim128_bf16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim128_fp16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim192_bf16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim192_fp16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim256_bf16_sm80.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim256_fp16_sm80.cu
+    target_link_libraries(dorado_flashattention3
+        PRIVATE
+            torch_lib
     )
-
-    set(_DORADO_FLASHATTN3_SRCS_SM90
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim64_bf16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim64_fp16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim96_bf16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim96_fp16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim128_bf16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim128_fp16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim192_bf16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim192_fp16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim256_bf16_sm90.cu
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}/instantiations/flash_fwd_hdim256_fp16_sm90.cu
-    )
-
-    set(_DORADO_FLASHATTN3_SRCS
-        ${_DORADO_FLASHATTN3_SRCS_COMMON}
-        ${_DORADO_FLASHATTN3_SRCS_SM8X}
-        ${_DORADO_FLASHATTN3_SRCS_SM90}
-    )
-
-    set(_DORADO_FLASHATTN3_PRIVATE_INCLUDE_DIRS
-        ${_DORADO_FLASHATTN3_HOPPER_DIR}
-        ${_DORADO_FLASHATTN3_CUTLASS_INCLUDE}
-    )
-
-    set(_DORADO_FLASHATTN3_PRIVATE_DEFINITIONS
-        FLASHATTENTION_DISABLE_APPENDKV
-        FLASHATTENTION_DISABLE_BACKWARD
-        FLASHATTENTION_DISABLE_HDIMDIFF192
-        FLASHATTENTION_DISABLE_HDIMDIFF64
-        FLASHATTENTION_DISABLE_LOCAL
-        FLASHATTENTION_DISABLE_PACKGQA
-        FLASHATTENTION_DISABLE_PAGEDKV
-        FLASHATTENTION_DISABLE_SOFTCAP
-        FLASHATTENTION_DISABLE_SPLIT
-        FLASHATTENTION_DISABLE_FP8
-        CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED
-        CUTLASS_ENABLE_GDC_FOR_SM90
-        CUTLASS_DEBUG_TRACE_LEVEL=0
-        # CUTLASS prepends "cutlass_" to this suffix, yielding namespace
-        # `cutlass_flashattention` and avoiding collisions with other CUTLASS users.
-        CUTLASS_NAMESPACE=flashattention
-        NDEBUG
-    )
-
-    set(_DORADO_FLASHATTN3_PRIVATE_COMPILE_OPTIONS
-        $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
-        $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
-        $<$<COMPILE_LANGUAGE:CUDA>:--ftemplate-backtrace-limit=0>
-        $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
-    )
-
-    set(_DORADO_FLASHATTN3_GENCODE_SM8X -gencode=arch=compute_80,code=sm_80)
-    set(_DORADO_FLASHATTN3_GENCODE_SM90 -gencode=arch=compute_90a,code=sm_90a)
-    set_source_files_properties(${_DORADO_FLASHATTN3_SRCS_SM8X}
-        PROPERTIES COMPILE_OPTIONS "${_DORADO_FLASHATTN3_GENCODE_SM8X}")
-    set_source_files_properties(${_DORADO_FLASHATTN3_SRCS_SM90}
-        PROPERTIES COMPILE_OPTIONS "${_DORADO_FLASHATTN3_GENCODE_SM90}")
-    set_source_files_properties(${_DORADO_FLASHATTN3_HOPPER_DIR}/flash_prepare_scheduler.cu
-        PROPERTIES COMPILE_OPTIONS
-                   "${_DORADO_FLASHATTN3_GENCODE_SM8X};${_DORADO_FLASHATTN3_GENCODE_SM90}")
-
-    function(_dorado_flashattention3_configure_build_target target_name)
-        target_include_directories(${target_name}
+    if (NOT WIN32)
+        target_link_libraries(dorado_flashattention3
             PRIVATE
-                ${_DORADO_FLASHATTN3_PRIVATE_INCLUDE_DIRS}
+                CUDA::cudart
         )
-
-        target_compile_definitions(${target_name}
-            PRIVATE
-                ${_DORADO_FLASHATTN3_PRIVATE_DEFINITIONS}
-        )
-        if (CUDAToolkit_VERSION VERSION_GREATER_EQUAL 13.0)
-            target_compile_definitions(${target_name}
-                PRIVATE
-                    __NV_NO_VECTOR_DEPRECATION_DIAG
-            )
-        endif()
-        if (WIN32)
-            target_compile_definitions(${target_name} PRIVATE _USE_MATH_DEFINES)
-        endif()
-
-        target_compile_options(${target_name}
-            PRIVATE
-                ${_DORADO_FLASHATTN3_PRIVATE_COMPILE_OPTIONS}
-        )
-        if (WIN32)
-            target_compile_options(${target_name}
-                PRIVATE
-                    $<$<COMPILE_LANGUAGE:CXX>:/W0>
-                    $<$<COMPILE_LANGUAGE:CUDA>:--forward-unknown-to-host-compiler>
-                    $<$<COMPILE_LANGUAGE:CUDA>:--forward-slash-prefix-opts>
-                    $<$<COMPILE_LANGUAGE:CUDA>:--threads=${_DORADO_FLASHATTN3_NVCC_THREADS}>
-                    $<$<COMPILE_LANGUAGE:CUDA>:-cudart=none>
-                    $<$<COMPILE_LANGUAGE:CUDA>:SHELL:-Xcudafe --diag_suppress=177>
-                    $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/Zc:__cplusplus>
-            )
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(${target_name}
-                PRIVATE
-                    $<$<COMPILE_LANGUAGE:CXX>:-Wno-narrowing>
-            )
-        endif()
-
-        set_target_properties(${target_name} PROPERTIES
-            CXX_STANDARD 17
-            CXX_STANDARD_REQUIRED ON
-            CUDA_STANDARD 17
-            CUDA_STANDARD_REQUIRED ON
-            CUDA_EXTENSIONS OFF
-            CUDA_ARCHITECTURES OFF
-        )
-        if (WIN32)
-            set_target_properties(${target_name} PROPERTIES
-                CUDA_RUNTIME_LIBRARY None
-                MSVC_DEBUG_INFORMATION_FORMAT ""
-            )
-        endif()
-
-        target_link_libraries(${target_name}
-            PRIVATE
-                torch_lib
-        )
-        if (NOT WIN32)
-            target_link_libraries(${target_name}
-                PRIVATE
-                    CUDA::cudart
-            )
-        endif()
-    endfunction()
-
-    add_library(dorado_flashattention3 STATIC ${_DORADO_FLASHATTN3_SRCS})
-    target_include_directories(dorado_flashattention3
-        INTERFACE
-            ${_DORADO_FLASHATTN3_ROOT}
-    )
+    endif()
     target_compile_definitions(dorado_flashattention3
         PUBLIC
             DORADO_HAS_FLASHATTENTION3=1
     )
-    _dorado_flashattention3_configure_build_target(dorado_flashattention3)
-    if (WIN32)
-        set(CMAKE_CUDA_FLAGS_DEBUG "${_DORADO_FLASHATTN3_SAVED_CMAKE_CUDA_FLAGS_DEBUG}")
-        unset(_DORADO_FLASHATTN3_SAVED_CMAKE_CUDA_FLAGS_DEBUG)
-    endif()
+
 else()
+    # Dummy target if we don't support it on this build.
+    message(STATUS "No flashattention support")
     add_library(dorado_flashattention3 INTERFACE)
     target_compile_definitions(dorado_flashattention3
         INTERFACE
             DORADO_HAS_FLASHATTENTION3=0
     )
+
 endif()
