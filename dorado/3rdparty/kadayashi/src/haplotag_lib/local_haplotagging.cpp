@@ -2545,8 +2545,11 @@ static int8_t get_snp_qv_medaka_style(const read_t &read) {
 
 static double get_snp_accuracy_dorado_style(const read_t &read, const char *qn) {
     // ref: dorado::utils::compute_accuracy_from_cigar
-    if (read.vars.empty() || read.end_pos <= read.start_pos) {
-        return 0.0f;
+    if (read.end_pos <= read.start_pos) {
+        return 0.0;
+    }
+    if (read.vars.empty()) {
+        return 1.0;
     }
     int n_mismatches = 0;
     int n_ins = 0;
@@ -2570,7 +2573,7 @@ static double get_snp_accuracy_dorado_style(const read_t &read, const char *qn) 
                                  std::to_string(read.end_pos) + " del " + std::to_string(n_del)};
     }
     const int tot = span - n_del + n_ins;
-    return static_cast<double>(n_mismatches) / tot;
+    return 1.0 - (static_cast<double>(n_mismatches) / tot);
 }
 
 struct featmatgen_chunk_t {
