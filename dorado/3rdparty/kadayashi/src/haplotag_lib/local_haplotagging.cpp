@@ -2587,6 +2587,7 @@ struct featmatgen_chunk_t {
 
     // helper stats
     uint32_t n_downsample_filtered;
+    uint32_t n_md_tag_filtered;
 
     // helper for collecting refseq from read pileup
     std::vector<uint8_t> refseq_substring;
@@ -2628,6 +2629,7 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
     }
 
     uint32_t n_reads = 0;
+    gck.n_md_tag_filtered = 0;
     std::unordered_set<std::string> seen_qnames;
     while (sam_itr_next(hf.fp, bamitr.get(), aln.get()) >= 0) {
         const char *qn = bam_get_qname(aln.get());
@@ -2636,7 +2638,7 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
 
         const bool md_is_ok = sancheck_MD_tag_exists_and_is_valid(aln.get());
         if (!md_is_ok) {  // TODO: remove the requirement on MD tags
-            spdlog::error("[kdys::{}] skipped a read without MD tag", __func__);
+            ++gck.n_md_tag_filtered;
             continue;
         }
 
@@ -2955,6 +2957,10 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
 
         n_reads++;
     }  // iterate through all reads
+    if (gck.n_md_tag_filtered > 0) {
+        LOG_DEBUG("[kdys::{}] skipped {} reads without valid MD tags", __func__,
+                  gck.n_md_tag_filtered);
+    }
 }
 
 static void gen_medaka_feature_matrix_insert_to_matrix(
@@ -3097,6 +3103,7 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
                           (options.include_snp_qv ? 1 : 0) + (options.num_dtypes > 1),
             // helper: stats
             .n_downsample_filtered = 0,
+            .n_md_tag_filtered = 0,
             // helper: refseq
             .refseq_substring = std::vector<uint8_t>(itvl_end - itvl_start, 0),
             .read_seqi = {},
@@ -3114,8 +3121,8 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
     gen_medaka_feature_matrix_store_reads_from_bam(hf, gck);
 
     if (gck.all_reads.empty()) {
-        spdlog::warn("[kdys::{}] requested interval {}:{}-{} inserted no reads", __func__, refname,
-                     itvl_start, itvl_end);
+        LOG_DEBUG("[kdys::{}] requested interval {}:{}-{} inserted no reads", __func__, refname,
+                  itvl_start, itvl_end);
         MedakaFeatureMatrix ret(0, 0, 0, 0, 1, 0);
         return ret;
     } else {
