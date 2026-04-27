@@ -259,7 +259,7 @@ std::vector<CUDADeviceInfo> get_cuda_device_info(const std::string &device_strin
     // Now inspect all the devices on the host to create the CUDADeviceInfo
     std::vector<CUDADeviceInfo> results;
     for (int device_id = 0; device_id < int(num_devices); device_id++) {
-        CUDADeviceInfo device_info;
+        CUDADeviceInfo device_info{};
         device_info.device_id = device_id;
         device_info.in_use = std::find(requested_device_ids.begin(), requested_device_ids.end(),
                                        device_id) != requested_device_ids.end();
@@ -267,12 +267,12 @@ std::vector<CUDADeviceInfo> get_cuda_device_info(const std::string &device_strin
             continue;
         }
 
-        cudaSetDevice(device_id);
-        cudaMemGetInfo(&device_info.free_mem, &device_info.total_mem);
-        cudaGetDeviceProperties(&device_info.device_properties, device_id);
+        handle_cuda_result(cudaSetDevice(device_id));
+        handle_cuda_result(cudaMemGetInfo(&device_info.free_mem, &device_info.total_mem));
+        handle_cuda_result(cudaGetDeviceProperties(&device_info.device_properties, device_id));
 
         if (!device_info.in_use) {
-            cudaDeviceReset();
+            handle_cuda_result(cudaDeviceReset());
         }
         results.push_back(device_info);
     }
@@ -331,7 +331,7 @@ void print_cuda_alloc_info(const std::string &label) {
 size_t available_memory(c10::Device device) {
     size_t free, total;
     c10::cuda::CUDAGuard device_guard(device);
-    cudaMemGetInfo(&free, &total);
+    handle_cuda_result(cudaMemGetInfo(&free, &total));
     return free;
 }
 
