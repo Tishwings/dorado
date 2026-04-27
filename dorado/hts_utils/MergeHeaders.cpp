@@ -3,6 +3,7 @@
 #include "hts_utils/KString.h"
 #include "hts_utils/bam_utils.h"
 #include "hts_utils/hts_types.h"
+#include "utils/string_utils.h"
 
 #include <htslib/sam.h>
 #include <spdlog/spdlog.h>
@@ -297,7 +298,17 @@ bool MergeHeaders::add_rg(const std::string& read_group_id, std::string read_gro
     if (entry == m_read_group_lut.end()) {
         m_read_group_lut[read_group_id] = std::move(read_group_line);
     } else {
-        if (entry->second != read_group_line) {
+        auto tokenise = [](const std::string& line) {
+            std::string_view trimmed_line = utils::rtrim_view(line);
+            auto tokens = utils::split_view(trimmed_line, '\t');
+            std::sort(std::begin(tokens), std::end(tokens));
+            return tokens;
+        };
+
+        auto current_tokens = tokenise(entry->second);
+        auto new_tokens = tokenise(read_group_line);
+
+        if (current_tokens != new_tokens) {
             return false;
         }
     }
