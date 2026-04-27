@@ -73,7 +73,7 @@ public:
      */
     std::string add_rg_with_remap(const std::string& filename,
                                   const std::string& read_group_id,
-                                  std::string read_group_line);
+                                  const std::string& read_group_line);
 
     /** Add a ReadGroup header line, remapping the ID if it conflicts with an existing RG line.
      *  @param filename The source filename for remap lookup bookkeeping.
@@ -191,7 +191,7 @@ private:
 
     std::string remap_read_group_id(const std::string& filename,
                                     const std::string& read_group_id,
-                                    std::string read_group_line);
+                                    const std::string& read_group_line);
 
     std::map<std::pair<std::string, std::string>, std::string> m_read_group_id_remap_lut;
 };

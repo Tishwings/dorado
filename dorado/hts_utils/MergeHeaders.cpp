@@ -15,11 +15,11 @@
 #include <stdexcept>
 
 namespace {
-std::string replace_read_group_id(std::string read_group_line,
+std::string replace_read_group_id(const std::string& read_group_line,
                                   const std::string& new_read_group_id) {
     auto tokens = dorado::utils::split(read_group_line, '\t');
     for (auto& token : tokens) {
-        if (dorado::utils::starts_with(token, "ID:")) {
+        if (token.starts_with("ID:")) {
             token = "ID:" + new_read_group_id;
             return dorado::utils::join(tokens, "\t");
         }
@@ -188,7 +188,7 @@ int MergeHeaders::check_and_add_rg_data(sam_hdr_t* hdr,
         std::string read_group_line(ks_str(&line_data));
 
         // Add the RG_line to the LUT or error if it a different record already exists
-        add_rg_with_remap(filename, read_group_id, std::move(read_group_line));
+        add_rg_with_remap(filename, read_group_id, read_group_line);
     }
     return 0;
 }
@@ -325,7 +325,7 @@ bool MergeHeaders::add_rg(const std::string& read_group_id, std::string read_gro
 
 std::string MergeHeaders::remap_read_group_id(const std::string& filename,
                                               const std::string& read_group_id,
-                                              std::string read_group_line) {
+                                              const std::string& read_group_line) {
     for (size_t index = 1;; ++index) {
         const auto new_read_group_id = read_group_id + "_" + std::to_string(index);
         auto remapped_line = replace_read_group_id(read_group_line, new_read_group_id);
@@ -338,11 +338,11 @@ std::string MergeHeaders::remap_read_group_id(const std::string& filename,
 
 std::string MergeHeaders::add_rg_with_remap(const std::string& filename,
                                             const std::string& read_group_id,
-                                            std::string read_group_line) {
+                                            const std::string& read_group_line) {
     if (add_rg(read_group_id, read_group_line)) {
         return read_group_id;
     }
-    return remap_read_group_id(filename, read_group_id, std::move(read_group_line));
+    return remap_read_group_id(filename, read_group_id, read_group_line);
 }
 
 bool MergeHeaders::add_rg(const std::string& read_group_id,
