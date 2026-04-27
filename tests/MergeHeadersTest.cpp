@@ -30,8 +30,24 @@ CATCH_TEST_CASE("MergeHeadersTest: incompatible RG lines", TEST_GROUP) {
     SamHdrPtr header2(sam_hdr_parse(hdr2_txt.size(), hdr2_txt.c_str()));
     MergeHeaders merger(true);
     CATCH_CHECK_NOTHROW(merger.add_header(header1.get(), "header1"));
-    CATCH_CHECK_THROWS_WITH(merger.add_header(header2.get(), "header2"),
-                            "Error merging header header2. RG lines are incompatible.");
+    CATCH_CHECK_NOTHROW(merger.add_header(header2.get(), "header2"));
+
+    CATCH_CHECK_FALSE(merger.get_remapped_read_group_id("header1", "run1_model1").has_value());
+    CATCH_REQUIRE(merger.get_remapped_read_group_id("header2", "run1_model1").has_value());
+    CATCH_CHECK(merger.get_remapped_read_group_id("header2", "run1_model1").value() ==
+                "run1_model1_1");
+
+    merger.finalize_merge();
+    auto merged_hdr = merger.get_merged_header();
+    std::string merged_hdr_txt = sam_hdr_str(merged_hdr);
+    std::string expected_hdr_txt =
+            "@HD\tVN:1.6\tSO:unknown\n"
+            "@PG\tID:aligner\tPN:minimap2\tVN:2.26-r1175zn\n"
+            "@RG\tID:run1_model1\tDT:2022-10-20T14:48:32Z\tDS:runid=run1 "
+            "basecall_model=model1\tLB:NA12878\tPL:ONT\tPU:SOMEBODY\tal:NA12878\n"
+            "@RG\tID:run1_model1_1\tDT:2022-10-20T14:48:32Z\tDS:runid=run1 "
+            "basecall_model=model1\tLB:NA12878\tPL:ONT\tPU:SOMEBODY_ELSE\tal:NA12878\n";
+    CATCH_CHECK(merged_hdr_txt == expected_hdr_txt);
 }
 
 CATCH_TEST_CASE("MergeHeadersTest: incompatible SQ lines", TEST_GROUP) {
