@@ -2,6 +2,7 @@
 #include "hts_types.h"
 
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -63,6 +64,31 @@ public:
     bool add_rg(const std::string& read_group_id,
                 const ReadGroup& read_group,
                 const std::map<std::string, std::string>& additional_tags);
+
+    /** Add a ReadGroup header line, remapping the ID if it conflicts with an existing RG line.
+     *  @param filename The source filename for remap lookup bookkeeping.
+     *  @param read_group_id The preferred read group id to add.
+     *  @param read_group_line The formatted read group line to add.
+     *  @return The read group id that was finally inserted or matched.
+     */
+    std::string add_rg_with_remap(const std::string& filename,
+                                  const std::string& read_group_id,
+                                  std::string read_group_line);
+
+    /** Add a ReadGroup header line, remapping the ID if it conflicts with an existing RG line.
+     *  @param filename The source filename for remap lookup bookkeeping.
+     *  @param read_group_id The preferred read group id to add.
+     *  @param read_group The ReadGroup to add.
+     *  @param additional_tags Key-value pairs of additional tags to add to the RG header line
+     *  @return The read group id that was finally inserted or matched.
+     */
+    std::string add_rg_with_remap(const std::string& filename,
+                                  const std::string& read_group_id,
+                                  const ReadGroup& read_group,
+                                  const std::map<std::string, std::string>& additional_tags);
+
+    std::optional<std::string> get_remapped_read_group_id(const std::string& filename,
+                                                          const std::string& read_group_id) const;
 
     // Call this when you have added all the headers.
     void finalize_merge();
@@ -156,10 +182,18 @@ private:
     std::vector<std::map<std::string, RefInfo>> m_ref_info_lut;
 
     // Add unique read_groups by their ID - optionally select a read_group
-    int check_and_add_rg_data(sam_hdr_t* hdr, const std::string& read_group_selection);
+    int check_and_add_rg_data(sam_hdr_t* hdr,
+                              const std::string& filename,
+                              const std::string& read_group_selection);
     int check_and_add_ref_data(sam_hdr_t* hdr);
     int add_pg_data(sam_hdr_t* hdr);
     void add_other_lines(sam_hdr_t* hdr);
+
+    std::string remap_read_group_id(const std::string& filename,
+                                    const std::string& read_group_id,
+                                    std::string read_group_line);
+
+    std::map<std::pair<std::string, std::string>, std::string> m_read_group_id_remap_lut;
 };
 
 }  // namespace dorado::utils
