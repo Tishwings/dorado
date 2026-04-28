@@ -80,6 +80,7 @@ flash-attention:
     license: flashattention/LICENSE
     files:
         - flashattention
+    requires: DORADO_HAS_FLASHATTENTION3
 htslib:
     description: >
         C library for accessing common file formats, such as SAM, CRAM and VCF

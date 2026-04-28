@@ -46,17 +46,30 @@ function(dorado_parse_sbom_yaml_ FILE CALLBACK)
     set(dep_name "<not set>")
     set(dep_license "PATH_NOT_AVAILABLE")
     set(dep_omit YES)
+    unset(dep_requires)
     foreach(line IN LISTS yaml_lines)
         if (line MATCHES "^([a-zA-Z].*):$") # new dependency
-            set (_dep "${CMAKE_MATCH_1}")
+            set(new_dep "${CMAKE_MATCH_1}")
+
+            # If the dep has a requirement then check it.
+            if (DEFINED dep_requires)
+                if (NOT DEFINED ${dep_requires})
+                    message(FATAL_ERROR "Requirement doesn't exist for ${dep_name}: ${dep_requires}")
+                elseif (NOT ${dep_requires})
+                    # Omit this dependency since the requirement isn't set.
+                    set(dep_omit YES)
+                endif()
+            endif()
+
             cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}" "${dep_omit}")
 
             # Setup next dependency.
-            set(dep_name "${_dep}")
+            set(dep_name "${new_dep}")
             set(dep_license "PATH_NOT_AVAILABLE")
             set(dep_omit NO)
+            unset(dep_requires)
 
-        elseif (line MATCHES "^[ \t]+(license|omit):[ \t]+(.*)$") # key-value pair
+        elseif (line MATCHES "^[ \t]+(license|omit|requires):[ \t]+(.*)$") # key-value pair
             set("dep_${CMAKE_MATCH_1}" "${CMAKE_MATCH_2}")
         endif()
     endforeach()
