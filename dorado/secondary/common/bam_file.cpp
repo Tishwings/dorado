@@ -41,7 +41,9 @@ BamFile::BamFile(const std::filesystem::path& in_fn, int n_threads)
 
     m_idx = HtsIdxPtr{sam_index_load(m_fp.get(), in_fn.string().c_str()), HtsIdxDestructor()};
     if (!m_idx) {
-        throw std::runtime_error{"Could not open index for BAM file: '" + in_fn.string() + "'!"};
+        throw std::runtime_error{
+                "Could not open index for BAM file, or the BAM file itself was malformatted: '" +
+                in_fn.string() + "'!"};
     }
 
     m_hdr = SamHdrPtr{sam_hdr_read(m_fp.get()), SamHdrDestructor()};
