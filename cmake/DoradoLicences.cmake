@@ -94,6 +94,7 @@ function(dorado_emit_licence_for_dependency_ OUTPUT ROOT NAME LICENCE)
 
     # Look for special cases prefixes.
     set(prefix_pod5 "${DORADO_3RD_PARTY_DOWNLOAD}/${POD5_DIR}")
+    set(prefix_flashattention "${FLASHATTENTION_PATH}")
     if (LICENCE MATCHES "^<(.*)>(.*)$")
         set(prefix prefix_${CMAKE_MATCH_1})
         if (NOT DEFINED ${prefix})
