@@ -358,7 +358,7 @@ bool try_parse_device_ids(const std::string &device_string,
                           std::string &error_message) {
     auto append_help_to_error_message = utils::PostCondition([&error_message] {
         if (!error_message.empty()) {
-            error_message += "\n" + std::string{USAGE_HELP};
+            error_message.append("\n").append(USAGE_HELP);
         }
     });
     if (!is_cuda_device_string(device_string)) {
