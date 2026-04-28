@@ -44,10 +44,10 @@ if (DEFINED DORADO_FLASHATTENTION_PATH)
 
 elseif (DEFINED FLASHATTENTION_PATCH_SUFFIX)
     # Download the library.
-    set(dir_name "flashattention-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}")
-    set(url "${DORADO_CDN_URL}/FLASHATTENTION-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}.zip")
-    download_and_extract("${url}" "${dir_name}" ${FLASHATTENTION_HASH})
-    set(FLASHATTENTION_PATH "${DORADO_3RD_PARTY_DOWNLOAD}/${dir_name}")
+    set(filename "flashattention-${FLASHATTENTION_VERSION}-${FLASHATTENTION_PATCH_SUFFIX}")
+    set(url "${DORADO_CDN_URL}/${filename}.zip")
+    download_and_extract("${url}" "${filename}" ${FLASHATTENTION_HASH})
+    set(FLASHATTENTION_PATH "${DORADO_3RD_PARTY_DOWNLOAD}/${filename}")
 
 endif()
 
