@@ -57,11 +57,6 @@ void add_hd_header_line(sam_hdr_t* hdr);
 
 void add_rg_headers(sam_hdr_t* hdr, const std::unordered_map<std::string, ReadGroup>& read_groups);
 
-void add_rg_headers_with_barcode_kit(sam_hdr_t* hdr,
-                                     const std::unordered_map<std::string, ReadGroup>& read_groups,
-                                     const std::string& kit_name,
-                                     const utils::SampleSheet* const sample_sheet);
-
 /// Remove SO tag and any SQ lines from the header.
 void strip_alignment_data_from_header(sam_hdr_t* hdr);
 

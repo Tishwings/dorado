@@ -3,6 +3,7 @@
 #include "hts_utils/KString.h"
 #include "hts_utils/bam_utils.h"
 #include "hts_utils/hts_types.h"
+#include "utils/string_utils.h"
 
 #include <htslib/sam.h>
 #include <spdlog/spdlog.h>
@@ -14,6 +15,18 @@
 #include <stdexcept>
 
 namespace {
+std::string replace_read_group_id(const std::string& read_group_line,
+                                  const std::string& new_read_group_id) {
+    auto tokens = dorado::utils::split(read_group_line, '\t');
+    for (auto& token : tokens) {
+        if (token.starts_with("ID:")) {
+            token = "ID:" + new_read_group_id;
+            return dorado::utils::join(tokens, "\t");
+        }
+    }
+    throw std::runtime_error("Malformed RG line: missing ID tag.");
+}
+
 void update_and_add_pg_line(sam_hdr_t* hdr, const std::string& key, std::string line) {
     std::string new_id = sam_hdr_pg_id(hdr, key.c_str());
     auto pos = line.find(key);
@@ -60,14 +73,10 @@ void MergeHeaders::add_header(sam_hdr_t* hdr,
         }
     }
 
-    auto res = check_and_add_rg_data(hdr, read_group_selection);
+    auto res = check_and_add_rg_data(hdr, filename, read_group_selection);
     if (res == -1) {
         throw std::runtime_error("Error merging header " + filename +
                                  ". Invalid RG line in header.");
-    }
-    if (res == -2) {
-        throw std::runtime_error("Error merging header " + filename +
-                                 ". RG lines are incompatible.");
     }
 
     res = add_pg_data(hdr);
@@ -153,7 +162,9 @@ int MergeHeaders::check_and_add_ref_data(sam_hdr_t* hdr) {
     return 0;
 }
 
-int MergeHeaders::check_and_add_rg_data(sam_hdr_t* hdr, const std::string& read_group_selection) {
+int MergeHeaders::check_and_add_rg_data(sam_hdr_t* hdr,
+                                        const std::string& filename,
+                                        const std::string& read_group_selection) {
     int num_lines = sam_hdr_count_lines(hdr, "RG");
     for (int i = 0; i < num_lines; ++i) {
         auto idp = sam_hdr_line_name(hdr, "RG", i);
@@ -177,9 +188,7 @@ int MergeHeaders::check_and_add_rg_data(sam_hdr_t* hdr, const std::string& read_
         std::string read_group_line(ks_str(&line_data));
 
         // Add the RG_line to the LUT or error if it a different record already exists
-        if (!add_rg(read_group_id, read_group_line)) {
-            return -2;
-        }
+        add_rg_with_remap(filename, read_group_id, read_group_line);
     }
     return 0;
 }
@@ -297,12 +306,44 @@ bool MergeHeaders::add_rg(const std::string& read_group_id, std::string read_gro
     if (entry == m_read_group_lut.end()) {
         m_read_group_lut[read_group_id] = std::move(read_group_line);
     } else {
-        if (entry->second != read_group_line) {
+        auto tokenise = [](const std::string& line) {
+            std::string_view trimmed_line = utils::rtrim_view(line);
+            auto tokens = utils::split_view(trimmed_line, '\t');
+            std::sort(std::begin(tokens), std::end(tokens));
+            return tokens;
+        };
+
+        auto current_tokens = tokenise(entry->second);
+        auto new_tokens = tokenise(read_group_line);
+
+        if (current_tokens != new_tokens) {
             return false;
         }
     }
     return true;
 };
+
+std::string MergeHeaders::remap_read_group_id(const std::string& filename,
+                                              const std::string& read_group_id,
+                                              const std::string& read_group_line) {
+    for (size_t index = 1;; ++index) {
+        const auto new_read_group_id = read_group_id + "_" + std::to_string(index);
+        auto remapped_line = replace_read_group_id(read_group_line, new_read_group_id);
+        if (add_rg(new_read_group_id, std::move(remapped_line))) {
+            m_read_group_id_remap_lut[{filename, read_group_id}] = new_read_group_id;
+            return new_read_group_id;
+        }
+    }
+}
+
+std::string MergeHeaders::add_rg_with_remap(const std::string& filename,
+                                            const std::string& read_group_id,
+                                            const std::string& read_group_line) {
+    if (add_rg(read_group_id, read_group_line)) {
+        return read_group_id;
+    }
+    return remap_read_group_id(filename, read_group_id, read_group_line);
+}
 
 bool MergeHeaders::add_rg(const std::string& read_group_id,
                           const ReadGroup& read_group,
@@ -310,6 +351,27 @@ bool MergeHeaders::add_rg(const std::string& read_group_id,
     const auto additional_tag_str = kv_to_tag_string(additional_tags);
     return add_rg(read_group_id, utils::format_read_group_header_line(read_group, read_group_id,
                                                                       additional_tag_str));
+}
+
+std::string MergeHeaders::add_rg_with_remap(
+        const std::string& filename,
+        const std::string& read_group_id,
+        const ReadGroup& read_group,
+        const std::map<std::string, std::string>& additional_tags) {
+    const auto additional_tag_str = kv_to_tag_string(additional_tags);
+    return add_rg_with_remap(
+            filename, read_group_id,
+            utils::format_read_group_header_line(read_group, read_group_id, additional_tag_str));
+}
+
+std::optional<std::string> MergeHeaders::get_remapped_read_group_id(
+        const std::string& filename,
+        const std::string& read_group_id) const {
+    const auto it = m_read_group_id_remap_lut.find({filename, read_group_id});
+    if (it == m_read_group_id_remap_lut.cend()) {
+        return std::nullopt;
+    }
+    return it->second;
 }
 
 }  // namespace dorado::utils

@@ -61,6 +61,8 @@ public:
 
     const AttributeMap& get_read_attributes_map() const { return m_read_group_to_attributes; }
 
+    std::string get_output_read_group_id(const std::string& filename,
+                                         const std::string& read_group_id) const;
     const HtsData::ReadAttributes& get_read_attributes(const bam1_t* record) const;
     const MergeHeaders& get_merged_header(const HtsData::ReadAttributes& attrs) const;
 
@@ -92,6 +94,8 @@ private:
     const bool m_strip_alignment;
     const std::shared_ptr<HeaderMap> m_merged_headers_map;
     AttributeMap m_read_group_to_attributes;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
+            m_output_read_group_ids_by_file;
 
     bool m_fastq_runtime_warning_issued{false};
     bool m_has_barcodes{false};

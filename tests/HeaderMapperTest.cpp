@@ -2,8 +2,12 @@
 
 #include "TestUtils.h"
 #include "hts_utils/KString.h"
+#include "hts_utils/bam_utils.h"
 #include "hts_utils/hts_types.h"
 #include "read_pipeline/base/HtsReader.h"
+#include "read_pipeline/base/ReadPipeline.h"
+#include "read_pipeline/base/messages.h"
+#include "read_pipeline/base/terminate_options.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -11,6 +15,7 @@
 #include <htslib/sam.h>
 
 #include <filesystem>
+#include <set>
 #include <unordered_map>
 
 #define TEST_GROUP "[header_mapper]"
@@ -111,6 +116,64 @@ fs::path write_bam_without_rg(const fs::path &output_dir, const std::string &fil
 
     return bam_path;
 }
+
+fs::path write_bam_with_read_group(const fs::path &output_dir,
+                                   const std::string &filename,
+                                   const std::string &read_group_id,
+                                   const std::string &platform_model,
+                                   const std::string &qname) {
+    auto bam_path = output_dir / filename;
+    dorado::HtsFilePtr file(hts_open(bam_path.string().c_str(), "wb"));
+    CATCH_REQUIRE(file != nullptr);
+
+    dorado::SamHdrPtr header(sam_hdr_init());
+    CATCH_REQUIRE(header != nullptr);
+    CATCH_REQUIRE(sam_hdr_add_line(header.get(), "HD", "VN", "1.6", "SO", "unknown", nullptr) == 0);
+    CATCH_REQUIRE(sam_hdr_add_line(header.get(), "SQ", "SN", "ref", "LN", "10", nullptr) == 0);
+    CATCH_REQUIRE(sam_hdr_add_line(header.get(), "RG", "ID", read_group_id.c_str(), "PU",
+                                   "PAK21298", "PM", platform_model.c_str(), "LB", "sample", "DS",
+                                   "runid=run-1 experiment_id=exp-1", nullptr) == 0);
+    CATCH_REQUIRE(sam_hdr_write(file.get(), header.get()) == 0);
+
+    dorado::BamPtr record(bam_init1());
+    bam_set1(record.get(), qname.size(), qname.c_str(), 4, -1, -1, 0, 0, nullptr, -1, -1, 0, 1, "*",
+             "*", 0);
+    bam_aux_update_str(record.get(), "RG", static_cast<int>(read_group_id.length() + 1),
+                       read_group_id.c_str());
+    CATCH_REQUIRE(sam_write1(file.get(), header.get(), record.get()) >= 0);
+
+    return bam_path;
+}
+
+class BamCollectorNode : public dorado::MessageSink {
+public:
+    BamCollectorNode() : MessageSink(10, 1) {}
+    ~BamCollectorNode() override {
+        stop_input_processing(dorado::utils::AsyncQueueTerminateFast::Yes);
+    }
+
+    std::string get_name() const override { return "BamCollector"; }
+    void terminate(const dorado::TerminateOptions &terminate_options) override {
+        stop_input_processing(terminate_options.fast);
+    }
+    void restart() override {
+        start_input_processing([this] { input_thread_fn(); }, "bamcollector_node");
+    }
+
+    const std::vector<dorado::BamMessage> &messages() const { return m_messages; }
+
+private:
+    void input_thread_fn() {
+        dorado::Message message;
+        while (get_input_message(message)) {
+            if (message.holds<dorado::BamMessage>()) {
+                m_messages.push_back(message.take<dorado::BamMessage>());
+            }
+        }
+    }
+
+    std::vector<dorado::BamMessage> m_messages;
+};
 }  // namespace
 
 namespace dorado::utils::test {
@@ -344,6 +407,68 @@ CATCH_TEST_CASE(TEST_GROUP " maps read groups to attributes", TEST_GROUP) {
     check_read_attrs(result_attrs_map.at("rg-one"), expected_one);
     CATCH_REQUIRE(result_attrs_map.contains("rg-two"));
     check_read_attrs(result_attrs_map.at("rg-two"), expected_two);
+}
+
+CATCH_TEST_CASE(TEST_GROUP " remaps conflicting read group ids by filename", TEST_GROUP) {
+    auto temp_dir = dorado::tests::make_temp_dir("header_mapper_rg_conflicts");
+    const auto original_read_group_id = std::string{"shared_rg"};
+    auto first_bam = write_bam_with_read_group(temp_dir.m_path, "first.bam", original_read_group_id,
+                                               "device-one", "read1");
+    auto second_bam = write_bam_with_read_group(temp_dir.m_path, "second.bam",
+                                                original_read_group_id, "device-two", "read2");
+
+    utils::HeaderMapper mapper({first_bam, second_bam}, std::nullopt, nullptr, false);
+
+    CATCH_CHECK(mapper.get_output_read_group_id(first_bam.string(), original_read_group_id) ==
+                original_read_group_id);
+    const auto remapped_read_group_id =
+            mapper.get_output_read_group_id(second_bam.string(), original_read_group_id);
+    CATCH_CHECK(remapped_read_group_id == "shared_rg_1");
+
+    const auto &read_attrs_map = mapper.get_read_attributes_map();
+    CATCH_REQUIRE(read_attrs_map.contains(original_read_group_id));
+    CATCH_REQUIRE(read_attrs_map.contains("shared_rg_1"));
+    check_read_attrs(read_attrs_map.at(original_read_group_id), read_attrs_map.at("shared_rg_1"));
+
+    const auto &merged_header = mapper.get_merged_header(read_attrs_map.at(original_read_group_id));
+    std::set<std::string> read_group_ids;
+    dorado::SamHdrPtr sam_header(sam_hdr_dup(merged_header.get_merged_header()));
+    const int num_rg_lines = sam_hdr_count_lines(sam_header.get(), "RG");
+    CATCH_REQUIRE(num_rg_lines == 2);
+    for (int idx = 0; idx < num_rg_lines; ++idx) {
+        read_group_ids.insert(sam_hdr_line_name(sam_header.get(), "RG", idx));
+    }
+    CATCH_CHECK(read_group_ids == std::set<std::string>{original_read_group_id, "shared_rg_1"});
+}
+
+CATCH_TEST_CASE(TEST_GROUP " rewrites record read group ids using remap lookup", TEST_GROUP) {
+    auto temp_dir = dorado::tests::make_temp_dir("header_mapper_rg_record_remap");
+    const auto original_read_group_id = std::string{"shared_rg"};
+    auto first_bam = write_bam_with_read_group(temp_dir.m_path, "first.bam", original_read_group_id,
+                                               "device-one", "read1");
+    auto second_bam = write_bam_with_read_group(temp_dir.m_path, "second.bam",
+                                                original_read_group_id, "device-two", "read2");
+
+    utils::HeaderMapper mapper({first_bam, second_bam}, std::nullopt, nullptr, false);
+    const auto remapped_read_group_id =
+            mapper.get_output_read_group_id(second_bam.string(), original_read_group_id);
+    CATCH_REQUIRE(remapped_read_group_id == "shared_rg_1");
+
+    HtsReader reader(second_bam.string(), std::nullopt);
+    dorado::PipelineDescriptor pipeline_desc;
+    const auto collector_handle = pipeline_desc.add_node<BamCollectorNode>({});
+    auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
+    CATCH_REQUIRE(pipeline != nullptr);
+
+    CATCH_REQUIRE(reader.read(*pipeline, 1, false, &mapper, false) == 1);
+    pipeline->terminate({.fast = dorado::utils::AsyncQueueTerminateFast::No});
+
+    const auto &collector = pipeline->get_node_ref<BamCollectorNode>(collector_handle);
+    CATCH_REQUIRE(collector.messages().size() == 1);
+
+    const auto &message = collector.messages().front();
+    CATCH_CHECK(dorado::utils::get_read_group_tag(message.data->bam_ptr.get()) == "shared_rg_1");
+    CATCH_CHECK(message.data->read_attrs == mapper.get_read_attributes_map().at("shared_rg_1"));
 }
 
 CATCH_TEST_CASE(TEST_GROUP " barcode kit adds barcoded read groups headers", TEST_GROUP) {

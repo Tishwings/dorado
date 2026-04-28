@@ -83,6 +83,17 @@ void assign_not_empty(std::string& attr_target, const std::string_view maybe_val
     }
 };
 
+std::string resolve_output_read_group_id(const utils::MergeHeaders& merged_header,
+                                         const std::string& filename,
+                                         const std::string& read_group_id) {
+    if (const auto remapped_read_group_id =
+                merged_header.get_remapped_read_group_id(filename, read_group_id);
+        remapped_read_group_id) {
+        return *remapped_read_group_id;
+    }
+    return read_group_id;
+}
+
 }  // anonymous namespace
 
 namespace dorado::utils {
@@ -171,18 +182,17 @@ void HeaderMapper::process(const std::vector<std::filesystem::path>& inputs) {
 
 void HeaderMapper::process_fastx(const std::filesystem::path& path) {
     spdlog::trace("HeaderMapper::process_fastx processing '{}'", path.string());
+    const auto path_string = path.string();
 
     hts_io::FastxSequentialReader reader(path);
     hts_io::FastxRecord record;
 
-    std::unordered_map<std::string, HtsData::ReadAttributes> rg_id_to_attrs_lut;
     const auto& fallback_merged_header = m_merged_headers_map->at(m_fallback_read_attrs);
 
     bool debug_msg_issued = false;
 
     auto& merged_headers = *m_merged_headers_map;
     std::unordered_map<std::string, HtsData::ReadAttributes> rg_to_attrs_lut;
-    std::unordered_map<std::string, ReadGroup> id_to_rg_lut;
 
     SamHdrPtr hdr(sam_hdr_init());
     while (reader.get_next(record)) {
@@ -194,7 +204,7 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
                 debug_msg_issued = true;
                 spdlog::debug("FASTQ record missing read group data in file '{}'", path.string());
             }
-            fallback_merged_header->add_header(hdr.get(), path.string(),
+            fallback_merged_header->add_header(hdr.get(), path_string,
                                                m_fallback_read_attrs.protocol_run_id);
             continue;
         }
@@ -252,20 +262,26 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
                     // BC and bk tags are not present in fastq files
             };
         }
-        merged_header_ptr->add_rg(rg_data.id, rg_data.data, kv_pairs);
-        id_to_rg_lut[rg_data.id] = std::move(rg_data.data);
+        const auto output_read_group_id = merged_header_ptr->add_rg_with_remap(
+                path_string, rg_data.id, rg_data.data, kv_pairs);
+        m_output_read_group_ids_by_file[path_string][rg_data.id] = output_read_group_id;
+        if (output_read_group_id != rg_data.id) {
+            rg_data.id = output_read_group_id;
+        }
     }
 
     // Add the new read attrs and merge the headers for each output
     // file only including the read groups that will be used.
     for (const auto& [read_group_id, read_attrs] : rg_to_attrs_lut) {
-        m_read_group_to_attributes[read_group_id] = read_attrs;
-        merged_headers[read_attrs]->add_header(hdr.get(), path.string(), read_group_id);
+        const auto output_read_group_id = get_output_read_group_id(path_string, read_group_id);
+        m_read_group_to_attributes[output_read_group_id] = read_attrs;
+        merged_headers[read_attrs]->add_header(hdr.get(), path_string, output_read_group_id);
     }
 }
 
 void HeaderMapper::process_bam(const std::filesystem::path& path) {
     spdlog::trace("HeaderMapper::process_bam processing '{}'", path.string());
+    const auto path_string = path.string();
 
     auto file = dorado::HtsFilePtr(hts_open(path.string().c_str(), "r"));
     if (!file) {
@@ -287,7 +303,7 @@ void HeaderMapper::process_bam(const std::filesystem::path& path) {
 
     if (rg_to_attrs_lut.empty()) {
         // No RG lines in the BAM header: route this file through the fallback merged header.
-        merged_headers.at(m_fallback_read_attrs)->add_header(header.get(), path.string(), "");
+        merged_headers.at(m_fallback_read_attrs)->add_header(header.get(), path_string, "");
         return;
     }
 
@@ -299,7 +315,6 @@ void HeaderMapper::process_bam(const std::filesystem::path& path) {
                 read_attrs.barcode_id = "unclassified";
             }
         }
-        m_read_group_to_attributes[read_group_id] = read_attrs;
         m_has_barcodes |= !read_attrs.barcode_id.empty();
         m_has_barcodes |= !read_attrs.barcode_alias.empty();
         {
@@ -307,7 +322,11 @@ void HeaderMapper::process_bam(const std::filesystem::path& path) {
             if (!merged_header_ptr) {
                 merged_header_ptr = std::make_unique<MergeHeaders>(m_strip_alignment);
             }
-            merged_header_ptr->add_header(header.get(), path.string(), read_group_id);
+            merged_header_ptr->add_header(header.get(), path_string, read_group_id);
+            const auto output_read_group_id =
+                    resolve_output_read_group_id(*merged_header_ptr, path_string, read_group_id);
+            m_output_read_group_ids_by_file[path_string][read_group_id] = output_read_group_id;
+            m_read_group_to_attributes[output_read_group_id] = read_attrs;
         }
     }
 }
@@ -453,6 +472,21 @@ void HeaderMapper::modify_headers(const Modifier& modifier) const {
         modifier(merged_header_ptr->get_merged_header());
     }
 };
+
+std::string HeaderMapper::get_output_read_group_id(const std::string& filename,
+                                                   const std::string& read_group_id) const {
+    const auto file_it = m_output_read_group_ids_by_file.find(filename);
+    if (file_it == m_output_read_group_ids_by_file.cend()) {
+        return read_group_id;
+    }
+
+    const auto rg_it = file_it->second.find(read_group_id);
+    if (rg_it == file_it->second.cend()) {
+        return read_group_id;
+    }
+
+    return rg_it->second;
+}
 
 const HtsData::ReadAttributes& HeaderMapper::get_read_attributes(const bam1_t* record) const {
     // Get the read group ID from the record

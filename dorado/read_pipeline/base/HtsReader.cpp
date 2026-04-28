@@ -143,6 +143,15 @@ std::size_t HtsReader::read(Pipeline& pipeline,
         if (header_mapper == nullptr) {
             hts_data = std::make_unique<HtsData>(HtsData{BamPtr(bam_dup1(record.get()))});
         } else {
+            const auto input_read_group_id = utils::get_read_group_tag(record.get());
+            const auto output_read_group_id =
+                    header_mapper->get_output_read_group_id(m_filename, input_read_group_id);
+            if (output_read_group_id != input_read_group_id) {
+                bam_aux_update_str(record.get(), "RG",
+                                   static_cast<int>(output_read_group_id.length() + 1),
+                                   output_read_group_id.c_str());
+            }
+
             // Get read attributes by read group ID
             const auto& read_attrs = header_mapper->get_read_attributes(record.get());
 
