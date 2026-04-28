@@ -53,6 +53,7 @@ endif()
 
 
 
+unset(DORADO_HAS_FLASHATTENTION3)
 if (DEFINED FLASHATTENTION_PATH)
     # Check that the torch builds match.
     file(READ "${FLASHATTENTION_PATH}/share/torch-hash" FLASHATTENTION_TORCH_HASH)
@@ -69,8 +70,10 @@ if (DEFINED FLASHATTENTION_PATH)
         set(lib_suffix "a")
     endif()
 
-    # Make the target.
     message(STATUS "Using flashattention: ${FLASHATTENTION_PATH}")
+    set(DORADO_HAS_FLASHATTENTION3 TRUE)
+
+    # Make the target.
     add_library(dorado_flashattention3 STATIC IMPORTED)
     set_target_properties(dorado_flashattention3
         PROPERTIES
@@ -87,18 +90,17 @@ if (DEFINED FLASHATTENTION_PATH)
                 CUDA::cudart
         )
     endif()
-    target_compile_definitions(dorado_flashattention3
-        INTERFACE
-            DORADO_HAS_FLASHATTENTION3=1
-    )
 
 else()
-    # Dummy target if we don't support it on this build.
     message(STATUS "No flashattention support")
+    set(DORADO_HAS_FLASHATTENTION3 FALSE)
+
+    # Dummy target if we don't support it on this build.
     add_library(dorado_flashattention3 INTERFACE)
-    target_compile_definitions(dorado_flashattention3
-        INTERFACE
-            DORADO_HAS_FLASHATTENTION3=0
-    )
 
 endif()
+
+target_compile_definitions(dorado_flashattention3
+    INTERFACE
+        DORADO_HAS_FLASHATTENTION3=$<BOOL:${DORADO_HAS_FLASHATTENTION3}>
+)
