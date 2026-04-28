@@ -1334,13 +1334,14 @@ BarcodeScoreResult BarcodeClassifier::find_best_barcode(
                  (penalty_dist_inner >= m_scoring_params.min_separation_only_dist))) {
                 if (out.barcode_name != UNCLASSIFIED.barcode_name) {
                     if (best_result_inner->barcode_name == UNCLASSIFIED.barcode_name) {
-                        out.barcode_name = UNCLASSIFIED.barcode_name;
-                        out.normalized_barcode_name = UNCLASSIFIED.barcode_name;
+                        return UNCLASSIFIED;
                     }
                     out.barcode_name += "_" + best_result_inner->barcode_name;
                     out.normalized_barcode_name += "_" + barcode_kits::normalize_barcode_name(
                                                                  best_result_inner->barcode_name);
                 }
+            } else {
+                return UNCLASSIFIED;
             }
         }
     }
