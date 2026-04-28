@@ -80,6 +80,9 @@ function(dorado_parse_sbom_yaml_ FILE CALLBACK)
     if (NOT dep_omit)
         cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}")
     endif()
+
+    # If the file changes we'll want to re-parse it.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FILE}")
 endfunction()
 
 # Emit a licence for a dependency in the YAML.
