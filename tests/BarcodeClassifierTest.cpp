@@ -518,4 +518,36 @@ CATCH_TEST_CASE("BarcodeClassifier: test custom kit with double ended barcode", 
     }
 }
 
+CATCH_TEST_CASE("BarcodeClassifier: test custom kit with dual barcode", TEST_GROUP) {
+    fs::path data_dir = fs::path(get_data_dir("barcode_demux/dual"));
+    auto kit_file =
+            (fs::path(get_data_dir("barcode_demux/custom_barcodes")) / "dual_arr.toml").string();
+
+    auto kit_info = dorado::demux::parse_custom_arrangement(kit_file);
+    dorado::barcode_kits::add_custom_barcode_kit(kit_info.first, kit_info.second);
+    auto kit_cleanup =
+            dorado::utils::PostCondition([] { dorado::barcode_kits::clear_custom_barcode_kits(); });
+
+    demux::BarcodeClassifier classifier(kit_info.first);
+
+    auto bc_file = data_dir / "single.fastq";
+    HtsReader reader(bc_file.string(), std::nullopt);
+    while (reader.read()) {
+        auto seqlen = reader.record->core.l_qseq;
+        std::string seq = utils::extract_sequence(reader.record.get());
+        auto res = classifier.barcode(seq, false, std::nullopt);
+
+        CATCH_CHECK(res.kit == "EXP-DUAL00");
+        CATCH_CHECK(res.barcode_name == "NB11_BC60");
+        CATCH_CHECK(res.normalized_barcode_name == "barcode11_barcode60");
+        CATCH_CHECK(res.top_barcode_pos.second > res.top_barcode_pos.first);
+        CATCH_CHECK(res.bottom_barcode_pos.second > res.bottom_barcode_pos.first);
+        CATCH_CHECK(res.top_barcode_pos.first >= 0);
+        CATCH_CHECK(res.top_barcode_pos.second <= seqlen);
+        CATCH_CHECK(res.bottom_barcode_pos.first >= 0);
+        CATCH_CHECK(res.bottom_barcode_pos.second <= seqlen);
+        CATCH_CHECK(res.top_barcode_pos.second < res.bottom_barcode_pos.first);
+    }
+}
+
 }  // namespace dorado::barcode_classifier_test
