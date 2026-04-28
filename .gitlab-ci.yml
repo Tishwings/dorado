@@ -295,6 +295,11 @@ pre-commit:
     - pre-commit run --all-files
   tags:
     - linux
+    - prod
+    - amd64
+    - eks
+    - docker
+    - small
 
 # Build stages
 
