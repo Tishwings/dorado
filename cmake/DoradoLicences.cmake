@@ -22,8 +22,8 @@ function(dorado_generate_licence_header_from_yaml)
     dorado_emit_licence_header_start_(${arg_TARGET} output_file)
 
     # Parse the SBOM.
-    function(callback_ NAME LICENCE OMIT)
-        dorado_emit_licence_for_dependency_("${output_file}" "${arg_PATH}" "${NAME}" "${LICENCE}" "${OMIT}")
+    function(callback_ NAME LICENCE)
+        dorado_emit_licence_for_dependency_("${output_file}" "${arg_PATH}" "${NAME}" "${LICENCE}")
     endfunction()
     set(yaml_file "${arg_PATH}/${arg_SBOM}")
     dorado_parse_sbom_yaml_("${yaml_file}" callback_)
@@ -61,7 +61,9 @@ function(dorado_parse_sbom_yaml_ FILE CALLBACK)
                 endif()
             endif()
 
-            cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}" "${dep_omit}")
+            if (NOT dep_omit)
+                cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}")
+            endif()
 
             # Setup next dependency.
             set(dep_name "${new_dep}")
@@ -75,15 +77,13 @@ function(dorado_parse_sbom_yaml_ FILE CALLBACK)
     endforeach()
 
     # Emit the final one.
-    cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}" "${dep_omit}")
+    if (NOT dep_omit)
+        cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}")
+    endif()
 endfunction()
 
 # Emit a licence for a dependency in the YAML.
-function(dorado_emit_licence_for_dependency_ OUTPUT ROOT NAME LICENCE OMIT)
-    if (OMIT)
-        return()
-    endif()
-
+function(dorado_emit_licence_for_dependency_ OUTPUT ROOT NAME LICENCE)
     if (LICENCE STREQUAL "PATH_NOT_AVAILABLE")
         message(WARNING "No licence file provided for ${NAME} in ${yaml_file}")
         return()
