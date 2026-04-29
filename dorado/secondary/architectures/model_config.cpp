@@ -1,5 +1,7 @@
 #include "secondary/architectures/model_config.h"
 
+#include "secondary/architectures/model_config_validation.h"
+
 #include <toml.hpp>
 
 #include <cstddef>
@@ -98,18 +100,7 @@ ModelConfig parse_model_config(const std::filesystem::path& config_path,
                                const std::string& model_file) {
     const toml::value config_toml = toml::parse(config_path.string());
 
-    if (!config_toml.contains("model")) {
-        throw std::runtime_error("Model config must include the [model] section.");
-    }
-    if (!config_toml.contains("feature_encoder")) {
-        throw std::runtime_error("Model config must include the [feature_encoder] section.");
-    }
-    if (!config_toml.contains("config_version")) {
-        throw std::runtime_error("Model config must contain 'config_version' attribute.");
-    }
-    if (!config_toml.contains("label_scheme")) {
-        throw std::runtime_error("Model config must contain 'label_scheme' attribute.");
-    }
+    validate_model_config_toml(config_toml);
 
     // print_toml(config_toml, 0);
     (void)&print_toml;
