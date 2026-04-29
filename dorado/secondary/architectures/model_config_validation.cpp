@@ -442,6 +442,18 @@ std::string get_versioned_value(const std::unordered_map<std::string, std::strin
     throw std::runtime_error("Model config is missing required key '" + key + "'.");
 }
 
+std::string get_model_config_top_level_value(
+        const std::unordered_map<std::string, std::string>& values,
+        const int32_t version,
+        const std::string& key) {
+    const ParamSpecs& specs = require_specs("");
+    const VersionedParamSpec* spec = find_spec(specs, key);
+    if (spec == nullptr) {
+        throw std::runtime_error("Unexpected model config key '" + key + "'.");
+    }
+    return get_versioned_value(values, *spec, version, "top-level");
+}
+
 std::string get_model_config_model_value(const ModelConfig& config, const std::string& key) {
     const std::string section = typed_section_key("model.kwargs", config.model_type);
     const ParamSpecs& specs = require_specs(section);

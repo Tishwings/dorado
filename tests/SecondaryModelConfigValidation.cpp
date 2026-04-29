@@ -1,9 +1,12 @@
+#include "TestUtils.h"
 #include "secondary/architectures/model_config.h"
 #include "secondary/architectures/model_config_validation.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <toml.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -275,6 +278,15 @@ void check_invalid_config(const std::string& config) {
     CATCH_CHECK_THROWS(validate_model_config_toml(toml::parse_str(config)));
 }
 
+ModelConfig parse_config_string(const std::string& config) {
+    const TempDir temp_dir = make_temp_dir("secondary_model_config");
+    const std::filesystem::path config_path = temp_dir.m_path / "config.toml";
+    std::ofstream output(config_path);
+    output << config;
+    output.close();
+    return parse_model_config(config_path, "weights.pt");
+}
+
 ModelConfig make_lstm_config(const int32_t version) {
     ModelConfig config;
     config.version = version;
@@ -382,6 +394,17 @@ CATCH_TEST_CASE("Current shipped secondary model configs validate", TEST_GROUP) 
         CATCH_CAPTURE(config.first);
         check_valid_config(config.second);
     }
+}
+
+CATCH_TEST_CASE("ModelConfig parser applies top-level chunk defaults and config values",
+                TEST_GROUP) {
+    const ModelConfig v1_config = parse_config_string(LSTM_READ_ALIGNMENT_V1);
+    CATCH_CHECK(v1_config.chunk_size == 10000);
+    CATCH_CHECK(v1_config.chunk_overlap == 1000);
+
+    const ModelConfig v4_config = parse_config_string(VARIANT_PERCEIVER_V4);
+    CATCH_CHECK(v4_config.chunk_size == 300);
+    CATCH_CHECK(v4_config.chunk_overlap == 100);
 }
 
 CATCH_TEST_CASE("Top-level validation catches version boundaries and unknown keys", TEST_GROUP) {

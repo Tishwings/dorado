@@ -122,6 +122,17 @@ ModelConfig parse_model_config(const std::filesystem::path& config_path,
         }
     }
 
+    // Parse top-level parameters.
+    {
+        const std::unordered_map<std::string, std::string> top_level_values =
+                parse_kwargs(config_toml);
+        const auto get_value = [&top_level_values, &cfg](const std::string& key) {
+            return get_model_config_top_level_value(top_level_values, cfg.version, key);
+        };
+        cfg.chunk_size = std::stoi(get_value("chunk_size"));
+        cfg.chunk_overlap = std::stoi(get_value("chunk_overlap"));
+    }
+
     // Parse the model info.
     {
         const auto& section = toml::find(config_toml, MODEL_TOML_KEY);

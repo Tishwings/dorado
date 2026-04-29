@@ -67,9 +67,9 @@ struct Options {
     int32_t infer_threads = 1;
     std::string device_str;
     int32_t batch_size = 10;
-    int32_t window_len = 10000;
-    int32_t window_overlap = 1000;
-    int32_t variant_flanking_bases = 100;
+    std::optional<int32_t> window_len{};
+    std::optional<int32_t> window_overlap{};
+    std::optional<int32_t> variant_flanking_bases{};
     int32_t bam_chunk = 1'000'000;
     std::optional<std::string> regions_str;
     std::vector<secondary::Region> regions;
@@ -172,13 +172,9 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Batch size for inference. Default: 0 for auto batch size detection.")
                 .default_value(0)
                 .scan<'i', int>();
-        parser.add_argument("--window-len")
-                .help("Window size for processing.")
-                .default_value(10000)
-                .scan<'i', int>();
+        parser.add_argument("--window-len").help("Window size for processing.").scan<'i', int>();
         parser.add_argument("--window-overlap")
                 .help("Overlap length between windows.")
-                .default_value(1000)
                 .scan<'i', int>();
         parser.add_argument("--bam-chunk")
                 .help("Size of reference chunks to parse from the input BAM at a time.")
@@ -277,7 +273,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
         parser.add_argument("--variant-flanking-bases")
                 .hidden()
                 .help("Minimum number of flanking bases in samples around candidate variants.")
-                .default_value(100)
                 .scan<'i', int>();
         parser.add_argument("--tiled-regions")
                 .hidden()
@@ -408,9 +403,10 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
 
     opt.batch_size = parser.get<int>("batchsize");
 
-    opt.window_len = parser.get<int>("window-len");
-    opt.variant_flanking_bases = parser.get<int>("variant-flanking-bases");
-    opt.window_overlap = parser.get<int>("window-overlap");
+    opt.window_len = parser.present<int32_t>("window-len");
+    opt.window_overlap = parser.present<int32_t>("window-overlap");
+    opt.variant_flanking_bases = parser.present<int32_t>("variant-flanking-bases");
+
     opt.bam_chunk = parser.get<int>("bam-chunk");
     opt.verbosity = verbosity;
     opt.regions_str = parser.present<std::string>("regions");
@@ -497,25 +493,8 @@ void validate_options(const Options& opt) {
         spdlog::error("Batch size should be >= 0. Given: {}.", opt.batch_size);
         std::exit(EXIT_FAILURE);
     }
-    if (opt.window_len <= 0) {
-        spdlog::error("Window size should be > 0. Given: {}.", opt.window_len);
-        std::exit(EXIT_FAILURE);
-    }
-    if (opt.variant_flanking_bases < 0) {
-        spdlog::error("Variant flanking bases should be >= 0. Given: {}.",
-                      opt.variant_flanking_bases);
-        std::exit(EXIT_FAILURE);
-    }
     if (opt.bam_chunk <= 0) {
         spdlog::error("BAM chunk size should be > 0. Given: {}.", opt.bam_chunk);
-        std::exit(EXIT_FAILURE);
-    }
-
-    if ((opt.window_overlap < 0) || (opt.window_overlap >= opt.window_len)) {
-        spdlog::error(
-                "Window overlap should be >= 0 and < window_len. Given: window_overlap = {}, "
-                "window_len = {}.",
-                opt.window_overlap, opt.window_len);
         std::exit(EXIT_FAILURE);
     }
 
@@ -969,6 +948,31 @@ void run_variant_calling(const Options& opt,
 
     at::InferenceMode infer_guard;
 
+    // Resolve the windowing parameters from either the model (default) or the CLI.
+    const int32_t window_len = opt.window_len.value_or(model_config.chunk_size);
+    const int32_t window_overlap = opt.window_overlap.value_or(model_config.chunk_overlap);
+    const int32_t variant_flanking_bases =
+            opt.variant_flanking_bases.value_or(model_config.chunk_overlap);
+
+    // Validate the final windowing parameters.
+    if (window_len <= 0) {
+        throw std::runtime_error{"Window size should be > 0. Given: " + std::to_string(window_len)};
+    }
+    if (variant_flanking_bases < 0) {
+        throw std::runtime_error{"Variant flanking bases should be >= 0. Given: " +
+                                 std::to_string(variant_flanking_bases)};
+    }
+    if ((window_overlap < 0) || (window_overlap >= window_len)) {
+        throw std::runtime_error{
+                "Window overlap should be >= 0 and < window_len. Given: window_overlap = " +
+                std::to_string(window_overlap) + ", window_len = " + std::to_string(window_len)};
+    }
+
+    spdlog::debug(
+            "Using windowing parameters: window_len = {}, window_overlap = {}, "
+            "variant_flanking_bases = {}",
+            window_len, window_overlap, variant_flanking_bases);
+
     // Create a .fai index if it doesn't exist.
     const bool rv_fai = utils::create_fai_index(opt.in_ref_fastx_fn);
     if (!rv_fai) {
@@ -1108,7 +1112,7 @@ void run_variant_calling(const Options& opt,
     {
         for (const auto& ref_regions : input_regions) {
             std::vector<secondary::Window> new_bam_regions = secondary::create_windows_from_regions(
-                    ref_regions, draft_lookup, opt.bam_chunk, opt.window_overlap);
+                    ref_regions, draft_lookup, opt.bam_chunk, window_overlap);
             bam_regions.emplace_back(std::move(new_bam_regions));
         }
     }
@@ -1190,10 +1194,10 @@ void run_variant_calling(const Options& opt,
                     bam_region_queue, sample_queue, chrom_reduce_data, resources, stats,
                     worker_terminate, wrs_sample_producer, bam_regions, draft_lens, draft_seqs,
                     opt.variant_candidate_source, candidate_trees_from_file, opt.threads,
-                    opt.window_len, opt.window_overlap, opt.variant_flanking_bases,
-                    opt.continue_on_error, ploidy, opt.pass_min_qual, opt.tiled_regions,
-                    opt.tiled_ext_flanks, opt.tiled_ext_major, opt.tiled_ext_min_cov,
-                    opt.tiled_ext_cov_fract, opt.min_depth);
+                    window_len, window_overlap, variant_flanking_bases, opt.continue_on_error,
+                    ploidy, opt.pass_min_qual, opt.tiled_regions, opt.tiled_ext_flanks,
+                    opt.tiled_ext_major, opt.tiled_ext_min_cov, opt.tiled_ext_cov_fract,
+                    opt.min_depth);
         });
 
         // Create a thread for worker_batch_producer.
@@ -1201,7 +1205,7 @@ void run_variant_calling(const Options& opt,
             utils::set_thread_name("worker_batch_producer");
             variant::worker_batch_producer(sample_queue, batch_queue, worker_terminate,
                                            wrs_batch_producer, *resources.models.front(),
-                                           opt.window_len, opt.batch_size, usable_mem,
+                                           window_len, opt.batch_size, usable_mem,
                                            opt.continue_on_error);
         });
 
