@@ -42,6 +42,22 @@ function(dorado_parse_sbom_yaml_ FILE CALLBACK)
     # Read the yaml.
     file(STRINGS "${FILE}" yaml_lines NO_HEX_CONVERSION)
 
+    function(do_emit_)
+        # If the dep has a requirement then check it.
+        if (DEFINED dep_requires)
+            if (NOT DEFINED ${dep_requires})
+                # To avoid silent failures the requirement should always be set to something.
+                message(FATAL_ERROR "Requirement doesn't exist for ${dep_name}: ${dep_requires}")
+            elseif (NOT ${dep_requires})
+                # Omit this dependency since the requirement isn't enabled.
+                set(dep_omit YES)
+            endif()
+        endif()
+        if (NOT dep_omit)
+            cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}")
+        endif()
+    endfunction()
+
     # Parse the YAML line by line, assuming that licence is a single line.
     set(dep_name "<not set>")
     set(dep_license "PATH_NOT_AVAILABLE")
@@ -51,19 +67,8 @@ function(dorado_parse_sbom_yaml_ FILE CALLBACK)
         if (line MATCHES "^([a-zA-Z].*):$") # new dependency
             set(new_dep "${CMAKE_MATCH_1}")
 
-            # If the dep has a requirement then check it.
-            if (DEFINED dep_requires)
-                if (NOT DEFINED ${dep_requires})
-                    message(FATAL_ERROR "Requirement doesn't exist for ${dep_name}: ${dep_requires}")
-                elseif (NOT ${dep_requires})
-                    # Omit this dependency since the requirement isn't set.
-                    set(dep_omit YES)
-                endif()
-            endif()
-
-            if (NOT dep_omit)
-                cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}")
-            endif()
+            # Emit the previous dependency.
+            do_emit_()
 
             # Setup next dependency.
             set(dep_name "${new_dep}")
@@ -77,9 +82,7 @@ function(dorado_parse_sbom_yaml_ FILE CALLBACK)
     endforeach()
 
     # Emit the final one.
-    if (NOT dep_omit)
-        cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}")
-    endif()
+    do_emit_()
 
     # If the file changes we'll want to re-parse it.
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FILE}")
