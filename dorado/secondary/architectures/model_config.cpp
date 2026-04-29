@@ -131,6 +131,7 @@ ModelConfig parse_model_config(const std::filesystem::path& config_path,
         };
         cfg.chunk_size = std::stoi(get_value("chunk_size"));
         cfg.chunk_overlap = std::stoi(get_value("chunk_overlap"));
+        cfg.candidate_filtering = (get_value("candidate_filtering") == "true");
     }
 
     // Parse the model info.

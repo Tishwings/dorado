@@ -83,6 +83,7 @@ const ParamSpecs top_level{
         required_since("supported_basecallers", ModelConfigValueType::ARRAY, 2, ""),
         required_since("chunk_size", ModelConfigValueType::INTEGER, 4, "10000"),
         required_since("chunk_overlap", ModelConfigValueType::INTEGER, 4, "1000"),
+        required_since("candidate_filtering", ModelConfigValueType::BOOLEAN, 4, "false"),
         required("model", ModelConfigValueType::TABLE),
         required("feature_encoder", ModelConfigValueType::TABLE),
         required("label_scheme", ModelConfigValueType::TABLE),

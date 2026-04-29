@@ -103,11 +103,9 @@ struct Options {
     float tiled_ext_cov_fract = 0.25f;  // Fraction of deletion coverage to trigger the heuristic.
 
     // Candidate region filtering based on candidate variants.
-    // The `candidate_filtering` enables candidate region selection (computed internally by default, or loaded from candidate_variants_path if specified).
-    bool candidate_filtering = false;
+    // Optionally force candidate region selection on. Otherwise the model config default is used.
+    std::optional<bool> candidate_filtering;
     std::optional<std::filesystem::path> candidate_variants_path;
-    secondary::VariantCandidateSource variant_candidate_source =
-            secondary::VariantCandidateSource::COMPUTE;
     int32_t flank_trim_len = 5;
 
     secondary::KadayashiOptions kadayashi_opt;
@@ -262,10 +260,10 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
 
         // Candidate region selection options.
         parser.add_argument("--candidate-filtering")
-                .help("Enable candidate region selection to improve runtime. If haplotag_source == "
-                      "COMPUTE, computed internally, otherwise 'phasing_bin_path' is loaded.")
-                .flag()
-                .default_value(false);
+                .help("Enable candidate region selection to improve runtime, forcing it on when "
+                      "specified. If haplotag_source == COMPUTE, computed "
+                      "internally, otherwise 'phasing_bin_path' is loaded.")
+                .flag();
         parser.add_argument("--candidates")
                 .hidden()
                 .help("Path to a tab-separated file containing coordinates of variant candidate "
@@ -437,11 +435,7 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.pass_min_qual = parser.get<float>("pass-qual-filter");
 
     opt.candidate_variants_path = parser.present<std::string>("candidates");
-    opt.candidate_filtering = parser.get<bool>("candidate-filtering");
-    opt.variant_candidate_source =
-            (!opt.candidate_filtering)      ? secondary::VariantCandidateSource::NONE
-            : (opt.candidate_variants_path) ? secondary::VariantCandidateSource::FILE
-                                            : secondary::VariantCandidateSource::COMPUTE;
+    opt.candidate_filtering = cli::get_optional_argument<bool>("--candidate-filtering", parser);
 
     opt.phasing_bin_path = parser.present<std::string>("phasing-bin");
     opt.hp_tag_from_bam = parser.get<bool>("hp-tag");
@@ -534,22 +528,6 @@ void validate_options(const Options& opt) {
     if (opt.candidate_variants_path && !std::filesystem::exists(*opt.candidate_variants_path)) {
         spdlog::error("Candidate site file '{}' does not exist.",
                       opt.candidate_variants_path->string());
-        std::exit(EXIT_FAILURE);
-    }
-
-    if (opt.candidate_filtering &&
-        (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE) &&
-        !opt.candidate_variants_path) {
-        spdlog::error(
-                "Variant candidate source is set to FILE, but the input candidates file is not "
-                "specified.");
-        std::exit(EXIT_FAILURE);
-    }
-
-    if (!opt.candidate_filtering && opt.candidate_variants_path) {
-        spdlog::error(
-                "Candidate variants path is specified as a source ('--candidates'), but candidate "
-                "filtering is not turned on ('--candidate-filtering').");
         std::exit(EXIT_FAILURE);
     }
 
@@ -955,6 +933,19 @@ void run_variant_calling(const Options& opt,
     const int32_t window_overlap = opt.window_overlap.value_or(model_config.chunk_overlap);
     const int32_t variant_flanking_bases =
             opt.variant_flanking_bases.value_or(model_config.chunk_overlap);
+    const bool candidate_filtering =
+            opt.candidate_filtering.value_or(model_config.candidate_filtering);
+    const secondary::VariantCandidateSource variant_candidate_source =
+            (!candidate_filtering)          ? secondary::VariantCandidateSource::NONE
+            : (opt.candidate_variants_path) ? secondary::VariantCandidateSource::FILE
+                                            : secondary::VariantCandidateSource::COMPUTE;
+
+    if (!candidate_filtering && opt.candidate_variants_path) {
+        throw std::runtime_error{
+                "Candidate variants path is specified as a source ('--candidates'), but candidate "
+                "filtering is not turned on by either '--candidate-filtering' or the model "
+                "config."};
+    }
 
     // Validate the final windowing parameters.
     if (window_len <= 0) {
@@ -974,6 +965,8 @@ void run_variant_calling(const Options& opt,
             "Using windowing parameters: window_len = {}, window_overlap = {}, "
             "variant_flanking_bases = {}",
             window_len, window_overlap, variant_flanking_bases);
+    spdlog::debug("Using candidate region filtering: {}, source = {}", candidate_filtering,
+                  secondary::variant_region_source_to_string(variant_candidate_source));
 
     // Create a .fai index if it doesn't exist.
     const bool rv_fai = utils::create_fai_index(opt.in_ref_fastx_fn);
@@ -1009,9 +1002,9 @@ void run_variant_calling(const Options& opt,
             load_candidate_sites(opt.candidate_variants_path);
 
     // Create interval trees from candidate variant locations.
-    // The opt.variant_candidate_source can be NONE, which means no candidate filtering is applied.
+    // The variant_candidate_source can be NONE, which means no candidate filtering is applied.
     const std::optional<secondary::IntervalTreesInt64Map> candidate_trees_from_file =
-            (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE)
+            (variant_candidate_source == secondary::VariantCandidateSource::FILE)
                     ? create_candidate_interval_trees(candidate_sites, draft_lookup)
                     : std::nullopt;
 
@@ -1065,7 +1058,7 @@ void run_variant_calling(const Options& opt,
     // Optionally write Kadayashi variants.
     std::optional<secondary::VCFWriter> vcf_writer_kadayashi;
     std::optional<secondary::VCFWriter> vcf_writer_inference;
-    if (opt.candidate_filtering && opt.dump_variants) {
+    if (candidate_filtering && opt.dump_variants) {
         const std::string out_vcf_kadayashi_fn =
                 (std::empty(opt.output_dir)) ? "-" : (opt.output_dir / "kadayashi.vcf").string();
         vcf_writer_kadayashi.emplace(out_vcf_kadayashi_fn, vcf_filters, draft_lens);
@@ -1104,7 +1097,7 @@ void run_variant_calling(const Options& opt,
     init_progress_tracker(stats, input_regions);
 
     const int32_t flank_trim_len =
-            (opt.variant_candidate_source == secondary::VariantCandidateSource::FILE)
+            (variant_candidate_source == secondary::VariantCandidateSource::FILE)
                     ? 0
                     : opt.flank_trim_len;
 
@@ -1195,11 +1188,10 @@ void run_variant_calling(const Options& opt,
             variant::worker_sample_producer(
                     bam_region_queue, sample_queue, chrom_reduce_data, resources, stats,
                     worker_terminate, wrs_sample_producer, bam_regions, draft_lens, draft_seqs,
-                    opt.variant_candidate_source, candidate_trees_from_file, opt.threads,
-                    window_len, window_overlap, variant_flanking_bases, opt.continue_on_error,
-                    ploidy, opt.pass_min_qual, opt.tiled_regions, opt.tiled_ext_flanks,
-                    opt.tiled_ext_major, opt.tiled_ext_min_cov, opt.tiled_ext_cov_fract,
-                    opt.min_depth);
+                    variant_candidate_source, candidate_trees_from_file, opt.threads, window_len,
+                    window_overlap, variant_flanking_bases, opt.continue_on_error, ploidy,
+                    opt.pass_min_qual, opt.tiled_regions, opt.tiled_ext_flanks, opt.tiled_ext_major,
+                    opt.tiled_ext_min_cov, opt.tiled_ext_cov_fract, opt.min_depth);
         });
 
         // Create a thread for worker_batch_producer.
@@ -1234,7 +1226,7 @@ void run_variant_calling(const Options& opt,
                     wrs_thread_call_variants, stats, draft_readers, opt.continue_on_error,
                     opt.threads, draft_lens, *resources.decoder, opt.pass_min_qual, opt.ambig_ref,
                     opt.out_format == VariantCallingFormatEnum::GVCF, flank_trim_len,
-                    opt.variant_candidate_source);
+                    variant_candidate_source);
         });
 
         auto thread_write_variants = utils::jthread([&] {

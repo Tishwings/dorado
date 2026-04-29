@@ -199,6 +199,7 @@ config_version = 4
 supported_basecallers = [ "dna_r10.4.1_e8.2_400bps_hac@v5.2.0",]
 chunk_size = 300
 chunk_overlap = 100
+candidate_filtering = true
 
 [model]
 type = "VariantPerceiver"
@@ -401,10 +402,16 @@ CATCH_TEST_CASE("ModelConfig parser applies top-level chunk defaults and config 
     const ModelConfig v1_config = parse_config_string(LSTM_READ_ALIGNMENT_V1);
     CATCH_CHECK(v1_config.chunk_size == 10000);
     CATCH_CHECK(v1_config.chunk_overlap == 1000);
+    CATCH_CHECK_FALSE(v1_config.candidate_filtering);
+
+    const ModelConfig v3_config = parse_config_string(insert_after(
+            LSTM_READ_ALIGNMENT_V3, "config_version = 3\n", "candidate_filtering = true\n"));
+    CATCH_CHECK_FALSE(v3_config.candidate_filtering);
 
     const ModelConfig v4_config = parse_config_string(VARIANT_PERCEIVER_V4);
     CATCH_CHECK(v4_config.chunk_size == 300);
     CATCH_CHECK(v4_config.chunk_overlap == 100);
+    CATCH_CHECK(v4_config.candidate_filtering);
 }
 
 CATCH_TEST_CASE("Top-level validation catches version boundaries and unknown keys", TEST_GROUP) {
@@ -414,6 +421,7 @@ CATCH_TEST_CASE("Top-level validation catches version boundaries and unknown key
                                      "\"dna_r10.4.1_e8.2_400bps_hac@v4.2.0\"\n"));
     check_invalid_config(erase_first(VARIANT_PERCEIVER_V4, "chunk_size = 300\n"));
     check_invalid_config(erase_first(VARIANT_PERCEIVER_V4, "chunk_overlap = 100\n"));
+    check_invalid_config(erase_first(VARIANT_PERCEIVER_V4, "candidate_filtering = true\n"));
     check_invalid_config(
             insert_after(GRU_COUNTS_V1, "config_version = 1\n", "undocumented = true\n"));
     check_invalid_config(VARIANT_PERCEIVER_V4 +
