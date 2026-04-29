@@ -96,8 +96,8 @@ struct Options {
     bool continue_on_error = false;
 
     double min_snp_accuracy = 0.0;
-    bool tiled_regions = false;     // Candidate region selection using a tiled approach.
-    bool tiled_ext_flanks = false;  // Select neighboring windows if there are deletions in flanks.
+    bool tiled_regions = true;      // Candidate region selection using a tiled approach.
+    bool tiled_ext_flanks = true;   // Select neighboring windows if there are deletions in flanks.
     int32_t tiled_ext_major = 10;   // Number of flanking major positions to check for the trigger.
     int32_t tiled_ext_min_cov = 3;  // Minimum deletion coverage to trigger the extension.
     float tiled_ext_cov_fract = 0.25f;  // Fraction of deletion coverage to trigger the heuristic.
@@ -274,17 +274,19 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .hidden()
                 .help("Minimum number of flanking bases in samples around candidate variants.")
                 .scan<'i', int>();
-        parser.add_argument("--tiled-regions")
+        parser.add_argument("--candidate-centered-regions")
                 .hidden()
-                .help("Construct regions around variants using a tiled approach. Ignores the "
-                      "--variant-flanking-bases and uses --window-overlap instead.")
+                .help("Construct regions centered around candidate variants instead of using the "
+                      "default tiled approach. Uses --variant-flanking-bases instead of "
+                      "--window-overlap.")
                 .flag()
                 .default_value(false);
-        parser.add_argument("--tiled-ext-flanks")
+        parser.add_argument("--no-tiled-ext-flanks")
                 .hidden()
-                .help("Heuristic to additionally process neighboring windows if selected windows "
-                      "have deletions in the flanks.")
-                .flag();
+                .help("Disable the heuristic that additionally processes neighboring windows if "
+                      "selected tiled windows have deletions in the flanks.")
+                .flag()
+                .default_value(false);
         parser.add_argument("--tiled-ext-major")
                 .hidden()
                 .help("Number of major bases to check in the flanks to trigger the extension "
@@ -449,8 +451,8 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
                           : (opt.unphased)        ? secondary::HaplotagSource::UNPHASED
                                                   : secondary::HaplotagSource::COMPUTE;
 
-    opt.tiled_regions = parser.get<bool>("tiled-regions");
-    opt.tiled_ext_flanks = parser.get<bool>("tiled-ext-flanks");
+    opt.tiled_regions = !parser.get<bool>("candidate-centered-regions");
+    opt.tiled_ext_flanks = !parser.get<bool>("no-tiled-ext-flanks");
     opt.tiled_ext_major = parser.get<int>("tiled-ext-major");
     opt.tiled_ext_min_cov = parser.get<int>("tiled-ext-min-cov");
     opt.tiled_ext_cov_fract = parser.get<float>("tiled-ext-cov-fract");
