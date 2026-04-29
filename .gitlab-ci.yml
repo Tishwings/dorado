@@ -122,17 +122,6 @@ variables:
     PARALLEL_JOBS=$(( 8 > PARALLEL_JOBS ? 8 : PARALLEL_JOBS ))
   - echo "PARALLEL_JOBS '${PARALLEL_JOBS}'"
 
-.set_flashattention_parallel_jobs:
-  - |
-    FLASHATTN3_BUILD_JOBS=""
-    if [[ -n "${DORADO_FLASHATTN3_BUILD_JOBS:-}" ]]; then
-      FLASHATTN3_BUILD_JOBS=${DORADO_FLASHATTN3_BUILD_JOBS}
-      if (( FLASHATTN3_BUILD_JOBS > PARALLEL_JOBS )); then
-        FLASHATTN3_BUILD_JOBS=${PARALLEL_JOBS}
-      fi
-    fi
-  - echo "FLASHATTN3_BUILD_JOBS '${FLASHATTN3_BUILD_JOBS}'"
-
 .setup_ccache:
   - if [[ -d '/data/gitlab-ci-cache' ]] && [[ $OSTYPE != 'darwin'* ]] && [[ $OSTYPE != 'msys' ]]; then
   -   export CCACHE_DIR=/data/gitlab-ci-cache
@@ -142,14 +131,9 @@ variables:
 .run_dorado_cmake_build:
   - echo Dorado build stage
   - !reference [.set_parallel_jobs]
-  - !reference [.set_flashattention_parallel_jobs]
   - !reference [.setup_ccache]
   - echo "BUILD_OPTIONS '${BUILD_OPTIONS}'"
   - eval cmake ${BUILD_OPTIONS} -S . -B ${BUILD_DIR} -D CMAKE_BUILD_TYPE=${BUILD_TYPE} -D DORADO_ENABLE_BENCHMARK_TESTS=ON -DDORADO_3RD_PARTY_DOWNLOAD=dorado-dependencies
-  - |
-    if [[ -n "${FLASHATTN3_BUILD_JOBS:-}" ]]; then
-      cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} --target dorado_flashattention3 -j ${FLASHATTN3_BUILD_JOBS}
-    fi
   - cmake --build ${BUILD_DIR} --config ${BUILD_TYPE} --target ${BUILD_TARGET} -j ${PARALLEL_JOBS}
 
 .run_dorado_cmake_ctest:
