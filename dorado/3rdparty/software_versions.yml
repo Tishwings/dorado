@@ -75,11 +75,12 @@ elzip:
 flash-attention:
     description: >
         Fast and memory-efficient exact attention
-    version: "fa4-v4.0.0.beta9"
+    version: "fa4-v4.0.0.beta10"
     url: https://github.com/Dao-AILab/flash-attention.git
-    license: flashattention/LICENSE
+    license: <flashattention>/share/LICENSE
     files:
-        - flashattention
+        - PATH_NOT_AVAILABLE
+    requires: DORADO_HAS_FLASHATTENTION3
 htslib:
     description: >
         C library for accessing common file formats, such as SAM, CRAM and VCF

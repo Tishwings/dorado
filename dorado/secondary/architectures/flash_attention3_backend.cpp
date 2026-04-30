@@ -9,7 +9,7 @@
 
 #if DORADO_HAS_FLASHATTENTION3
 #include <ATen/cuda/CUDAContextLight.h>
-#include <hopper/flash_api.h>
+#include <flash_api.h>
 #endif
 
 namespace dorado::secondary {

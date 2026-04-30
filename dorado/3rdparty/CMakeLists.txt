@@ -108,14 +108,6 @@ set(BUILD_TESTING ON)
 # date
 add_subdirectory(date EXCLUDE_FROM_ALL)
 
-# FlashAttention3 integration wrapper
-apply_3rdparty_patch(flashattention)
-apply_3rdparty_patch_file(flashattention flashattention_cutlass_windows_cuda13_tma.patch
-    WORKING_DIRECTORY csrc/cutlass
-)
-apply_3rdparty_patch_file(flashattention flashattention_windows_cuda13_tma.patch)
-add_subdirectory(flashattention_dorado)
-
 # toml11
 apply_3rdparty_patch(toml11)
 set(TOML11_PRECOMPILE ON)

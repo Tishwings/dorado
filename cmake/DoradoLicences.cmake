@@ -22,8 +22,8 @@ function(dorado_generate_licence_header_from_yaml)
     dorado_emit_licence_header_start_(${arg_TARGET} output_file)
 
     # Parse the SBOM.
-    function(callback_ NAME LICENCE OMIT)
-        dorado_emit_licence_for_dependency_("${output_file}" "${arg_PATH}" "${NAME}" "${LICENCE}" "${OMIT}")
+    function(callback_ NAME LICENCE)
+        dorado_emit_licence_for_dependency_("${output_file}" "${arg_PATH}" "${NAME}" "${LICENCE}")
     endfunction()
     set(yaml_file "${arg_PATH}/${arg_SBOM}")
     dorado_parse_sbom_yaml_("${yaml_file}" callback_)
@@ -42,35 +42,54 @@ function(dorado_parse_sbom_yaml_ FILE CALLBACK)
     # Read the yaml.
     file(STRINGS "${FILE}" yaml_lines NO_HEX_CONVERSION)
 
+    function(do_emit_)
+        # If the dep has a requirement then check it.
+        if (DEFINED dep_requires)
+            if (NOT DEFINED ${dep_requires})
+                # To avoid silent failures the requirement should always be set to something.
+                message(FATAL_ERROR "Requirement doesn't exist for ${dep_name}: ${dep_requires}")
+            elseif (NOT ${dep_requires})
+                # Omit this dependency since the requirement isn't enabled.
+                set(dep_omit YES)
+            endif()
+        endif()
+        if (NOT dep_omit)
+            cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}")
+        endif()
+    endfunction()
+
     # Parse the YAML line by line, assuming that licence is a single line.
     set(dep_name "<not set>")
     set(dep_license "PATH_NOT_AVAILABLE")
     set(dep_omit YES)
+    unset(dep_requires)
     foreach(line IN LISTS yaml_lines)
         if (line MATCHES "^([a-zA-Z].*):$") # new dependency
-            set (_dep "${CMAKE_MATCH_1}")
-            cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}" "${dep_omit}")
+            set(new_dep "${CMAKE_MATCH_1}")
+
+            # Emit the previous dependency.
+            do_emit_()
 
             # Setup next dependency.
-            set(dep_name "${_dep}")
+            set(dep_name "${new_dep}")
             set(dep_license "PATH_NOT_AVAILABLE")
             set(dep_omit NO)
+            unset(dep_requires)
 
-        elseif (line MATCHES "^[ \t]+(license|omit):[ \t]+(.*)$") # key-value pair
+        elseif (line MATCHES "^[ \t]+(license|omit|requires):[ \t]+(.*)$") # key-value pair
             set("dep_${CMAKE_MATCH_1}" "${CMAKE_MATCH_2}")
         endif()
     endforeach()
 
     # Emit the final one.
-    cmake_language(CALL ${CALLBACK} "${dep_name}" "${dep_license}" "${dep_omit}")
+    do_emit_()
+
+    # If the file changes we'll want to re-parse it.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FILE}")
 endfunction()
 
 # Emit a licence for a dependency in the YAML.
-function(dorado_emit_licence_for_dependency_ OUTPUT ROOT NAME LICENCE OMIT)
-    if (OMIT)
-        return()
-    endif()
-
+function(dorado_emit_licence_for_dependency_ OUTPUT ROOT NAME LICENCE)
     if (LICENCE STREQUAL "PATH_NOT_AVAILABLE")
         message(WARNING "No licence file provided for ${NAME} in ${yaml_file}")
         return()
@@ -78,6 +97,7 @@ function(dorado_emit_licence_for_dependency_ OUTPUT ROOT NAME LICENCE OMIT)
 
     # Look for special cases prefixes.
     set(prefix_pod5 "${DORADO_3RD_PARTY_DOWNLOAD}/${POD5_DIR}")
+    set(prefix_flashattention "${FLASHATTENTION_PATH}")
     if (LICENCE MATCHES "^<(.*)>(.*)$")
         set(prefix prefix_${CMAKE_MATCH_1})
         if (NOT DEFINED ${prefix})
