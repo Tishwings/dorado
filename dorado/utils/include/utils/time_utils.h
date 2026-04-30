@@ -20,4 +20,8 @@ std::string get_string_timestamp_from_unix_time_sZ(int64_t time_stamp_s);
 // Time stamp can be specified up to microseconds
 int64_t get_unix_time_ms_from_string_timestamp(const std::string& time_stamp);
 
+// Thread-safe versions of gmtime() and localtime().
+std::tm gmtime_threadsafe(const std::time_t* time_in);
+std::tm localtime_threadsafe(const std::time_t* time_in);
+
 }  // namespace dorado::utils
