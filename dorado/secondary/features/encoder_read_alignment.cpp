@@ -405,7 +405,7 @@ at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch,
     }
 
     const int64_t batch_size = static_cast<int64_t>(std::size(batch));
-    const auto feature_shape = batch.front().sizes();
+    const std::vector<int64_t> feature_shape = batch.front().sizes().vec();
 
     // Adjust negative values in features to 0.
     for (auto& data : batch) {
@@ -418,14 +418,16 @@ at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch,
     if (std::size(feature_shape) == 3) {
         // spdlog::info("About to merge tensors.");
 
-        const int64_t npos = feature_shape[0];
-        const int64_t nfeats = feature_shape[2];
+        int64_t max_npos = 0;
+        int64_t max_nfeats = 0;
 
         // Compute max depth across samples.
         std::vector<int64_t> depths;
         depths.reserve(batch_size);
         for (const auto& data : batch) {
-            depths.push_back(data.sizes()[1]);
+            max_npos = std::max(max_npos, data.size(0));
+            max_nfeats = std::max(max_nfeats, data.size(2));
+            depths.push_back(data.size(1));
         }
         const int64_t max_depth = *std::max_element(std::begin(depths), std::end(depths));
 
@@ -436,13 +438,15 @@ at::Tensor EncoderReadAlignment::collate(std::vector<at::Tensor> batch,
         }
 
         // Initialize a zero-filled feature tensor.
-        features = at::zeros({batch_size, npos, max_depth, nfeats}, opts);
+        features = at::zeros({batch_size, max_npos, max_depth, max_nfeats}, opts);
 
         // Fill the tensor with sample data, padding as necessary.
         for (size_t i = 0; i < std::size(batch); ++i) {
-            features.index_put_({static_cast<int64_t>(i), at::indexing::Slice(),
-                                 at::indexing::Slice(0, depths[i]), at::indexing::Slice()},
-                                batch[i]);
+            const at::Tensor& data = batch[i];
+            features.index_put_(
+                    {static_cast<int64_t>(i), at::indexing::Slice(0, data.size(0)),
+                     at::indexing::Slice(0, depths[i]), at::indexing::Slice(0, data.size(2))},
+                    data);
         }
     } else {
         spdlog::warn(

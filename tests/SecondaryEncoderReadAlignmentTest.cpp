@@ -1777,4 +1777,56 @@ CATCH_TEST_CASE("synthetic_test_07-populate_draft_seq_tensor", TEST_GROUP) {
     }
 }
 
+CATCH_TEST_CASE("EncoderReadAlignment::collate preserves padded batch shape after clamping",
+                TEST_GROUP) {
+    const auto temp_dir = make_temp_dir("encoder_read_aln_collate_test");
+    const auto temp_in_ref_fn = temp_dir.m_path / "in.ref.fasta";
+    const auto temp_in_bam_fn = temp_dir.m_path / "in.aln.bam";
+
+    const std::vector<std::pair<std::string, std::string>> targets{{"contig_1", "ACTGAACTGA"}};
+    const std::vector<BamRecord> records{
+            {"read_01", 0, 0, 0, 50, "10M", "ACTGAACTGA", "", {}, {}, 0},
+    };
+    write_bam(temp_in_bam_fn, targets, records);
+    write_ref(temp_in_ref_fn, targets);
+
+    const std::vector<std::string> dtypes{};
+    const std::string tag_name{};
+    const int32_t tag_value{0};
+    const bool tag_keep_missing{false};
+    const std::string read_group{};
+    const int32_t min_mapq{1};
+    const int32_t max_reads{100};
+    const double min_snp_accuracy{0.0};
+    const bool row_per_read{false};
+    const bool include_dwells{false};
+    const bool clip_to_zero{true};
+    const bool right_align_insertions{false};
+    const bool include_haplotype_column{false};
+    const HaplotagSource hap_source{HaplotagSource::BAM_HAP_TAG};
+    const std::optional<std::filesystem::path> phasing_bin{};
+    const bool include_snp_qv_column{false};
+    const KadayashiOptions kadayashi_opt{};
+
+    EncoderReadAlignment encoder(temp_in_ref_fn, temp_in_bam_fn, dtypes, tag_name, tag_value,
+                                 tag_keep_missing, read_group, min_mapq, max_reads,
+                                 min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
+                                 right_align_insertions, include_haplotype_column, hap_source,
+                                 phasing_bin, include_snp_qv_column, kadayashi_opt);
+
+    const at::TensorOptions opts = at::TensorOptions().dtype(at::kChar).device(at::kCPU);
+    std::vector<at::Tensor> batch;
+    batch.emplace_back(at::full({300, 1, 1}, -1, opts));
+    batch.emplace_back(at::full({300, 2, 1}, 7, opts));
+
+    const at::Tensor result = encoder.collate(std::move(batch), false);
+
+    CATCH_CHECK(result.sizes().vec() == std::vector<int64_t>{2, 300, 2, 1});
+    CATCH_CHECK(result.index({0}).max().item<int64_t>() == 0);
+    CATCH_CHECK(result.index({1, torch::indexing::Slice(), torch::indexing::Slice(0, 2),
+                              torch::indexing::Slice()})
+                        .min()
+                        .item<int64_t>() == 7);
+}
+
 }  // namespace dorado::secondary::tests
