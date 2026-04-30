@@ -373,7 +373,8 @@ void validate_config_table(const toml::value& table,
     }
 
     if (!std::empty(inherited_type)) {
-        if (const ParamSpecs* specs = find_specs(typed_section_key(section, inherited_type))) {
+        const std::string typed_section = typed_section_key(section, inherited_type);
+        if (const ParamSpecs* specs = find_specs(typed_section)) {
             validate_table(table, *specs, version, section);
         }
     }
@@ -447,7 +448,8 @@ std::string get_model_config_top_level_value(
         const std::unordered_map<std::string, std::string>& values,
         const int32_t version,
         const std::string& key) {
-    const ParamSpecs& specs = require_specs("");
+    const std::string section;
+    const ParamSpecs& specs = require_specs(section);
     const VersionedParamSpec* spec = find_spec(specs, key);
     if (spec == nullptr) {
         throw std::runtime_error("Unexpected model config key '" + key + "'.");
