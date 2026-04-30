@@ -170,9 +170,11 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Batch size for inference. Default: 0 for auto batch size detection.")
                 .default_value(0)
                 .scan<'i', int>();
-        parser.add_argument("--window-len").help("Window size for processing.").scan<'i', int>();
+        parser.add_argument("--window-len")
+                .help("Overrides the model-defined window (chunk) size for inference.")
+                .scan<'i', int>();
         parser.add_argument("--window-overlap")
-                .help("Overlap length between windows.")
+                .help("Overrides the model-defined window (chunk) overlap length for inference.")
                 .scan<'i', int>();
         parser.add_argument("--bam-chunk")
                 .help("Size of reference chunks to parse from the input BAM at a time.")
@@ -260,9 +262,10 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
 
         // Candidate region selection options.
         parser.add_argument("--candidate-filtering")
-                .help("Enable candidate region selection to improve runtime, forcing it on when "
-                      "specified. If haplotag_source == COMPUTE, computed "
-                      "internally, otherwise 'phasing_bin_path' is loaded.")
+                .help("Overrides the model-defined candidate region filtering feature and turns on "
+                      "region pruning before inference to improve runtime"
+                      "If --candidates file is not provided, candidate regions are computed "
+                      "internally.")
                 .flag();
         parser.add_argument("--candidates")
                 .hidden()
