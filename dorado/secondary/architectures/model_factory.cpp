@@ -58,13 +58,13 @@ void load_parameters(ModelTorchBase& model, const std::filesystem::path& in_pt) 
     const std::unordered_set<std::string> non_persistent_buffers =
             model.get_non_persistent_buffers();
 
-    if (spdlog::default_logger()->should_log(spdlog::level::debug)) {
+    if (spdlog::default_logger()->should_log(spdlog::level::trace)) {
         const torch::OrderedDict<std::string, at::Tensor> model_params = model.named_parameters();
         for (const auto& w : model_params) {
-            spdlog::debug("[model_params] w.key() = {}", w.key());
+            spdlog::trace("[model_params] w.key() = {}", w.key());
         }
         for (const auto& buffer : model.named_buffers()) {
-            spdlog::debug("[model_params] Buffer key: {}, shape: {}, persistent: {}", buffer.key(),
+            spdlog::trace("[model_params] Buffer key: {}, shape: {}, persistent: {}", buffer.key(),
                           (buffer.value().defined() ? utils::tensor_shape_as_string(buffer.value())
                                                     : "undefined"),
                           ((non_persistent_buffers.count(buffer.key())) ? "no" : "yes"));
@@ -79,9 +79,9 @@ void load_parameters(ModelTorchBase& model, const std::filesystem::path& in_pt) 
         const c10::Dict<c10::IValue, c10::IValue> weights =
                 torch::jit::pickle_load(bytes).toGenericDict();
 
-        if (spdlog::default_logger()->should_log(spdlog::level::debug)) {
+        if (spdlog::default_logger()->should_log(spdlog::level::trace)) {
             for (const auto& w : weights) {
-                spdlog::debug("[loaded pt_param] w.key() = {}", w.key().toStringRef());
+                spdlog::trace("[loaded pt_param] w.key() = {}", w.key().toStringRef());
             }
         }
 

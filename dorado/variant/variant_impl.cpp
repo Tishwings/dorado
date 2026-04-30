@@ -288,7 +288,7 @@ process_single_bam_window(
 
     const std::string& ref_name = draft_lens[bam_window.seq_id].first;
 
-    spdlog::debug(
+    spdlog::trace(
             "[process_single_bam_window tid = {}] Starting to generate the sample for region: "
             "{}:{}-{}",
             tid, ref_name, (bam_window.start + 1), bam_window.end);
@@ -337,7 +337,7 @@ process_single_bam_window(
     secondary::Sample sample = encoder.encode_region(ref_name, bam_window.start, bam_window.end,
                                                      bam_window.seq_id, kadayashi_result.qname2hp);
 
-    spdlog::debug(
+    spdlog::trace(
             "[process_single_bam_window tid = {}] Generated sample for region: {}:{}-{}, sample: "
             "[{}]",
             tid, ref_name, (bam_window.start + 1), bam_window.end,
@@ -362,7 +362,7 @@ process_single_bam_window(
                MIN_SAMPLE_POSITIONS_FOR_VARIANT_INFERENCE;
     });
 
-    spdlog::debug(
+    spdlog::trace(
             "[process_single_bam_window tid = {}] After splitting on min-depth/discontinuities: "
             "{}:{}-{}, "
             "local_samples.size = {}",
@@ -413,7 +413,7 @@ process_single_bam_window(
         }
     }
 
-    spdlog::debug(
+    spdlog::trace(
             "[process_single_bam_window tid = {}] After final sample extraction: {}:{}-{}, "
             "local_samples.size = {}",
             tid, ref_name, (bam_window.start + 1), bam_window.end, std::size(local_samples));

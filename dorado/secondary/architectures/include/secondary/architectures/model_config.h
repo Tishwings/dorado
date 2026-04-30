@@ -12,6 +12,9 @@ namespace dorado::secondary {
 struct ModelConfig {
     int32_t version = 0;
     std::unordered_set<std::string> supported_basecallers{};
+    int32_t chunk_size = 0;
+    int32_t chunk_overlap = 0;
+    bool candidate_filtering = false;
 
     // Model section.
     std::string model_type{};

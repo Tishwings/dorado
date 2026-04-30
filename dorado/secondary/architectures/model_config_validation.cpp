@@ -83,6 +83,7 @@ const ParamSpecs top_level{
         required_since("supported_basecallers", ModelConfigValueType::ARRAY, 2, ""),
         required_since("chunk_size", ModelConfigValueType::INTEGER, 4, "10000"),
         required_since("chunk_overlap", ModelConfigValueType::INTEGER, 4, "1000"),
+        required_since("candidate_filtering", ModelConfigValueType::BOOLEAN, 4, "false"),
         required("model", ModelConfigValueType::TABLE),
         required("feature_encoder", ModelConfigValueType::TABLE),
         required("label_scheme", ModelConfigValueType::TABLE),
@@ -372,7 +373,8 @@ void validate_config_table(const toml::value& table,
     }
 
     if (!std::empty(inherited_type)) {
-        if (const ParamSpecs* specs = find_specs(typed_section_key(section, inherited_type))) {
+        const std::string typed_section = typed_section_key(section, inherited_type);
+        if (const ParamSpecs* specs = find_specs(typed_section)) {
             validate_table(table, *specs, version, section);
         }
     }
@@ -440,6 +442,19 @@ std::string get_versioned_value(const std::unordered_map<std::string, std::strin
     }
 
     throw std::runtime_error("Model config is missing required key '" + key + "'.");
+}
+
+std::string get_model_config_top_level_value(
+        const std::unordered_map<std::string, std::string>& values,
+        const int32_t version,
+        const std::string& key) {
+    const std::string section;
+    const ParamSpecs& specs = require_specs(section);
+    const VersionedParamSpec* spec = find_spec(specs, key);
+    if (spec == nullptr) {
+        throw std::runtime_error("Unexpected model config key '" + key + "'.");
+    }
+    return get_versioned_value(values, *spec, version, "top-level");
 }
 
 std::string get_model_config_model_value(const ModelConfig& config, const std::string& key) {

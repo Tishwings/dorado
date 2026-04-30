@@ -46,6 +46,11 @@ std::string get_versioned_value(const std::unordered_map<std::string, std::strin
                                 int32_t version,
                                 const std::string& context);
 
+std::string get_model_config_top_level_value(
+        const std::unordered_map<std::string, std::string>& values,
+        int32_t version,
+        const std::string& key);
+
 std::string get_model_config_model_value(const ModelConfig& config, const std::string& key);
 
 std::string get_model_config_feature_encoder_value(const ModelConfig& config,

@@ -72,6 +72,7 @@ Arrays and tables are stored using their TOML-formatted string representation.
 | `supported_basecallers` | `ARRAY` | v2+ | yes from v2 | Before v2, versioned default is `""`. |
 | `chunk_size` | `INTEGER` | v4+ | yes from v4 | Before v4, default is `10000`. |
 | `chunk_overlap` | `INTEGER` | v4+ | yes from v4 | Before v4, default is `1000`. |
+| `candidate_filtering` | `BOOLEAN` | v4+ | yes from v4 | Before v4, default is `false`. |
 | `model` | `TABLE` | all | yes | Typed section. |
 | `feature_encoder` | `TABLE` | all | yes | Typed section. |
 | `label_scheme` | `TABLE` | all | yes | Typed section. |
@@ -267,6 +268,7 @@ config_version = 4
 supported_basecallers = ["dna_r10.4.1_e8.2_400bps_hac@v5.2.0"]
 chunk_size = 300
 chunk_overlap = 100
+candidate_filtering = true
 
 [model]
 type = "VariantPerceiver"
