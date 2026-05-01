@@ -135,11 +135,10 @@ std::string NestedFileStructure::filetype() const {
 };
 
 std::string NestedFileStructure::format_alias(const HtsData& hts_data) const {
-    std::string_view barcode_name;
     if (hts_data.barcoding_result && !hts_data.barcoding_result->alias.empty()) {
         return hts_data.barcoding_result->alias;
     } else if (hts_data.barcoding_result && !hts_data.barcoding_result->barcode_name.empty()) {
-        barcode_name = hts_data.barcoding_result->barcode_name;
+        return hts_data.barcoding_result->normalized_barcode_name;
     } else if (hts_data.bam_ptr) {
         // No barcoding result - check the BC tag in case this is a barcoded read we've read in from file
         auto get_tag_value = [&hts_data](const char* tag) -> std::string {
@@ -165,18 +164,12 @@ std::string NestedFileStructure::format_alias(const HtsData& hts_data) const {
         }
     }
 
-    // No barcode
-    if (barcode_name.empty()) {
-        // Unclassified reads read from file won't have a BC tag. If we've been told this is a demux operation,
-        // ensure these reads are correctly placed in the unclassified folder
-        if (m_assume_barcodes) {
-            return UNCLASSIFIED_STR;
-        }
-        return {};
+    // Unclassified reads read from file won't have a BC tag. If we've been told this is a demux operation,
+    // ensure these reads are correctly placed in the unclassified folder
+    if (m_assume_barcodes) {
+        return UNCLASSIFIED_STR;
     }
-
-    // Return the alias if found otherwise fall back to the barcode name
-    return barcode_kits::normalize_barcode_name(barcode_name);
+    return {};
 };
 
 std::string NestedFileStructure::batch_number() const { return "0"; };

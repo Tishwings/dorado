@@ -41,8 +41,7 @@ void HtsFileWriter::prepare_item(HtsData &hts_data) const {
 
         if (hts_data.barcoding_result &&
             hts_data.barcoding_result->barcode_name != UNCLASSIFIED_STR) {
-            std::string barcode_name =
-                    barcode_kits::normalize_barcode_name(hts_data.barcoding_result->barcode_name);
+            std::string barcode_name = hts_data.barcoding_result->normalized_barcode_name;
             std::string_view alias = hts_data.barcoding_result->alias.empty()
                                              ? barcode_name
                                              : hts_data.barcoding_result->alias;

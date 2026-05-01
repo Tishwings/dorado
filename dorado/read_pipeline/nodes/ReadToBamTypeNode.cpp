@@ -45,8 +45,7 @@ void ReadToBamTypeNode::input_thread_fn() {
                 .protocol_run_id = std::move(read_common_data.run_id),
                 .acquisition_id = std::move(read_common_data.acquisition_id),
                 .barcode_id = read_common_data.barcoding_result
-                                      ? barcode_kits::normalize_barcode_name(
-                                                read_common_data.barcoding_result->barcode_name)
+                                      ? read_common_data.barcoding_result->normalized_barcode_name
                                       : std::string(),
                 .barcode_alias = read_common_data.barcoding_result
                                          ? read_common_data.barcoding_result->alias

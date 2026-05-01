@@ -25,7 +25,7 @@ const std::string UNCLASSIFIED_BARCODE = "unclassified";
 std::string generate_barcode_string(const dorado::BarcodeScoreResult& bc_res) {
     std::string bc;
     if (bc_res.barcode_name != UNCLASSIFIED_BARCODE) {
-        bc = dorado::barcode_kits::generate_standard_barcode_name(bc_res.kit, bc_res.barcode_name);
+        bc = bc_res.kit + "_" + bc_res.normalized_barcode_name;
     } else {
         bc = UNCLASSIFIED_BARCODE;
     }
@@ -121,8 +121,7 @@ void BarcodeClassifierNode::barcode(BamMessage& message,
     }
 
     read.barcoding_result = std::make_shared<BarcodeScoreResult>(std::move(bc_res));
-    read.read_attrs.barcode_id =
-            barcode_kits::normalize_barcode_name(read.barcoding_result->barcode_name);
+    read.read_attrs.barcode_id = read.barcoding_result->normalized_barcode_name;
     read.read_attrs.barcode_alias = read.barcoding_result->alias;
     utils::trace_log("Barcode for {} is {}", bam_get_qname(irecord), bc);
     if (bc != UNCLASSIFIED_BARCODE) {

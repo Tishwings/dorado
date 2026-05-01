@@ -7,6 +7,7 @@
 #include "hts_writer/StreamHtsFileWriter.h"
 #include "hts_writer/Structure.h"
 #include "utils/PostCondition.h"
+#include "utils/barcode_kits.h"
 
 #include <catch2/catch_message.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -629,6 +630,8 @@ CATCH_TEST_CASE(TEST_GROUP " Writer Nested Structures with Barcodes", TEST_GROUP
 
     auto barcode_score_result = std::make_shared<BarcodeScoreResult>();
     barcode_score_result->barcode_name = barcode_name;
+    barcode_score_result->normalized_barcode_name =
+            barcode_kits::normalize_barcode_name(barcode_name);
     if (alias.empty()) {
         alias = barcode_name;
     } else {

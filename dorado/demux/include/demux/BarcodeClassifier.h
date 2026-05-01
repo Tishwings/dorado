@@ -45,6 +45,10 @@ private:
             std::string_view read_seq,
             const BarcodeCandidateKit& candidate,
             const BarcodeFilterSet& allowed_barcodes) const;
+    std::pair<std::vector<BarcodeScoreResult>, std::vector<BarcodeScoreResult>>
+    calculate_barcode_score_double_ends_dual(std::string_view read_seq,
+                                             const BarcodeCandidateKit& candidate,
+                                             const BarcodeFilterSet& allowed_barcodes) const;
     std::vector<BarcodeScoreResult> calculate_barcode_score(
             std::string_view read_seq,
             const BarcodeCandidateKit& candidate,
