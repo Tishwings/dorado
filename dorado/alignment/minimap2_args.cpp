@@ -108,33 +108,32 @@ void add_arguments(argparse::ArgumentParser& parser) {
 
     parser.add_argument("-Y")
             .help("minimap2 uses soft clipping for supplementary alignments")
-            .implicit_value(true);
+            .flag();
 
     parser.add_argument("-r").help(
             "minimap2 chaining/alignment bandwidth and optionally long-join bandwidth "
             "specified as NUM,[NUM]");
 
     parser.add_argument("--junc-bed")
-            .help("Optional file with gene annotations in the BED12 format (aka 12-column BED), or "
+            .help("optional file with gene annotations in the BED12 format (aka 12-column BED), or "
                   "intron positions in 5-column BED. With this option, minimap2 prefers splicing "
                   "in annotations.");
-
     // Setting options to lr:hq which is appropriate for high quality nanopore reads.
     parser.add_argument("-x")
             .help("minimap2 preset for indexing and mapping.")
             .default_value(std::string{DEFAULT_MM_PRESET});
 
+    parser.add_argument("--eqx").help("write =/X CIGAR operators").flag();
+
     parser.add_argument("--secondary-seq")
             .hidden()
             .help("minimap2 output seq/qual for secondary and supplementary alignments")
-            .default_value(false)
-            .implicit_value(true);
+            .flag();
 
     parser.add_argument("--print-aln-seq")
             .hidden()
             .help("minimap2 debug print qname and aln_seq")
-            .default_value(false)
-            .implicit_value(true);
+            .flag();
 }
 
 void apply_preset(Minimap2Options& options, const std::string& preset) {
@@ -195,12 +194,14 @@ void apply_mapping_options(const argparse::ArgumentParser& parser, mm_mapopt_t& 
                     "Wrong number of arguments for minimap2 bandwidth option '-r'.");
         }
     }
-    auto soft_clipping = parser.present<bool>("Y");
-    if (soft_clipping.value_or(false)) {
+    if (parser.get<bool>("Y")) {
         options.flag |= MM_F_SOFTCLIP;
     }
     if (parser.get<bool>("secondary-seq")) {
         options.flag |= MM_F_SECONDARY_SEQ;
+    }
+    if (parser.get<bool>("eqx")) {
+        options.flag |= MM_F_EQX;
     }
 }
 
