@@ -18,12 +18,6 @@ namespace {
 
 #if DORADO_HAS_FLASHATTENTION3
 
-bool flash_attention3_compute_capability_supported(const int32_t major, const int32_t minor) {
-    // Keep this aligned with dorado/3rdparty/flashattention_dorado/CMakeLists.txt.
-    // This build only compiles FlashAttention3 kernels for Ampere/Ada (sm80+) and Hopper (sm90a).
-    return (major == 8) || ((major == 9) && (minor == 0));
-}
-
 bool flash_attention3_device_supported() {
     const cudaDeviceProp* dprops = at::cuda::getCurrentDeviceProperties();
     if (dprops == nullptr) {
@@ -38,8 +32,8 @@ bool flash_attention3_device_supported() {
         std::call_once(log_once, [major = dprops->major, minor = dprops->minor]() {
             spdlog::info(
                     "FlashAttention3 disabled on CUDA compute capability {}.{}; this build only "
-                    "contains sm8x and sm90a kernels. Falling back to SDPA.",
-                    major, minor);
+                    "contains {} kernels. Falling back to SDPA.",
+                    major, minor, flash_attention3_supported_arch_description());
         });
     }
 
