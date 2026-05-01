@@ -10,7 +10,6 @@
 #include <spdlog/spdlog.h>
 
 #include <filesystem>
-#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -20,17 +19,6 @@ namespace dorado {
 namespace hts_writer {
 
 namespace fs = std::filesystem;
-
-namespace {
-std::tm get_gmtime(const std::time_t* time) {
-    // gmtime is not threadsafe, so lock.
-    static std::mutex gmtime_mutex;
-    std::lock_guard lock(gmtime_mutex);
-    std::tm* time_buffer = gmtime(time);
-    return *time_buffer;
-}
-
-}  // namespace
 
 SingleFileStructure::SingleFileStructure(const std::string& output_dir, OutputMode mode)
         : m_mode(mode), m_path((fs::path(output_dir) / get_filename())) {
@@ -45,7 +33,7 @@ constexpr std::string_view OUTPUT_FILE_PREFIX{"calls_"};
 
 std::string SingleFileStructure::get_filename() const {
     time_t time_now = time(nullptr);
-    std::tm gm_time_now = get_gmtime(&time_now);
+    std::tm gm_time_now = utils::gmtime_threadsafe(&time_now);
     char timestamp_buffer[32];
     strftime(timestamp_buffer, 32, "%F_T%H-%M-%S", &gm_time_now);
 

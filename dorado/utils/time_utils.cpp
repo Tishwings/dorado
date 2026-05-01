@@ -1,6 +1,7 @@
 #include "utils/time_utils.h"
 
 #include <chrono>
+#include <ctime>
 #include <sstream>
 
 // Some stdlibs don't support parse()/from_stream() yet, or they can't format a sys_time<> correctly.
@@ -82,6 +83,26 @@ int64_t get_unix_time_ms_from_string_timestamp(const std::string& time_stamp) {
     auto epoch = time_us.time_since_epoch();
     auto value = std::chrono::duration_cast<std::chrono::milliseconds>(epoch);
     return value.count();
+}
+
+std::tm gmtime_threadsafe(const std::time_t* time_in) {
+    std::tm time_out{};
+#ifdef _WIN32
+    gmtime_s(&time_out, time_in);
+#else
+    gmtime_r(time_in, &time_out);
+#endif
+    return time_out;
+}
+
+std::tm localtime_threadsafe(const std::time_t* time_in) {
+    std::tm time_out{};
+#ifdef _WIN32
+    localtime_s(&time_out, time_in);
+#else
+    localtime_r(time_in, &time_out);
+#endif
+    return time_out;
 }
 
 }  // namespace dorado::utils
