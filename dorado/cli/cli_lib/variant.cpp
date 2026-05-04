@@ -1373,10 +1373,12 @@ int variant_caller(int argc, char* argv[]) {
         // Resolve the model.
         secondary::ModelConfig model_config;
         if (std::empty(opt.model_str)) {
+            constexpr bool ANY_MODEL = false;
             // Basic mainstream model resolving.
             const std::filesystem::path model_dir = resolve_model(bam_info, opt.models_directory);
             model_config = load_model(model_dir, opt.load_scripted_model);
-            validate_bam_model(bam_info, model_config, false, secondary::LabelSchemeType::DIPLOID);
+            validate_bam_model(bam_info, model_config, ANY_MODEL,
+                               secondary::LabelSchemeType::DIPLOID);
         } else {
             constexpr bool ANY_MODEL = true;
             // Advanced model resolve from a specific path or model name.

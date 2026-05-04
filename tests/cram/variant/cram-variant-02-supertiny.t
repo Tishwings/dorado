@@ -4,7 +4,7 @@ Run a supertiny test case.
   > in_bam=${in_dir}/in.aln.bam
   > in_ref=${in_dir}/in.ref.fasta.gz
   > in_expected=${in_dir}/expected.dorado.vcf
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
