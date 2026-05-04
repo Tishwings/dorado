@@ -1,11 +1,14 @@
 #include "TestUtils.h"
 #include "blocked_bloom_filter.h"
 #include "hts_utils/FastxRandomReader.h"
+#include "hts_utils/hts_file.h"
+#include "hts_utils/hts_types.h"
 #include "local_haplotagging.h"
 #include "secondary/common/bam_file.h"
 #include "secondary/features/medaka_read_matrix.h"
 #include "sequence_utility.h"
 #include "types.h"
+#include "utils/cigar.h"
 
 #include <catch2/catch_test_macros.hpp>
 //#include <spdlog/spdlog.h>
@@ -16,12 +19,16 @@
 #include <stdint.h>
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #define TEST_GROUP "[KadayashiInterfaceTest]"
 
@@ -43,6 +50,156 @@ bool compare_haptags(const std::unordered_map<std::string, int32_t> &result,
     }
 
     return is_good;
+}
+
+struct SyntheticBamRecord {
+    std::string_view qname{};
+    int32_t tid{0};
+    int32_t pos{0};
+    uint16_t flag{0};
+    uint8_t mapq{60};
+    std::string_view cigar{};
+    std::string_view seq{};
+    std::string_view qual{};
+    std::vector<int8_t> dwell_tag{};
+    std::string_view md{};
+    std::optional<int32_t> nm{0};
+    std::optional<int32_t> hp_tag{};
+};
+
+const std::vector<std::string> EMPTY_DTYPES;
+const std::string EMPTY_STRING;
+
+std::vector<uint32_t> parse_cigar_from_string_hts(const std::string_view cigar) {
+    const std::vector<dorado::CigarOp> parsed = dorado::parse_cigar_from_string(cigar);
+    std::vector<uint32_t> ret(std::size(parsed));
+    for (size_t i = 0; i < std::size(parsed); ++i) {
+        const dorado::CigarOp cig = parsed[i];
+        ret[i] = bam_cigar_gen(cig.len, static_cast<int8_t>(cig.op));
+    }
+    return ret;
+}
+
+dorado::SamHdrPtr make_synthetic_bam_header(
+        const std::span<const std::pair<std::string, std::string>> targets) {
+    std::string text = "@HD\tVN:1.6\tSO:unknown\n";
+    for (const auto &[name, seq] : targets) {
+        text += "@SQ\tSN:" + name + "\tLN:" + std::to_string(std::size(seq)) + "\n";
+    }
+
+    return dorado::SamHdrPtr{sam_hdr_parse(std::size(text), text.c_str())};
+}
+
+dorado::BamPtr make_synthetic_bam_record(const SyntheticBamRecord &record) {
+    const std::vector<uint32_t> cigar_vec = parse_cigar_from_string_hts(record.cigar);
+    dorado::BamPtr ret{bam_init1()};
+
+    bam_set1(ret.get(), std::size(record.qname), std::data(record.qname), record.flag, record.tid,
+             record.pos, record.mapq, std::size(cigar_vec), std::data(cigar_vec), -1, -1, 0,
+             std::size(record.seq), std::data(record.seq),
+             std::empty(record.qual) ? nullptr : std::data(record.qual), 0);
+
+    // Move table specification:
+    // https://software-docs.nanoporetech.com/dorado/latest/basecaller/move_table
+    // Tag format: `mv:B:c,[block_stride],[signal_block_move_list]`.
+    if (!std::empty(record.dwell_tag)) {
+        std::vector<uint8_t> aux_data;
+        aux_data.emplace_back('c');
+
+        const uint32_t n = static_cast<uint32_t>(std::size(record.dwell_tag));
+        const uint8_t *n_bytes = reinterpret_cast<const uint8_t *>(&n);
+        aux_data.insert(std::end(aux_data), n_bytes, n_bytes + sizeof(n));
+
+        for (const int8_t val : record.dwell_tag) {
+            aux_data.emplace_back(static_cast<uint8_t>(val));
+        }
+
+        const int32_t aux_data_len = static_cast<int32_t>(std::size(aux_data));
+        bam_aux_append(ret.get(), "mv", 'B', aux_data_len, std::data(aux_data));
+    }
+
+    if (!std::empty(record.md)) {
+        const std::string md{record.md};
+        const int32_t md_len = static_cast<int32_t>(std::size(md) + 1);
+        bam_aux_append(ret.get(), "MD", 'Z', md_len, reinterpret_cast<const uint8_t *>(md.c_str()));
+    }
+
+    if (record.nm) {
+        bam_aux_append(ret.get(), "NM", 'i', sizeof(int32_t),
+                       reinterpret_cast<const uint8_t *>(&(*record.nm)));
+    }
+
+    if (record.hp_tag) {
+        bam_aux_append(ret.get(), "HP", 'i', sizeof(int32_t),
+                       reinterpret_cast<const uint8_t *>(&(*record.hp_tag)));
+    }
+
+    return ret;
+}
+
+void write_synthetic_bam(const std::filesystem::path &out_fn,
+                         const std::span<const std::pair<std::string, std::string>> targets,
+                         const std::span<const SyntheticBamRecord> records) {
+    dorado::utils::HtsFile hts_file(out_fn.string(), dorado::utils::HtsFile::OutputMode::BAM, 1,
+                                    true);
+    dorado::SamHdrPtr header = make_synthetic_bam_header(targets);
+    hts_file.set_header(header.get());
+    for (const SyntheticBamRecord &record : records) {
+        dorado::BamPtr bam_record = make_synthetic_bam_record(record);
+        hts_file.write(bam_record.get());
+    }
+    hts_file.finalise([](size_t) {});
+}
+
+kadayashi::MedakaFeatureMatrixOptions make_medaka_feature_matrix_options(
+        const bool include_dwells,
+        const double min_snp_accuracy,
+        const int32_t max_reads,
+        const bool disable_read_packing) {
+    return {.include_dwells = include_dwells,
+            .include_haplotype_column = false,
+            .include_snp_qv = false,
+            .min_mapq = 1,
+            .num_dtypes = 1,
+            .dtypes = EMPTY_DTYPES,
+            .tag_name = EMPTY_STRING,
+            .tag_value = 0,
+            .tag_keep_missing = false,
+            .readgroup = "",
+            .disable_read_packing = disable_read_packing,
+            .hap_source = kadayashi::FORCE_UNPHASED,
+            .max_reads = max_reads,
+            .right_align_insertions = true,
+            .min_snp_accuracy = min_snp_accuracy};
+}
+
+std::vector<int8_t> make_simple_move_table(const int32_t sequence_length) {
+    std::vector<int8_t> ret(static_cast<size_t>(sequence_length) + 1, 1);
+    ret.front() = 1;
+    return ret;
+}
+
+dorado::secondary::ReadAlignmentData run_feature_matrix_test(
+        const std::span<const SyntheticBamRecord> records,
+        const std::string &refseq,
+        const uint32_t ref_start,
+        const uint32_t ref_end,
+        const kadayashi::MedakaFeatureMatrixOptions &options) {
+    const TempDir temp_dir = make_temp_dir("kadayashi_featmatgen");
+    const std::filesystem::path temp_in_bam_fn = temp_dir.m_path / "in.aln.bam";
+    const std::vector<std::pair<std::string, std::string>> targets{{"ref", refseq}};
+    write_synthetic_bam(temp_in_bam_fn, targets, records);
+
+    dorado::secondary::BamFile bam_file(temp_in_bam_fn, 1);
+    return kadayashi::gen_medaka_feature_matrix_wrapper(bam_file, "ref", ref_start, ref_end, {},
+                                                        options);
+}
+
+int8_t get_feature_matrix_value(const dorado::secondary::ReadAlignmentData &result,
+                                const int32_t pos,
+                                const int32_t lane,
+                                const int32_t feature) {
+    return result.matrix[(pos * result.buffer_reads + lane) * result.featlen + feature];
 }
 
 }  // namespace
@@ -415,9 +572,10 @@ CATCH_TEST_CASE("kadayashi_featmatgen normal case", TEST_GROUP) {
     const std::string ref_name = "ref";
     const uint32_t ref_start = 0;
     const uint32_t ref_end = 1000;
-    const dorado::secondary::ReadAlignmentData mfm = kadayashi::gen_medaka_feature_matrix_wrapper(
-            bam_file, ref_name, ref_start, ref_end, {}, medaka_feature_matrix_options);
-    const std::string medaka_feature_matrix_string = kadayashi::print_medaka_feature_matrix(mfm);
+    const dorado::secondary::ReadAlignmentData result =
+            kadayashi::gen_medaka_feature_matrix_wrapper(bam_file, ref_name, ref_start, ref_end, {},
+                                                         medaka_feature_matrix_options);
+    const std::string medaka_feature_matrix_string = kadayashi::print_medaka_feature_matrix(result);
 
     std::string medaka_feature_matrix_string_expected;
     std::ifstream fp_out_expected(fn_out_expected);
@@ -451,10 +609,361 @@ CATCH_TEST_CASE("kadayashi_featmatgen no input", TEST_GROUP) {
             .max_reads = 100,
             .right_align_insertions = true,
             .min_snp_accuracy = 0.0};
-    const dorado::secondary::ReadAlignmentData mfm = kadayashi::gen_medaka_feature_matrix_wrapper(
-            bam_file, "ref", 0, 1000, {}, medaka_feature_matrix_options);
-    CATCH_CHECK(mfm.n_pos == 0);
-    CATCH_CHECK(mfm.n_reads == 0);
+    const dorado::secondary::ReadAlignmentData result =
+            kadayashi::gen_medaka_feature_matrix_wrapper(bam_file, "ref", 0, 1000, {},
+                                                         medaka_feature_matrix_options);
+    CATCH_CHECK(result.n_pos == 0);
+    CATCH_CHECK(result.n_reads == 0);
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen uses SNP accuracy for read filtering", TEST_GROUP) {
+    /*
+        ref:           0         10        20        30
+        perfect:       [=========)
+        low_snp_acc:   [=========)  filtered at min_snp_accuracy 0.85
+        one_snp:                           [=========)
+
+        Without SNP-accuracy filtering, low_snp_acc overlaps perfect and needs a second lane.
+    */
+    const std::vector<SyntheticBamRecord> records{
+            {.qname = "perfect",
+             .pos = 0,
+             .mapq = 41,
+             .cigar = "10M",
+             .seq = "ACGTACGTAA",
+             .dwell_tag = make_simple_move_table(10),
+             .md = "10",
+             .nm = 0},
+            {.qname = "low_snp_acc",
+             .pos = 0,
+             .mapq = 42,
+             .cigar = "10M",
+             .seq = "ATGTTCGTCA",
+             .dwell_tag = make_simple_move_table(10),
+             .md = "1C2A3A1",
+             .nm = 3},
+            {.qname = "one_snp",
+             .pos = 20,
+             .mapq = 43,
+             .cigar = "10M",
+             .seq = "ACGTTCGTAA",
+             .dwell_tag = make_simple_move_table(10),
+             .md = "4A5",
+             .nm = 1},
+    };
+
+    CATCH_SECTION("filters reads below the SNP accuracy threshold") {
+        const kadayashi::MedakaFeatureMatrixOptions options =
+                make_medaka_feature_matrix_options(false, 0.85, 100, false);
+
+        const dorado::secondary::ReadAlignmentData result =
+                run_feature_matrix_test(records, "ACGTACGTAAACGTACGTAAACGTACGTAA", 0, 30, options);
+
+        CATCH_REQUIRE(result.n_pos == 30);
+        CATCH_REQUIRE(result.n_reads == 1);
+        CATCH_REQUIRE(result.read_ids_left.size() == 1);
+        CATCH_REQUIRE(result.read_ids_right.size() == 1);
+        CATCH_CHECK(result.read_ids_left[0] == "perfect");
+        CATCH_CHECK(result.read_ids_right[0] == "one_snp");
+        CATCH_CHECK(get_feature_matrix_value(result, 0, 0, 0) == 1);
+        CATCH_CHECK(get_feature_matrix_value(result, 24, 0, 0) == 4);
+    }
+
+    CATCH_SECTION("keeps the low-accuracy read when filtering is disabled") {
+        const kadayashi::MedakaFeatureMatrixOptions options =
+                make_medaka_feature_matrix_options(false, 0.0, 100, false);
+
+        const dorado::secondary::ReadAlignmentData result =
+                run_feature_matrix_test(records, "ACGTACGTAAACGTACGTAAACGTACGTAA", 0, 30, options);
+
+        CATCH_REQUIRE(result.n_pos == 30);
+        CATCH_REQUIRE(result.n_reads == 2);
+        CATCH_REQUIRE(result.read_ids_left.size() == 2);
+        CATCH_REQUIRE(result.read_ids_right.size() == 2);
+        CATCH_CHECK(result.read_ids_left[0] == "perfect");
+        CATCH_CHECK(result.read_ids_left[1] == "low_snp_acc");
+        CATCH_CHECK(result.read_ids_right[0] == "one_snp");
+        CATCH_CHECK(result.read_ids_right[1] == "__blank_1");
+        CATCH_CHECK(get_feature_matrix_value(result, 1, 1, 0) == 4);
+    }
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen skips duplicate read names", TEST_GROUP) {
+    /*
+        ref:    0         10
+        dup #1: [=========)
+        dup #2: [=========)  same qname, skipped
+    */
+    const std::vector<SyntheticBamRecord> records{
+            {.qname = "dup",
+             .pos = 0,
+             .mapq = 41,
+             .cigar = "10M",
+             .seq = "ACGTACGTAA",
+             .dwell_tag = make_simple_move_table(10),
+             .md = "10",
+             .nm = 0},
+            {.qname = "dup",
+             .pos = 0,
+             .mapq = 42,
+             .cigar = "10M",
+             .seq = "ACGTACGTAA",
+             .dwell_tag = make_simple_move_table(10),
+             .md = "10",
+             .nm = 0},
+    };
+    const kadayashi::MedakaFeatureMatrixOptions options =
+            make_medaka_feature_matrix_options(false, 0.0, 100, false);
+
+    const dorado::secondary::ReadAlignmentData result =
+            run_feature_matrix_test(records, "ACGTACGTAA", 0, 10, options);
+
+    CATCH_REQUIRE(result.n_pos == 10);
+    CATCH_CHECK(result.n_reads == 1);
+    CATCH_REQUIRE(result.read_ids_left.size() == 1);
+    CATCH_REQUIRE(result.read_ids_right.size() == 1);
+    CATCH_CHECK(result.read_ids_left[0] == "dup");
+    CATCH_CHECK(result.read_ids_right[0] == "dup");
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen reuses lanes at the sentinel boundary", TEST_GROUP) {
+    CATCH_SECTION("last and first base overlap, two lanes are produced") {
+        /*
+            ref:   0    4    9
+            left:  [====)
+            right:     [====)
+        */
+        const std::vector<SyntheticBamRecord> records{
+                {.qname = "left",
+                 .pos = 0,
+                 .mapq = 41,
+                 .cigar = "5M",
+                 .seq = "AAAAA",
+                 .md = "5",
+                 .nm = 0},
+                {.qname = "right",
+                 .pos = 4,
+                 .mapq = 42,
+                 .cigar = "5M",
+                 .seq = "CCCCC",
+                 .md = "5",
+                 .nm = 0},
+        };
+        const kadayashi::MedakaFeatureMatrixOptions options =
+                make_medaka_feature_matrix_options(false, 0.0, 100, false);
+
+        const dorado::secondary::ReadAlignmentData result =
+                run_feature_matrix_test(records, "AAAACCCCC", 0, 9, options);
+
+        CATCH_REQUIRE(result.n_pos == 9);
+        CATCH_CHECK(result.n_reads == 2);
+    }
+
+    CATCH_SECTION("one base gap is still inside the 5bp sentinel and should create a new lane") {
+        /*
+            ref:   0    5 6    11
+            left:  [====)
+            gap:        .
+            right:       [====)
+        */
+        const std::vector<SyntheticBamRecord> records{
+                {.qname = "left",
+                 .pos = 0,
+                 .mapq = 41,
+                 .cigar = "5M",
+                 .seq = "AAAAA",
+                 .md = "5",
+                 .nm = 0},
+                {.qname = "right",
+                 .pos = 6,
+                 .mapq = 42,
+                 .cigar = "5M",
+                 .seq = "CCCCC",
+                 .md = "5",
+                 .nm = 0},
+        };
+        const kadayashi::MedakaFeatureMatrixOptions options =
+                make_medaka_feature_matrix_options(false, 0.0, 100, false);
+
+        const dorado::secondary::ReadAlignmentData result =
+                run_feature_matrix_test(records, "AAAAAACCCCC", 0, 11, options);
+
+        CATCH_REQUIRE(result.n_pos == 11);
+        CATCH_CHECK(result.n_reads == 2);
+    }
+
+    CATCH_SECTION("exact sentinel boundary reuses the lane (two reads are 5bp apart)") {
+        /*
+            ref:   0    5     10   15
+            left:  [====)
+            gap:        .....
+            right:            [====)
+        */
+        const std::vector<SyntheticBamRecord> records{
+                {.qname = "left",
+                 .pos = 0,
+                 .mapq = 41,
+                 .cigar = "5M",
+                 .seq = "AAAAA",
+                 .md = "5",
+                 .nm = 0},
+                {.qname = "right",
+                 .pos = 10,
+                 .mapq = 42,
+                 .cigar = "5M",
+                 .seq = "CCCCC",
+                 .md = "5",
+                 .nm = 0},
+        };
+        const kadayashi::MedakaFeatureMatrixOptions options =
+                make_medaka_feature_matrix_options(false, 0.0, 100, false);
+
+        const dorado::secondary::ReadAlignmentData result =
+                run_feature_matrix_test(records, "AAAAAAAAAACCCCC", 0, 15, options);
+
+        CATCH_REQUIRE(result.n_pos == 15);
+        CATCH_CHECK(result.n_reads == 1);
+        CATCH_REQUIRE(result.read_ids_left.size() == 1);
+        CATCH_REQUIRE(result.read_ids_right.size() == 1);
+        CATCH_CHECK(result.read_ids_left[0] == "left");
+        CATCH_CHECK(result.read_ids_right[0] == "right");
+        CATCH_CHECK(get_feature_matrix_value(result, 0, 0, 0) == 1);
+        CATCH_CHECK(get_feature_matrix_value(result, 10, 0, 0) == 2);
+    }
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen caps lanes while packing", TEST_GROUP) {
+    /*
+        ref: 0 1 2       12
+        r1:  [=========)
+        r2:   [=========)
+        r3:    [=========)  over max_reads=2
+    */
+    const std::vector<SyntheticBamRecord> records{
+            {.qname = "r1",
+             .pos = 0,
+             .mapq = 41,
+             .cigar = "10M",
+             .seq = "AAAAAAAAAA",
+             .md = "10",
+             .nm = 0},
+            {.qname = "r2",
+             .pos = 1,
+             .mapq = 42,
+             .cigar = "10M",
+             .seq = "CCCCCCCCCC",
+             .md = "10",
+             .nm = 0},
+            {.qname = "r3",
+             .pos = 2,
+             .mapq = 43,
+             .cigar = "10M",
+             .seq = "GGGGGGGGGG",
+             .md = "10",
+             .nm = 0},
+    };
+    const kadayashi::MedakaFeatureMatrixOptions options =
+            make_medaka_feature_matrix_options(false, 0.0, 2, false);
+
+    const dorado::secondary::ReadAlignmentData result =
+            run_feature_matrix_test(records, "AAAAAAAAAAAA", 0, 12, options);
+
+    CATCH_REQUIRE(result.n_pos == 12);
+    CATCH_CHECK(result.n_reads == 2);
+    CATCH_CHECK(result.read_ids_left.size() == 2);
+    CATCH_CHECK(result.read_ids_right.size() == 2);
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen preserves over-cap read suffixes", TEST_GROUP) {
+    /*
+        ref: 0    5    10   15        25
+        r1:  [=========)
+        r2:       [===================)  max_reads=1, suffix starts after sentinel
+        lane: [r1      ).....[r2 suffix)
+    */
+    const std::vector<SyntheticBamRecord> records{
+            {.qname = "r1",
+             .pos = 0,
+             .mapq = 41,
+             .cigar = "10M",
+             .seq = "AAAAAAAAAA",
+             .md = "10",
+             .nm = 0},
+            {.qname = "r2",
+             .pos = 5,
+             .mapq = 42,
+             .cigar = "20M",
+             .seq = "CCCCCCCCCCCCCCCCCCCC",
+             .md = "20",
+             .nm = 0},
+    };
+    const kadayashi::MedakaFeatureMatrixOptions options =
+            make_medaka_feature_matrix_options(false, 0.0, 1, false);
+
+    const dorado::secondary::ReadAlignmentData result =
+            run_feature_matrix_test(records, "AAAAAAAAAACCCCCCCCCCCCCCC", 0, 25, options);
+
+    CATCH_REQUIRE(result.n_pos == 25);
+    CATCH_REQUIRE(result.n_reads == 1);
+    CATCH_REQUIRE(result.read_ids_left.size() == 1);
+    CATCH_REQUIRE(result.read_ids_right.size() == 1);
+    CATCH_CHECK(result.read_ids_left[0] == "r1");
+    CATCH_CHECK(result.read_ids_right[0] == "r2");
+    CATCH_CHECK(get_feature_matrix_value(result, 14, 0, 0) == 0);
+    CATCH_CHECK(get_feature_matrix_value(result, 15, 0, 0) == 2);
+    CATCH_CHECK(get_feature_matrix_value(result, 24, 0, 0) == 2);
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen wrapper handles empty outputs", TEST_GROUP) {
+    CATCH_SECTION("no records in the queried interval") {
+        /*
+            query: [0       10)
+            read:                      [20      30)
+        */
+        const std::vector<SyntheticBamRecord> records{
+                {.qname = "outside",
+                 .pos = 20,
+                 .mapq = 41,
+                 .cigar = "10M",
+                 .seq = "ACGTACGTAA",
+                 .dwell_tag = make_simple_move_table(10),
+                 .md = "10",
+                 .nm = 0},
+        };
+        const kadayashi::MedakaFeatureMatrixOptions options =
+                make_medaka_feature_matrix_options(false, 0.0, 100, false);
+
+        const dorado::secondary::ReadAlignmentData result =
+                run_feature_matrix_test(records, "ACGTACGTAAACGTACGTAAACGTACGTAA", 0, 10, options);
+
+        CATCH_CHECK(result.n_pos == 0);
+        CATCH_CHECK(result.n_reads == 0);
+    }
+
+    CATCH_SECTION("all input records are filtered out") {
+        /*
+            ref:      0         10
+            low_mapq: [=========)  filtered because mapq < min_mapq
+        */
+        const std::vector<SyntheticBamRecord> records{
+                {.qname = "low_mapq",
+                 .pos = 0,
+                 .mapq = 0,
+                 .cigar = "10M",
+                 .seq = "ACGTACGTAA",
+                 .dwell_tag = make_simple_move_table(10),
+                 .md = "10",
+                 .nm = 0},
+        };
+        const kadayashi::MedakaFeatureMatrixOptions options =
+                make_medaka_feature_matrix_options(false, 0.0, 100, false);
+
+        const dorado::secondary::ReadAlignmentData result =
+                run_feature_matrix_test(records, "ACGTACGTAA", 0, 10, options);
+
+        CATCH_CHECK(result.n_pos == 0);
+        CATCH_CHECK(result.n_reads == 0);
+    }
 }
 
 }  // namespace kadayashi::tests
