@@ -19,7 +19,7 @@ No need to test all available models exhaustively, there are separate Cram files
   > ${DORADO_BIN} polish --device cpu data/in.micro.bam ${in_dir}/draft.fasta.gz -t 4 --regions "contig_1:1-100" -v > out/out.fasta 2> out/out.fasta.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from input data: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
-  > grep "\- downloading" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
+  > grep -- " - downloading dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv with " out/out.fasta.stderr | wc -l | awk '{ print ($1 > 0 ? 1 : 0) }'
   > grep "\[error\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 0
@@ -39,7 +39,7 @@ The input BAM is stripped of the `mv:B:c` tag.
   > # Eval.
   > echo "Exit code: $?"
   > grep "Resolved model from input data: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
-  > grep "\- downloading" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
+  > grep -- " - downloading dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl with " out/out.fasta.stderr | wc -l | awk '{ print ($1 > 0 ? 1 : 0) }'
   > grep "\[error\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 0
@@ -54,7 +54,7 @@ There should be no "downloading" log line and the process should succeed.
   > ${DORADO_BIN} polish --device cpu data/in.micro.bam ${in_dir}/draft.fasta.gz -t 4 --regions "contig_1:1-100" -v ${model_var} > out/out.fasta 2> out/out.fasta.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from input data: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
-  > grep "\- downloading" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
+  > grep -- " - downloading dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv with " out/out.fasta.stderr | wc -l | awk '{ print $1 }'
   > grep "\[error\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 0
@@ -67,7 +67,7 @@ Auto resolve to a custom folder.
   > ${DORADO_BIN} polish --models-directory out --device cpu data/in.micro.bam ${in_dir}/draft.fasta.gz -t 4 --regions "contig_1:1-100" -v > out/out.fasta 2> out/out.fasta.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from input data: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
-  > grep "\- downloading" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
+  > grep -- " - downloading dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv with " out/out.fasta.stderr | wc -l | awk '{ print ($1 > 0 ? 1 : 0) }'
   > grep "\[error\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 0
@@ -79,7 +79,7 @@ Reuse the pre-downloaded model (freshly downloaded one test above). There should
   > ${DORADO_BIN} polish --models-directory out --device cpu data/in.micro.bam ${in_dir}/draft.fasta.gz -t 4 --regions "contig_1:1-100" -v > out/out.fasta 2> out/out.fasta.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from input data: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
-  > grep "\- downloading" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
+  > grep -- " - downloading dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv with " out/out.fasta.stderr | wc -l | awk '{ print $1 }'
   > grep "\[error\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 0
@@ -104,7 +104,7 @@ This is not supported and should fail.
   Exit code: 1
   [error] Model override file path <> is specified, but the file does not exist.
 
-Resolve the model from an exact Polishing model name: `dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv`.
+Resolve the model from a local Polishing model path.
   $ rm -rf out; mkdir -p out
   > in_dir=${TEST_DATA_DIR}/polish/test-01-supertiny
   > model="${MODEL_ROOT_DIR}/dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv"
@@ -112,22 +112,30 @@ Resolve the model from an exact Polishing model name: `dna_r10.4.1_e8.2_400bps_h
   > ${DORADO_BIN} polish -v --device cpu data/in.micro.bam ${in_dir}/draft.fasta.gz -t 4 --regions "contig_1:1-100" --infer-threads 1 --model-override "${model}" > out/out.fasta 2> out/out.fasta.stderr
   > ### Eval.
   > echo "Exit code: $?"
+  > grep "Resolved model from user-specified path: " out/out.fasta.stderr | wc -l | awk '{ print $1 }'
+  > grep -- " - downloading" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
   > grep "\[error\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g' | sed -E 's/model: .*/model/g'
   Exit code: 0
+  1
+  0
   [warning] Skipping basecaller compatibility checks for user-specified model
 
 Resolve the model from a local path.
   $ rm -rf out; mkdir -p out
   > in_dir=${TEST_DATA_DIR}/polish/test-01-supertiny
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > model="${MODEL_DIR:-${MODEL_ROOT_DIR}/dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv}"
   > ### Run the unit under test.
   > ${DORADO_BIN} polish -v --device cpu data/in.micro.bam ${in_dir}/draft.fasta.gz -t 4 --regions "contig_1:1-100" --infer-threads 1 --model-override "${model}" > out/out.fasta 2> out/out.fasta.stderr
   > ### Eval.
   > echo "Exit code: $?"
+  > grep "Resolved model from user-specified path: " out/out.fasta.stderr | wc -l | awk '{ print $1 }'
+  > grep -- " - downloading" out/out.fasta.stderr | wc -l | awk '{ print $1 }'
   > grep "\[error\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g' | sed -E 's/model: .*/model/g'
   Exit code: 0
+  1
+  0
   [warning] Skipping basecaller compatibility checks for user-specified model
 
 Resolve the bacterial model from a Basecaller model name `dna_r10.4.1_e8.2_400bps_hac@v5.0.0`.

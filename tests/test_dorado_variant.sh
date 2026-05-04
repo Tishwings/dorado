@@ -40,6 +40,8 @@ fi
 CRAM=$(pwd)/cram-0.6/cram.py
 popd
 
+MODEL_ROOT_DIR=${output_dir}
+
 # Download the model once.
 MODEL_NAME="dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0"
 MODEL_DIR=${output_dir}/${MODEL_NAME}
@@ -47,10 +49,19 @@ if [[ ! -d "${MODEL_DIR}" ]]; then
     ${DORADO_BIN} download --model "${MODEL_NAME}" --models-directory ${output_dir}
 fi
 
+POLISH_MODEL_NAME="dna_r10.4.1_e8.2_400bps_hac@v5.0.0_polish_rl_mv"
+POLISH_MODEL_DIR=${output_dir}/${POLISH_MODEL_NAME}
+if [[ ! -d "${POLISH_MODEL_DIR}" ]]; then
+    ${DORADO_BIN} download --model "${POLISH_MODEL_NAME}" --models-directory ${output_dir}
+fi
+
 export DORADO_BIN
 export TEST_DATA_DIR
 export MODEL_DIR
 export MODEL_NAME
+export MODEL_ROOT_DIR
+export POLISH_MODEL_DIR
+export POLISH_MODEL_NAME
 export OUTPUT_DIR=${output_dir}
 python3 \
     ${CRAM} \

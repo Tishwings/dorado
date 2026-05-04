@@ -26,32 +26,10 @@ Stereo models should fail.
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 1
-  [error] Duplex basecalling models are not supported. Model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3'.
+  [error] Inputs from duplex basecalling are not supported. Detected model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3' in the input BAM.
   [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
 
-Using `--skip-model-compatibility-check` with a stereo basecaller model should emit a warning first.
-This still fails because the model cannot be resolved automatically.
-  $ rm -rf out; mkdir -p out
-  > in_dir=${TEST_DATA_DIR}/variant/test-02-supertiny
-  > in_bam="data/in.micro.bam"
-  > ### Create synthetic data with mocked model name.
-  > samtools view -h ${in_bam} | sed 's/dna_r10.4.1_e8.2_400bps_hac@v5.0.0/dna_r10.4.1_e8.2_5khz_stereo@v1.3/g' | samtools view -Sb > out/in.bam
-  > samtools index out/in.bam
-  > ### Run the unit under test.
-  > in_bam=out/in.bam
-  > in_ref=${in_dir}/in.ref.fasta.gz
-  > in_expected=${in_dir}/expected.dorado.vcf
-  > ${DORADO_BIN} variant --skip-model-compatibility-check --device cpu ${in_bam} ${in_ref} -t 4 --ignore-read-groups > out/out.vcf 2> out/out.stderr
-  > ### Eval.
-  > echo "Exit code: $?"
-  > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
-  > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
-  Exit code: 1
-  [error] Could not find any variant calling model compatible with the basecaller model 'dna_r10.4.1_e8.2_5khz_stereo@v1.3'.
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
-  [warning] Duplex basecalling models are not supported. Model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3'. This may produce inferior results.
-
-Using `--skip-model-compatibility-check` with a stereo basecaller model should emit a warning first.
+Using `--model-override` with a stereo basecaller model should emit warnings.
 This succeeds because the model was explicitly specified.
   $ rm -rf out; mkdir -p out
   > in_dir=${TEST_DATA_DIR}/variant/test-02-supertiny
@@ -63,19 +41,20 @@ This succeeds because the model was explicitly specified.
   > in_bam=out/in.bam
   > in_ref=${in_dir}/in.ref.fasta.gz
   > in_expected=${in_dir}/expected.dorado.vcf
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
-  > ${DORADO_BIN} variant --skip-model-compatibility-check --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" ${model_var} --ignore-read-groups > out/out.vcf 2> out/out.stderr
+  > model_var=${MODEL_DIR:+--model-override ${MODEL_DIR}}
+  > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" ${model_var} --ignore-read-groups > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
-  > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
+  > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g' | sed -E "s/user-specified model: '[^']*'/user-specified model/g"
   Exit code: 0
   [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
-  [warning] Duplex basecalling models are not supported. Model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3'. This may produce inferior results.
+  [warning] Inputs from duplex basecalling are not supported. Detected model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3' in the input BAM. This may produce inferior results.
+  [warning] Skipping basecaller compatibility checks for user-specified model. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
 
 Two read groups are present in the input BAM, and two basecaller models. One of the basecaller models is stereo.
-Since `--skip-model-compatibility-check` is used and the model explicitly specified, only warnings should be emitted.
+Since `--model-override` is used and the model explicitly specified, only warnings should be emitted.
   $ rm -rf out; mkdir -p out
   > in_dir=${TEST_DATA_DIR}/variant/test-02-supertiny
   > in_bam="data/in.micro.bam"
@@ -87,26 +66,27 @@ Since `--skip-model-compatibility-check` is used and the model explicitly specif
   > samtools index out/in.two_read_groups.two_basecallers.bam
   > ### Run the test
   > in_bam="out/in.two_read_groups.two_basecallers.bam"
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
-  > ${DORADO_BIN} variant --skip-model-compatibility-check --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" ${model_var} --ignore-read-groups > out/out.vcf 2> out/out.stderr
+  > model_var=${MODEL_DIR:+--model-override ${MODEL_DIR}}
+  > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" ${model_var} --ignore-read-groups > out/out.vcf 2> out/out.stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
-  > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
+  > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g' | sed -E "s/user-specified model: '[^']*'/user-specified model/g"
   Exit code: 0
   [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
-  [warning] Duplex basecalling models are not supported. Model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3'. This may produce inferior results.
+  [warning] Inputs from duplex basecalling are not supported. Detected model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3' in the input BAM. This may produce inferior results.
+  [warning] Skipping basecaller compatibility checks for user-specified model. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
 
 Two read groups are present in the input BAM, and two basecaller models. One of the basecaller models is stereo.
-Reusing the same data from the test above, but run without `--skip-model-compatibility-check`.
+Reusing the same data from the test above, but run without `--model-override`.
 This should error out.
   $ ### Run the test
   > in_bam="out/in.two_read_groups.two_basecallers.bam"
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups > out/out.vcf 2> out/out.stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 1
-  [error] Duplex basecalling models are not supported. Model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3'.
+  [error] Input BAM file has a mix of different basecaller models. Only one basecaller model can be processed. List of all basecaller models found in the BAM file: dna_r10.4.1_e8.2_400bps_hac@v5.0.0, dna_r10.4.1_e8.2_5khz_stereo@v1.3
   [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.

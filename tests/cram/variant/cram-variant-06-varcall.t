@@ -6,7 +6,7 @@ Internally call simple variants and run inference only on computed candidate reg
   > in_ref=${in_dir_1}/in.ref.fasta.gz
   > in_expected=${in_dir_2}/expected.varcall.merged_kadayashi_and_inference.vcf
   > in_expected_proc_regions=${in_dir_2}/expected.processed_regions.full.bed
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > ${DORADO_BIN} variant -vv --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --candidate-filtering --candidate-centered-regions --window-len 300 --window-overlap 100 --variant-flanking-bases 100 --kada-max-clipping 100000 --kada-min-strand-cov 1 --ignore-read-groups -o out 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'

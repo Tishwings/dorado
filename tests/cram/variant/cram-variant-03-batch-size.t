@@ -14,7 +14,7 @@ Negative batch size should fail.
   > in_dir=${TEST_DATA_DIR}/variant/test-02-supertiny
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > ${DORADO_BIN} variant -vv --batchsize -1 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
@@ -31,7 +31,7 @@ Fixed positive batch size should run.
   > in_dir=${TEST_DATA_DIR}/variant/test-02-supertiny
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > ${DORADO_BIN} variant -vv --batchsize 1 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-110" > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
@@ -49,7 +49,7 @@ Auto batch size.
   > in_dir=${TEST_DATA_DIR}/variant/test-02-supertiny
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > ${DORADO_BIN} variant -vv --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
@@ -66,7 +66,7 @@ Batch size zero is auto batch size.
   > in_dir=${TEST_DATA_DIR}/variant/test-02-supertiny
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > model_var=${MODEL_DIR:+--model ${MODEL_DIR}}
+  > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > ${DORADO_BIN} variant -vv --batchsize 0 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'

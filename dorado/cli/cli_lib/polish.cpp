@@ -751,7 +751,6 @@ std::filesystem::path resolve_model_advanced(
     } else if (count_model_hits(models::polish_models(), model_str) == 1) {
         const std::string& model_name = model_str;
         spdlog::debug("Resolved model from user-specified polishing model name: {}", model_name);
-        spdlog::info("Downloading model: '{}'", model_name);
         model_downloader::ModelDownloader downloader(models_directory, false);
         model_dir = downloader.get(model_name, "polish");
 

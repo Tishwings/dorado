@@ -4,6 +4,7 @@
 #include "hts_utils/FastxRandomReader.h"
 #include "hts_utils/fai_utils.h"
 #include "model_downloader/model_downloader.h"
+#include "model_resolver/ModelResolver.h"
 #include "models/models.h"
 #include "secondary/architectures/model_config.h"
 #include "secondary/common/bam_info.h"
@@ -62,6 +63,7 @@ struct Options {
     std::filesystem::path output_dir;
     VariantCallingFormatEnum out_format = VariantCallingFormatEnum::VCF;
     std::string model_str;
+    std::optional<std::filesystem::path> models_directory;
     int32_t verbosity = 0;
     int32_t threads = 0;
     int32_t infer_threads = 1;
@@ -84,7 +86,6 @@ struct Options {
     std::optional<bool> tag_keep_missing;  // Optionally overrides the model config if specified.
     int32_t min_depth = 0;
     bool any_bam = false;
-    bool any_model = false;
     bool ambig_ref = false;
     float pass_min_qual = 3.0f;
 
@@ -156,9 +157,9 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("If specified, output files will be written to the given folder. Otherwise, "
                       "output is to stdout.")
                 .default_value("");
-        parser.add_argument("-m", "--model")
-                .help("Path to the model folder.")
-                .default_value("auto");
+        parser.add_argument("--models-directory")
+                .help("Optional directory to search for existing models or download new models "
+                      "into.");
         parser.add_argument("--gvcf").help("Output a gVCF instead of a VCF.").flag();
         parser.add_argument("--ambig-ref")
                 .help("Decode variants at ambiguous reference positions.")
@@ -212,6 +213,10 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Set quality filter for PASS variants.")
                 .default_value(3.0f)
                 .scan<'g', float>();
+        parser.add_argument("--model-override")
+                .help("Path to a specific model folder. Overrides auto model resolution and all "
+                      "compatibility checks. This may produce inferior results.")
+                .default_value("");
     }
     {
         parser.add_group("Phasing options");
@@ -244,10 +249,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .hidden()
                 .help("Allow any BAM as input, not just Dorado aligned.")
                 .flag();
-        parser.add_argument("--skip-model-compatibility-check")
-                .hidden()
-                .help("Allow any model to be applied on the data.")
-                .flag();
         parser.add_argument("--continue-on-error")
                 .hidden()
                 .help("Continue the process even if an exception is thrown. This "
@@ -259,7 +260,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                       "1.0].")
                 .default_value(0.0f)
                 .scan<'g', float>();
-
         // Candidate region selection options.
         parser.add_argument("--candidate-filtering")
                 .help("Overrides the model-defined candidate region filtering feature and turns on "
@@ -388,7 +388,9 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.in_ref_fastx_fn = parser.get<std::string>("in_ref_fastx");
 
     opt.output_dir = parser.get<std::string>("output-dir");
-    opt.model_str = parser.get<std::string>("model");
+    opt.models_directory = model_resolution::get_models_directory(
+            cli::get_optional_argument<std::string>("--models-directory", parser));
+    opt.model_str = parser.get<std::string>("model-override");
     opt.out_format = parser.get<bool>("gvcf") ? VariantCallingFormatEnum::GVCF
                                               : VariantCallingFormatEnum::VCF;
     opt.threads = parser.get<int>("threads");
@@ -422,7 +424,6 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.load_scripted_model = parser.get<bool>("scripted");
     opt.queue_size = parser.get<int>("queue-size");
     opt.any_bam = parser.get<bool>("any-bam");
-    opt.any_model = parser.get<bool>("skip-model-compatibility-check");
     opt.continue_on_error = parser.get<bool>("continue-on-error");
     opt.read_group = (parser.is_used("--RG")) ? parser.get<std::string>("RG") : "";
     opt.ignore_read_groups = parser.get<bool>("ignore-read-groups");
@@ -553,53 +554,97 @@ void validate_options(const Options& opt) {
     }
 }
 
-std::filesystem::path download_model(const std::string& model_name) {
-    const std::filesystem::path tmp_dir = utils::get_downloads_path(std::nullopt);
-    const bool success = model_downloader::download_models(tmp_dir.string(), model_name);
-    if (!success) {
-        spdlog::error("Could not download model: '{}'", model_name);
-        std::exit(EXIT_FAILURE);
-    }
-    return (tmp_dir / model_name);
+int32_t count_model_hits(const dorado::models::ModelList& model_list,
+                         const std::string& model_name) {
+    return static_cast<int32_t>(std::count_if(
+            std::begin(model_list), std::end(model_list),
+            [&model_name](const models::ModelInfo& info) { return info.name == model_name; }));
 }
 
-const secondary::ModelConfig resolve_model(const secondary::BamInfo& bam_info,
-                                           const std::string& model_str,
-                                           const bool load_scripted_model,
-                                           const bool any_model) {
-    const auto count_model_hits = [](const dorado::models::ModelList& model_list,
-                                     const std::string& model_name) {
-        return static_cast<int32_t>(std::count_if(
-                std::begin(model_list), std::end(model_list),
-                [&model_name](const models::ModelInfo& info) { return info.name == model_name; }));
-    };
+void print_basecaller_models(std::ostream& os,
+                             const std::unordered_set<std::string>& basecaller_models,
+                             const std::string& delimiter) {
+    std::vector<std::string> lines(std::begin(basecaller_models), std::end(basecaller_models));
+    std::sort(std::begin(lines), std::end(lines));
+    os << utils::join(lines, delimiter);
+}
 
-    const auto determine_model_name = [](const std::string& basecaller_model) {
-        const std::string model_prefix = basecaller_model + "_variant_mv@";
+std::string determine_model_name(const std::string& basecaller_model) {
+    const std::string model_prefix = basecaller_model + "_variant_mv@";
 
-        std::string ret;
+    std::string ret;
 
-        for (const auto& info : models::variant_models()) {
-            // There is an assumption that models with multiple versions
-            // are named in a way that picking the last one after lexicographically
-            // sorting them finds the latest version.
-            if (utils::starts_with(info.name, model_prefix)) {
-                ret = info.name;
-            }
+    for (const auto& info : models::variant_models()) {
+        // Variant models can have multiple versions for one basecaller. The list is ordered so
+        // that the last matching entry is the latest compatible model.
+        if (utils::starts_with(info.name, model_prefix)) {
+            ret = info.name;
         }
+    }
 
-        if (std::empty(ret)) {
+    if (std::empty(ret)) {
+        throw std::runtime_error{
+                "Could not find any variant calling model compatible with the basecaller model '" +
+                basecaller_model + "'."};
+    }
+
+    return ret;
+}
+
+const std::filesystem::path resolve_model(
+        const secondary::BamInfo& bam_info,
+        const std::optional<std::filesystem::path>& models_directory) {
+    spdlog::info("Auto resolving the model.");
+
+    // Check that there is exactly one basecaller listed in the BAM. Otherwise, no auto resolving.
+    if (std::size(bam_info.basecaller_models) != 1) {
+        if (std::empty(bam_info.basecaller_models)) {
             throw std::runtime_error{
-                    "Could not find any variant calling model compatible with the basecaller model "
-                    "'" +
-                    basecaller_model + "'."};
+                    "Input BAM file has no basecaller models listed in the header."};
         }
+        if (std::size(bam_info.basecaller_models) > 1) {
+            std::ostringstream oss;
+            oss << "Input BAM file has a mix of different basecaller models. Only one basecaller "
+                   "model can be processed. List of all basecaller models found in the BAM file: ";
+            print_basecaller_models(oss, bam_info.basecaller_models, ", ");
+            throw std::runtime_error{oss.str()};
+        }
+    }
 
-        return ret;
-    };
+    // Check if any of the input models is a stereo, to report a clear error that this is not supported.
+    for (const std::string& model : bam_info.basecaller_models) {
+        if (model.find("stereo") != std::string::npos) {
+            std::ostringstream oss;
+            oss << "Inputs from duplex basecalling are not supported. Detected model: '" << model
+                << "' in the input BAM.";
+            throw std::runtime_error{oss.str()};
+        }
+    }
 
-    std::filesystem::path model_dir;
+    // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0
+    const std::string& basecaller_model = *std::begin(bam_info.basecaller_models);
 
+    // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0
+    const std::string model_name = determine_model_name(basecaller_model);
+
+    // Sanity check that the model name exists in the variant calling models.
+    if (count_model_hits(models::variant_models(), model_name) == 0) {
+        throw std::runtime_error{"Resolved model '" + model_name + "' not found!"};
+    }
+
+    spdlog::debug("Resolved model from input data: '{}'", model_name);
+
+    model_downloader::ModelDownloader downloader(models_directory, false);
+    const std::filesystem::path model_dir = downloader.get(model_name, "variant calling");
+
+    return model_dir;
+}
+
+std::filesystem::path resolve_model_advanced(
+        const secondary::BamInfo& bam_info,
+        const std::optional<std::filesystem::path>& models_directory,
+        const std::string& model_str,
+        const bool any_model) {
     if (bam_info.has_dwells) {
         spdlog::info("Input data contains move tables.");
     } else {
@@ -610,7 +655,8 @@ const secondary::ModelConfig resolve_model(const secondary::BamInfo& bam_info,
     for (const std::string& model : bam_info.basecaller_models) {
         if (model.find("stereo") != std::string::npos) {
             std::ostringstream oss;
-            oss << "Duplex basecalling models are not supported. Model: '" << model << "'.";
+            oss << "Inputs from duplex basecalling are not supported. Detected model: '" << model
+                << "' in the input BAM.";
             if (!any_model) {
                 throw std::runtime_error{oss.str()};
             } else {
@@ -619,55 +665,37 @@ const secondary::ModelConfig resolve_model(const secondary::BamInfo& bam_info,
         }
     }
 
-    // Fail only if not explicitly permitting any model, or if any model is allowed but the user has specified
-    // auto model resolution (in which case, the model name needs to be available in the input BAM file).
-    if (!any_model ||
-        (any_model && (model_str == "auto") && (std::size(bam_info.basecaller_models) != 1))) {
-        const std::string suffix{(any_model) ? " Cannot use 'auto' to resolve the model." : ""};
+    // Fail only if not explicitly permitting any model.
+    if (!any_model && (std::size(bam_info.basecaller_models) != 1)) {
         if (std::empty(bam_info.basecaller_models)) {
             throw std::runtime_error{
-                    "Input BAM file has no basecaller models listed in the header." + suffix};
+                    "Input BAM file has no basecaller models listed in the header."};
         }
         if (std::size(bam_info.basecaller_models) > 1) {
-            throw std::runtime_error{
-                    "Input BAM file has a mix of different basecaller models. Only one basecaller "
-                    "model can be processed." +
-                    suffix};
+            std::ostringstream oss;
+            oss << "Input BAM file has a mix of different basecaller models. Only one basecaller "
+                   "model can be processed. List of all basecaller models found in the BAM file:\n";
+            print_basecaller_models(oss, bam_info.basecaller_models, ", ");
+            throw std::runtime_error{oss.str()};
         }
     }
 
-    if (model_str == "auto") {
-        spdlog::info("Auto resolving the model.");
+    std::filesystem::path model_dir;
 
-        // Check that there is at least one basecaller listed in the BAM. Otherwise, no auto resolving.
-        if (std::empty(bam_info.basecaller_models)) {
-            throw std::runtime_error{
-                    "Cannot auto resolve the model because no model information is available "
-                    "in the BAM file."};
-        }
-
-        // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0
-        const std::string& basecaller_model = *std::begin(bam_info.basecaller_models);
-
-        // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0
-        const std::string model_name = determine_model_name(basecaller_model);
-
-        spdlog::debug("Resolved model from input data: '{}'", model_name);
-
-        spdlog::info("Downloading model: '{}'", model_name);
-        model_dir = download_model(model_name);
-
-    } else if (!std::empty(model_str) && std::filesystem::exists(model_str)) {
+    if (!std::empty(model_str) && std::filesystem::exists(model_str)) {
+        spdlog::warn(
+                "Skipping basecaller compatibility checks for user-specified model: '{}'. The "
+                "accuracy of the results is not guaranteed.",
+                model_str);
         spdlog::debug("Resolved model from user-specified path: '{}'", model_str);
-        spdlog::info("Model specified by path: '{}'", model_str);
         model_dir = model_str;
 
     } else if (count_model_hits(models::variant_models(), model_str) == 1) {
         const std::string& model_name = model_str;
         spdlog::debug("Resolved model from user-specified variant calling model name: '{}'",
                       model_name);
-        spdlog::info("Downloading model: '{}'", model_name);
-        model_dir = download_model(model_name);
+        model_downloader::ModelDownloader downloader(models_directory, false);
+        model_dir = downloader.get(model_name, "variant calling");
 
     } else if (count_model_hits(models::simplex_models(), model_str) == 1) {
         // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0
@@ -677,28 +705,40 @@ const secondary::ModelConfig resolve_model(const secondary::BamInfo& bam_info,
         const std::string model_name = determine_model_name(basecaller_model);
 
         spdlog::debug("Resolved model from user-specified basecaller model name: '{}'", model_name);
-        spdlog::info("Downloading model: '{}'", model_name);
-        model_dir = download_model(model_name);
+        model_downloader::ModelDownloader downloader(models_directory, false);
+        model_dir = downloader.get(model_name, "variant calling");
 
     } else {
         throw std::runtime_error{"Could not resolve model from string: '" + model_str + "'."};
     }
 
+    return model_dir;
+}
+
+secondary::ModelConfig load_model(const std::filesystem::path& model_dir,
+                                  const bool load_scripted_model) {
     // Load the model.
     spdlog::info("Parsing the model config: '{}'", (model_dir / "config.toml").string());
     const std::string model_file = load_scripted_model ? "model.pt" : "weights.pt";
-    secondary::ModelConfig model_config =
-            secondary::parse_model_config(model_dir / "config.toml", model_file);
+    return secondary::parse_model_config(model_dir / "config.toml", model_file);
+}
 
+void validate_bam_model(const secondary::BamInfo& bam_info,
+                        const secondary::ModelConfig& model_config,
+                        const bool any_model,
+                        const secondary::LabelSchemeType expected_label_scheme) {
     // Check that both the model and data have dwells, or that they both do not have dwells.
     const auto it_dwells = model_config.model_kwargs.find("use_dwells");
     const bool model_uses_dwells = (it_dwells != std::end(model_config.model_kwargs))
                                            ? (it_dwells->second == "true")
                                            : false;
 
+    const std::string expected_label_scheme_name =
+            (expected_label_scheme == secondary::LabelSchemeType::DIPLOID) ? "DiploidLabelScheme"
+                                                                           : "HaploidLabelScheme";
     const bool label_scheme_is_compatible =
             secondary::parse_label_scheme_type(model_config.label_scheme_type) ==
-            secondary::LabelSchemeType::DIPLOID;
+            expected_label_scheme;
 
     const auto check_models_supported =
             [&model_config](const std::unordered_set<std::string>& basecaller_models) {
@@ -730,9 +770,9 @@ const secondary::ModelConfig resolve_model(const secondary::BamInfo& bam_info,
         }
 
         if (!label_scheme_is_compatible) {
-            throw std::runtime_error{
-                    "Incompatible model label scheme! Expected DiploidLabelScheme but got " +
-                    model_config.label_scheme_type + "."};
+            throw std::runtime_error{"Incompatible model label scheme! Expected " +
+                                     expected_label_scheme_name + " but got " +
+                                     model_config.label_scheme_type + "."};
         }
 
     } else {
@@ -755,12 +795,11 @@ const secondary::ModelConfig resolve_model(const secondary::BamInfo& bam_info,
         }
 
         if (!label_scheme_is_compatible) {
-            spdlog::warn("Incompatible model label scheme! Expected DiploidLabelScheme but got " +
-                         model_config.label_scheme_type + ". This may produce unexpected results.");
+            spdlog::warn("Incompatible model label scheme! Expected " + expected_label_scheme_name +
+                         " but got " + model_config.label_scheme_type +
+                         ". This may produce unexpected results.");
         }
     }
-
-    return model_config;
 }
 
 std::unordered_map<std::string, std::vector<int64_t>> load_candidate_sites(
@@ -1331,9 +1370,24 @@ int variant_caller(int argc, char* argv[]) {
         // Set the number of threads so that libtorch doesn't cause a thread bomb.
         utils::initialise_torch();
 
-        // Resolve the model for polishing.
-        const secondary::ModelConfig model_config =
-                resolve_model(bam_info, opt.model_str, opt.load_scripted_model, opt.any_model);
+        // Resolve the model.
+        secondary::ModelConfig model_config;
+        if (std::empty(opt.model_str)) {
+            constexpr bool ANY_MODEL = false;
+            // Basic mainstream model resolving.
+            const std::filesystem::path model_dir = resolve_model(bam_info, opt.models_directory);
+            model_config = load_model(model_dir, opt.load_scripted_model);
+            validate_bam_model(bam_info, model_config, ANY_MODEL,
+                               secondary::LabelSchemeType::DIPLOID);
+        } else {
+            constexpr bool ANY_MODEL = true;
+            // Advanced model resolve from a specific path or model name.
+            const std::filesystem::path model_dir = resolve_model_advanced(
+                    bam_info, opt.models_directory, opt.model_str, ANY_MODEL);
+            model_config = load_model(model_dir, opt.load_scripted_model);
+            validate_bam_model(bam_info, model_config, ANY_MODEL,
+                               secondary::LabelSchemeType::DIPLOID);
+        }
 
         // Create the models, encoders and BAM handles.
         variant::VariantResources resources = variant::create_resources(
