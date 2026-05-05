@@ -231,9 +231,6 @@ CATCH_TEST_CASE("Instantiate models", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -796,9 +793,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -843,9 +837,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -890,9 +881,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -937,9 +925,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -985,9 +970,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -1036,9 +1018,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -1087,9 +1066,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -1138,9 +1114,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =
@@ -1187,9 +1160,6 @@ CATCH_TEST_CASE("VariantPerceiver-FeatureColumns", TEST_GROUP) {
                                 {"embedding_type", "rotational"},
                                 {"update_read_embeddings", "true"},
                                 {"latent_init_method", "ref_seq"},
-                                {"shuffle_embeddings", "false"},
-                                {"mask_partial_rows", "true"},
-                                {"add_null_tokens", "false"},
                         },
                 .feature_encoder_type = "ReadAlignmentFeatureEncoder",
                 .feature_encoder_kwargs =

@@ -229,11 +229,8 @@ bases_embedding_size = 6
 use_decoder_lstm = false
 use_per_read_embedding = false
 embedding_type = "learned"
-shuffle_embeddings = false
 update_read_embeddings = false
 latent_init_method = "ref_seq"
-mask_partial_rows = true
-add_null_tokens = false
 
 [feature_encoder.kwargs]
 dtypes = [ "",]
