@@ -104,13 +104,15 @@ int parse_cigar(std::string_view cigar, dorado::AlignmentResult& result) {
             result.num_deletions += length;
             break;
         case 'M':
+        case '=':
+        case 'X':
             result.num_aligned += length;
             break;
         case 'N':
             result.num_gaps += length;
             break;
         default:
-            throw std::runtime_error("Currently only supporting HSIDMN in SAM cigar string.");
+            throw std::runtime_error("Unexpected character in SAM cigar string.");
         }
         first = false;
     }

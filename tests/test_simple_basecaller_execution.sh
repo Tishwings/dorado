@@ -162,14 +162,38 @@ dorado_multiple_references() {
 
     if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
         aligned_genome=$(samtools view ${bam_out} | cut -f 3)
-        if [[ ${aligned_genome} != "chr9_NA24385_paternal" ]]; then
-            echo "Incorrect genome from multi-ref alignment: got ${aligned_genome}, expected chr9_NA24385_paternal"
+        expected_genome="chr9_NA24385_paternal"
+        if [[ ${aligned_genome} != ${expected_genome} ]]; then
+            echo "Incorrect genome from multi-ref alignment: got ${aligned_genome}, expected ${expected_genome}"
             exit 1
         fi
     fi
 }
 
 dorado_multiple_references
+
+dorado_align_eqx() {
+    title "dorado align with --eqx"
+    local ref_fasta=$data_dir/aligner_test/na24385_reduced.fasta
+    local pod5_single=$data_dir/pod5/single_na24385.pod5
+    local bam_eqx=$output_dir/calls_eqx.bam
+    local summary_eqx=$output_dir/calls_eqx.txt
+    local bam_out=$output_dir/calls_multi_ref.bam
+    local summary_out=$output_dir/calls_no_eqx.txt
+    local diff_out=$output_dir/eqx.diff
+
+    $dorado_bin basecaller ${model_5k} ${pod5_single} ${models_directory_arg} -b ${batch} --reference "${ref_fasta}" --mm2-opts "--eqx" --skip-model-compatibility-check > "${bam_eqx}"
+    dorado_check_bam_not_empty "${bam_eqx}"
+    
+    $dorado_bin summary ${bam_eqx} > ${summary_eqx}
+    $dorado_bin summary ${bam_out} > ${summary_out}
+    if ! diff "${summary_eqx}" "${summary_out}" > "$diff_out"; then
+        echo "Summary files differ between eqx and non-eqx alignments. See ${diff_out}."
+        exit 1
+    fi
+}
+
+dorado_align_eqx
 
 dorado_emit_cram_iupac_reference() {
     title "dorado emit cram with iupac reference"
