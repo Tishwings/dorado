@@ -31,6 +31,7 @@
 #include <ostream>
 #include <span>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 #ifdef NDEBUG
@@ -2545,8 +2546,11 @@ static int8_t get_snp_qv_medaka_style(const read_t &read) {
 
 static double get_snp_accuracy_dorado_style(const read_t &read, const char *qn) {
     // ref: dorado::utils::compute_accuracy_from_cigar
-    if (read.vars.empty() || read.end_pos <= read.start_pos) {
-        return 0.0f;
+    if (read.end_pos <= read.start_pos) {
+        return 0.0;
+    }
+    if (read.vars.empty()) {
+        return 1.0;
     }
     int n_mismatches = 0;
     int n_ins = 0;
@@ -2570,7 +2574,7 @@ static double get_snp_accuracy_dorado_style(const read_t &read, const char *qn) 
                                  std::to_string(read.end_pos) + " del " + std::to_string(n_del)};
     }
     const int tot = span - n_del + n_ins;
-    return static_cast<double>(n_mismatches) / tot;
+    return 1.0 - (static_cast<double>(n_mismatches) / tot);
 }
 
 struct featmatgen_chunk_t {
@@ -2583,6 +2587,7 @@ struct featmatgen_chunk_t {
 
     // helper stats
     uint32_t n_downsample_filtered;
+    uint32_t n_md_tag_filtered;
 
     // helper for collecting refseq from read pileup
     std::vector<uint8_t> refseq_substring;
@@ -2624,6 +2629,8 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
     }
 
     uint32_t n_reads = 0;
+    gck.n_md_tag_filtered = 0;
+    std::unordered_set<std::string> seen_qnames;
     while (sam_itr_next(hf.fp, bamitr.get(), aln.get()) >= 0) {
         const char *qn = bam_get_qname(aln.get());
         const uint32_t r_start_pos = static_cast<uint32_t>(aln.get()->core.pos);
@@ -2631,7 +2638,7 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
 
         const bool md_is_ok = sancheck_MD_tag_exists_and_is_valid(aln.get());
         if (!md_is_ok) {  // TODO: remove the requirement on MD tags
-            spdlog::error("[kdys::{}] skipped a read without MD tag", __func__);
+            ++gck.n_md_tag_filtered;
             continue;
         }
 
@@ -2709,6 +2716,9 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
                 false /*retain_SNP_only*/, nullptr);
         const double seqdiv_mismatch_only = get_snp_accuracy_dorado_style(r, qn);
         if ((seqdiv_mismatch_only < gck.options.min_snp_accuracy) || !parse_ok) {
+            continue;
+        }
+        if (!seen_qnames.emplace(qn).second) {
             continue;
         }
 
@@ -2947,6 +2957,10 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
 
         n_reads++;
     }  // iterate through all reads
+    if (gck.n_md_tag_filtered > 0) {
+        LOG_DEBUG("[kdys::{}] skipped {} reads without valid MD tags", __func__,
+                  gck.n_md_tag_filtered);
+    }
 }
 
 static void gen_medaka_feature_matrix_insert_to_matrix(
@@ -3089,6 +3103,7 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
                           (options.include_snp_qv ? 1 : 0) + (options.num_dtypes > 1),
             // helper: stats
             .n_downsample_filtered = 0,
+            .n_md_tag_filtered = 0,
             // helper: refseq
             .refseq_substring = std::vector<uint8_t>(itvl_end - itvl_start, 0),
             .read_seqi = {},
@@ -3106,8 +3121,8 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
     gen_medaka_feature_matrix_store_reads_from_bam(hf, gck);
 
     if (gck.all_reads.empty()) {
-        spdlog::warn("[kdys::{}] requested interval {}:{}-{} inserted no reads", __func__, refname,
-                     itvl_start, itvl_end);
+        LOG_DEBUG("[kdys::{}] requested interval {}:{}-{} inserted no reads", __func__, refname,
+                  itvl_start, itvl_end);
         MedakaFeatureMatrix ret(0, 0, 0, 0, 1, 0);
         return ret;
     } else {
@@ -3137,37 +3152,27 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
     // Reads that overlap with the left or the right boundary of
     // the query interval also need to have their names stored.
     int n_lanes = 0;
-    std::vector<int> read2lane(gck.all_reads.size());
+    std::vector<int> read2lane(gck.all_reads.size(), -1);
+    std::vector<uint32_t> read2matrix_start_pos(gck.all_reads.size(), 0);
     std::vector<std::string> left_qnames;
     std::vector<std::string> right_qnames;
     {
+        const int lane_cap = std::min<int>(100, options.max_reads);
         int laneID = 0;
         std::vector<medaka_feature_matrix_lane_tracker_t> lane_lookup;
         std::unordered_map<uint32_t, std::string> tmp_lane2rightqn;
-        // (first)
-        read2lane[0] = laneID;
-        lane_lookup.push_back(
-                {.laneID = laneID,
-                 .last_pos = gck.all_reads[0].end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN});
-        if (gck.all_reads[0].start_pos <= itvl_start) {
-            left_qnames.push_back(gck.readID2qn[0]);
-        } else {
-            left_qnames.push_back("");
-        }
-        if (gck.all_reads[0].end_pos >= itvl_end) {
-            tmp_lane2rightqn[0] = gck.readID2qn[0];
-        }
-        // (all others)
-        for (size_t i = 1; i < gck.all_reads.size(); i++) {
+
+        for (size_t i = 0; i < gck.all_reads.size(); i++) {
             const read_t &read = gck.all_reads[i];
 
             bool need_new_lane = true;
             int &read_laneID = read2lane[i];
             if (!options.disable_read_packing) {  // then try to place read into an existing lane
                 for (medaka_feature_matrix_lane_tracker_t &record : lane_lookup) {
-                    if (record.last_pos < read.start_pos) {
+                    if (record.last_pos <= read.start_pos) {
                         need_new_lane = false;
                         read_laneID = record.laneID;
+                        read2matrix_start_pos[i] = read.start_pos;
                         record.last_pos = read.end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN;
                         break;
                     }
@@ -3175,15 +3180,33 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
             }
 
             if (need_new_lane) {
-                laneID++;
-                read_laneID = laneID;
-                lane_lookup.push_back(medaka_feature_matrix_lane_tracker_t{
-                        .laneID = laneID,
-                        .last_pos = read.end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN});
-                if (read.start_pos <= itvl_start) {
-                    left_qnames.push_back(gck.readID2qn[i]);
+                if (static_cast<int>(std::size(lane_lookup)) < lane_cap) {
+                    read_laneID = laneID++;
+                    read2matrix_start_pos[i] = read.start_pos;
+                    lane_lookup.push_back(medaka_feature_matrix_lane_tracker_t{
+                            .laneID = read_laneID,
+                            .last_pos = read.end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN});
+                    if (read.start_pos <= itvl_start) {
+                        left_qnames.push_back(gck.readID2qn[i]);
+                    } else {
+                        left_qnames.push_back("");
+                    }
+                } else if (!options.disable_read_packing) {
+                    auto lane_it =
+                            std::min_element(std::begin(lane_lookup), std::end(lane_lookup),
+                                             [](const medaka_feature_matrix_lane_tracker_t &a,
+                                                const medaka_feature_matrix_lane_tracker_t &b) {
+                                                 return a.last_pos < b.last_pos;
+                                             });
+                    if ((lane_it != std::end(lane_lookup)) && (lane_it->last_pos < read.end_pos)) {
+                        read_laneID = lane_it->laneID;
+                        read2matrix_start_pos[i] = lane_it->last_pos;
+                        lane_it->last_pos = read.end_pos + DORADO_FEATURE_MAT_READ_SENTINAL_LEN;
+                    } else {
+                        continue;
+                    }
                 } else {
-                    left_qnames.push_back("");
+                    continue;
                 }
             }
 
@@ -3191,7 +3214,7 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
                 tmp_lane2rightqn[read_laneID] = gck.readID2qn[i];
             }
         }
-        n_lanes = laneID + 1;
+        n_lanes = static_cast<int>(std::size(lane_lookup));
 
         // (consolidate qnames on the right)
         for (int i_lane = 0; i_lane < n_lanes; i_lane++) {
@@ -3219,7 +3242,6 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
 
     // Allocate the matrix and major & minor positions.
     uint32_t n_pos = tot_expansion + itvl_end - itvl_start;
-    n_lanes = std::min<int>({n_lanes, 100, options.max_reads});  // limit max depth
     MedakaFeatureMatrix ret(n_pos, n_lanes, n_pos, n_lanes, gck.n_features - 4,
                             0);  // medaka impl also hardcodes the last parameter to 0
     ret.read_ids_left = std::move(left_qnames);
@@ -3302,7 +3324,7 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
     for (size_t i_read = 0; i_read < gck.all_reads.size(); i_read++) {
         // Limit the max number of lanes.
         const int laneID = read2lane[i_read];
-        if (laneID >= n_lanes) {
+        if ((laneID < 0) || (laneID >= n_lanes)) {
             continue;
         }
 
@@ -3519,9 +3541,20 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
         }
 
         // Copy over to the matrix. Implicit transposition.
-        gen_medaka_feature_matrix_insert_to_matrix(ret, qname2hp, gck, i_read, laneID, offset0,
-                                                   offset, expanded_read, expanded_read_quals,
-                                                   expanded_read_dwells);
+        uint32_t insert_offset0 = offset0;
+        if (read2matrix_start_pos[i_read] > read.start_pos) {
+            insert_offset0 = read2matrix_start_pos[i_read] - itvl_start;
+            for (const medaka_feature_matrix_expansion_entry_t &exp : expansions) {
+                if (exp.pos >= read2matrix_start_pos[i_read]) {
+                    break;
+                }
+                insert_offset0 += exp.len;
+            }
+        }
+
+        gen_medaka_feature_matrix_insert_to_matrix(ret, qname2hp, gck, i_read, laneID,
+                                                   insert_offset0, offset, expanded_read,
+                                                   expanded_read_quals, expanded_read_dwells);
 
         // cleanup buffers
         std::fill(expanded_read.begin() + offset0, expanded_read.begin() + offset, 0);
