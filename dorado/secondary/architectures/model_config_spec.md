@@ -208,9 +208,6 @@ Available since v4. All parameters are required.
 | `embedding_type` | `STRING` |
 | `update_read_embeddings` | `BOOLEAN` |
 | `latent_init_method` | `STRING` |
-| `shuffle_embeddings` | `BOOLEAN` |
-| `mask_partial_rows` | `BOOLEAN` |
-| `add_null_tokens` | `BOOLEAN` |
 
 ## Feature Encoder Kwargs
 

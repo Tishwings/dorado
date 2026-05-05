@@ -149,9 +149,6 @@ const ParamSpecs model_variant_perceiver{
         required("embedding_type", ModelConfigValueType::STRING),
         required("update_read_embeddings", ModelConfigValueType::BOOLEAN),
         required("latent_init_method", ModelConfigValueType::STRING),
-        required("shuffle_embeddings", ModelConfigValueType::BOOLEAN),
-        required("mask_partial_rows", ModelConfigValueType::BOOLEAN),
-        required("add_null_tokens", ModelConfigValueType::BOOLEAN),
 };
 
 const ParamSpecs feature_encoder_counts{
