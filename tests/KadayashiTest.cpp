@@ -202,6 +202,73 @@ int8_t get_feature_matrix_value(const dorado::secondary::ReadAlignmentData &resu
     return result.matrix[(pos * result.buffer_reads + lane) * result.featlen + feature];
 }
 
+void compare_position_vector(const std::vector<int64_t> &result,
+                             const std::vector<int64_t> &expected,
+                             const std::string_view name) {
+    CATCH_REQUIRE(result.size() == expected.size());
+
+    for (size_t i = 0; i < result.size(); ++i) {
+        if (result[i] != expected[i]) {
+            CATCH_CAPTURE(name, i, result[i], expected[i]);
+            CATCH_CHECK(result[i] == expected[i]);
+        }
+    }
+}
+
+bool has_non_zero_feature_value(const dorado::secondary::ReadAlignmentData &result,
+                                const int32_t feature) {
+    for (int32_t pos = 0; pos < result.n_pos; ++pos) {
+        for (int32_t lane = 0; lane < result.n_reads; ++lane) {
+            if (get_feature_matrix_value(result, pos, lane, feature) != 0) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+void compare_feature_matrix_logical_data(const dorado::secondary::ReadAlignmentData &result,
+                                         const dorado::secondary::ReadAlignmentData &expected) {
+    CATCH_REQUIRE(result.n_pos == expected.n_pos);
+    CATCH_REQUIRE(result.n_reads == expected.n_reads);
+    CATCH_REQUIRE(result.featlen == expected.featlen);
+    CATCH_REQUIRE(result.num_dtypes == expected.num_dtypes);
+    CATCH_REQUIRE(result.buffer_reads >= result.n_reads);
+    CATCH_REQUIRE(expected.buffer_reads >= expected.n_reads);
+
+    compare_position_vector(result.major, expected.major, "major");
+    compare_position_vector(result.minor, expected.minor, "minor");
+
+    CATCH_CHECK(result.read_ids_left == expected.read_ids_left);
+    CATCH_CHECK(result.read_ids_right == expected.read_ids_right);
+
+    // Stop comparing after this many bad results.
+    constexpr size_t MAX_REPORTED_MISMATCHES = 10;
+
+    size_t n_mismatches = 0;
+    for (int32_t pos = 0; pos < result.n_pos; ++pos) {
+        for (int32_t lane = 0; lane < result.n_reads; ++lane) {
+            for (int32_t feature = 0; feature < result.featlen; ++feature) {
+                const int32_t result_value =
+                        static_cast<int32_t>(get_feature_matrix_value(result, pos, lane, feature));
+                const int32_t expected_value = static_cast<int32_t>(
+                        get_feature_matrix_value(expected, pos, lane, feature));
+                if (result_value != expected_value) {
+                    CATCH_CAPTURE(pos, lane, feature, result_value, expected_value);
+                    CATCH_CHECK(result_value == expected_value);
+                    ++n_mismatches;
+                    if (n_mismatches >= MAX_REPORTED_MISMATCHES) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    CATCH_CHECK(n_mismatches == 0);
+}
+
 }  // namespace
 
 CATCH_TEST_CASE("kadayashi blocked bloom filter basic operation", TEST_GROUP) {
@@ -586,6 +653,86 @@ CATCH_TEST_CASE("kadayashi_featmatgen normal case", TEST_GROUP) {
     }
 
     CATCH_CHECK(medaka_feature_matrix_string == medaka_feature_matrix_string_expected);
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen matches calculate_read_alignment on real data", TEST_GROUP) {
+    /*
+        chr20: |--------------------------- 10 kbp ---------------------------|
+        reads: |==================== 20 BAM HP/mv-tagged reads ==============|
+
+        The old generator may keep a larger backing buffer, so compare the logical matrix:
+        [position, read lane, feature].
+    */
+    const std::filesystem::path test_data_dir = get_data_dir("variant") / "test-02-supertiny";
+    const std::filesystem::path fn_bam = test_data_dir / "in.aln.bam";
+    const std::filesystem::path fn_ref = test_data_dir / "in.ref.fasta.gz";
+
+    dorado::hts_io::FastxRandomReader fastx_reader(fn_ref);
+    CATCH_REQUIRE(fastx_reader.get_raw_faidx_ptr());
+
+    const std::string ref_name = "chr20";
+    const uint32_t ref_start = 0;
+    const uint32_t ref_end = static_cast<uint32_t>(fastx_reader.fetch_seq_len(ref_name));
+
+    CATCH_REQUIRE(ref_end == 10000);
+
+    dorado::secondary::BamFile bam_file(fn_bam, 1);
+
+    CATCH_REQUIRE(bam_file.fp());
+    CATCH_REQUIRE(bam_file.idx());
+    CATCH_REQUIRE(bam_file.hdr());
+
+    const std::unordered_map<std::string, int32_t> qname2hp{};
+    const std::vector<std::string> dtypes{};
+    const std::string tag_name{};
+    const std::string read_group{};
+    constexpr int64_t NUM_DTYPES = 1;
+    constexpr int32_t TAG_VALUE = 0;
+    constexpr bool TAG_KEEP_MISSING = false;
+    constexpr int32_t MIN_MAPQ = 1;
+    constexpr bool ROW_PER_READ = false;
+    constexpr bool INCLUDE_DWELLS = true;
+    constexpr bool INCLUDE_HAPLOTYPE_COLUMN = true;
+    constexpr bool INCLUDE_SNP_QV = true;
+    constexpr int32_t MAX_READS = 100;
+    constexpr bool RIGHT_ALIGN_INSERTIONS = true;
+    constexpr double MIN_SNP_ACCURACY = 0.0;
+
+    const dorado::secondary::ReadAlignmentData expected =
+            dorado::secondary::calculate_read_alignment(
+                    bam_file, ref_name, ref_start, ref_end, qname2hp, NUM_DTYPES, dtypes, tag_name,
+                    TAG_VALUE, TAG_KEEP_MISSING, read_group, MIN_MAPQ, ROW_PER_READ, INCLUDE_DWELLS,
+                    INCLUDE_HAPLOTYPE_COLUMN, INCLUDE_SNP_QV,
+                    dorado::secondary::HaplotagSource::BAM_HAP_TAG, MAX_READS,
+                    RIGHT_ALIGN_INSERTIONS, MIN_SNP_ACCURACY);
+
+    const kadayashi::MedakaFeatureMatrixOptions options{
+            .include_dwells = INCLUDE_DWELLS,
+            .include_haplotype_column = INCLUDE_HAPLOTYPE_COLUMN,
+            .include_snp_qv = INCLUDE_SNP_QV,
+            .min_mapq = MIN_MAPQ,
+            .num_dtypes = NUM_DTYPES,
+            .dtypes = dtypes,
+            .tag_name = tag_name,
+            .tag_value = TAG_VALUE,
+            .tag_keep_missing = TAG_KEEP_MISSING,
+            .readgroup = read_group,
+            .disable_read_packing = ROW_PER_READ,
+            .hap_source = kadayashi::USE_BAM_HAP_TAG,
+            .max_reads = MAX_READS,
+            .right_align_insertions = RIGHT_ALIGN_INSERTIONS,
+            .min_snp_accuracy = MIN_SNP_ACCURACY};
+
+    const dorado::secondary::ReadAlignmentData result =
+            kadayashi::gen_medaka_feature_matrix_wrapper(bam_file, ref_name, ref_start, ref_end,
+                                                         qname2hp, options);
+
+    CATCH_REQUIRE(result.featlen == 7);
+    CATCH_CHECK(has_non_zero_feature_value(result, 4));  // Dwells
+    CATCH_CHECK(has_non_zero_feature_value(result, 5));  // Haplotags
+    CATCH_CHECK(has_non_zero_feature_value(result, 6));  // SNP QV
+
+    compare_feature_matrix_logical_data(result, expected);
 }
 
 CATCH_TEST_CASE("kadayashi_featmatgen no input", TEST_GROUP) {
