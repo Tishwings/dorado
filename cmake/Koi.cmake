@@ -5,7 +5,7 @@ function(get_best_compatible_koi_version KOI_CUDA)
         # Koi provides binaries for these cuda versions when targeting aarch64
         set(SUPPORTED_VERSIONS 13.0 12.6)
     else()
-        set(SUPPORTED_VERSIONS 13.0 12.8 11.8)
+        set(SUPPORTED_VERSIONS 13.0 12.8)
     endif()
 
     list(SORT SUPPORTED_VERSIONS COMPARE NATURAL ORDER DESCENDING)
@@ -22,7 +22,6 @@ function(get_koi_download_hash KOI_DIR KOI_HASH)
     # List of valid hashes.
     set(hash__libkoi__0_6_9__Linux__aarch64__cuda__12_6 "d4a5f2b0656d1c7a1f03eba1dd7a857ba1bb00db3fce23c24df1b4b694fbf1ba")
     set(hash__libkoi__0_6_9__Linux__aarch64__cuda__13_0 "b72eb34317240362d579655045a2e17eb9edb93dd7ed18b89fc98c86fbe054c7")
-    set(hash__libkoi__0_6_9__Linux__x86_64__cuda__11_8 "141c894ac821a9981d542b6799ed5d2e7a2c70e6966db02e2078c65b5ba2f66c")
     set(hash__libkoi__0_6_9__Linux__x86_64__cuda__12_8 "d64b0bb823d660e59e1db36e30463f99f2524ad998606745144bfd88c79ace4c")
     set(hash__libkoi__0_6_9__Linux__x86_64__cuda__13_0 "eb2e368f523f64288684101a77a315e444cf543b3d8c5e2ee586371cbb1e4559")
     set(hash__libkoi__0_6_9__Windows__AMD64__cuda__12_8 "7b306ac5ea508050ab16ac8b82acf8017a5e30bf979497c2ea9efbee9a402099")

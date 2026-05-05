@@ -28,7 +28,7 @@ apt install -y --no-install-recommends \
 ```
 Dorado requires a minimum of gcc-11 to build. This is included in the `build-essential` package on Noble, but may need to be installed separately on other versions.
 
-Dorado requires the CUDA toolkit on Linux platforms. The minimum version is 11.8, but for optimal performance 12.8 should be used. 
+Dorado requires the CUDA toolkit on Linux platforms. The minimum version is 12.6, but for optimal performance 12.8 should be used. 
 If the system you are running on does not have CUDA 12.8 installed, and you do not have sudo privileges, you can install locally from a run file as follows:
 
 ```bash

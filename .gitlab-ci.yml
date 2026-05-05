@@ -527,12 +527,6 @@ build_archive:linux:arm64:cuda13:
     - .build_dorado_archive
     - .on_nightly_or_manual
 
-build_archive:linux:x86:cuda11:
-  variables:
-    CUDA: "11.8"
-  extends:
-    - .build_archive:linux:x86
-
 build_archive:linux:x86:cuda12:
   extends:
     - .build_archive:linux:x86
@@ -741,12 +735,6 @@ test:macos:arm:
           - "${DORADO_DOCKER_EXT}/ubuntu:22.04"
           - "${DORADO_DOCKER_EXT}/ubuntu:24.04"
           - "${DORADO_DOCKER_EXT}/rockylinux:8"
-
-test_archive:linux:x86:cuda11:
-  extends:
-    - .test_archive:linux:x86
-  needs:
-    - build_archive:linux:x86:cuda11
 
 test_archive:linux:x86:cuda12:
   extends:
