@@ -26,10 +26,6 @@ extern "C" {
 }
 
 namespace {
-bool koi_can_use_cutlass() {
-    cudaDeviceProp *prop = at::cuda::getCurrentDeviceProperties();
-    return ((prop->major == 8 || prop->major == 9) && prop->minor == 0);
-}
 
 struct KoiTensorExt : public KoiTensor {
     KoiTensorExt(const at::Tensor &t, const std::vector<int> &dim_tags) { init(t, dim_tags); }
@@ -138,37 +134,20 @@ GatedMLPImpl::GatedMLPImpl(int in_features_, int hidden_features_)
 
 at::Tensor GatedMLPImpl::forward(const at::Tensor &x) {
     at::Tensor t;
-#if DORADO_CUDA_BUILD
-    auto use_koi_swiglu = x.is_cuda() && utils::get_dev_opt<bool>("use_koi_swiglu", true) &&
-                          koi_can_use_cutlass();
-    if (use_koi_swiglu) {
-        utils::ScopedProfileRange spr("FC1+SILU", 3);
-        auto N = x.size(0);
-        auto T = x.size(1);
-        if (!features_interleaved) {
-            fc1->weight = fc1->weight.view({2, hidden_features, -1})
-                                  .transpose(0, 1)
-                                  .contiguous()
-                                  .view({-1, in_features});
-            features_interleaved = true;
-        }
-        auto stream = at::cuda::getCurrentCUDAStream().stream();
-        t = torch::empty({N, T, hidden_features}, x.options());
-        int res = host_linear_swiglu_f16(stream, int(N * T), 2 * hidden_features, in_features,
-                                         x.data_ptr(), fc1->weight.data_ptr(), t.data_ptr());
-        if (res != KOI_SUCCESS) {
-            throw std::runtime_error("Koi SwiGLU failed.");
-        }
-    } else
-#endif
     {
-        {
-            utils::ScopedProfileRange spr("FC1", 3);
-            t = fc1(x);
-        }
-        {
-            utils::ScopedProfileRange spr("SILU", 3);
-            const auto chunks = t.chunk(2, -1);
+        utils::ScopedProfileRange spr("FC1", 3);
+        t = fc1(x);
+    }
+    {
+        utils::ScopedProfileRange spr("SILU", 3);
+        const bool use_uswiglu = utils::get_dev_opt("use_uswiglu", false);
+        const auto chunks = t.chunk(2, -1);
+        if (use_uswiglu) {
+            // 1.702 and limit=7.0 are hard-coded for now
+            const auto &y = chunks[0].clamp_(-7.0, 7.0);
+            const auto &gate = chunks[1].clamp_max_(7.0);
+            t = (gate * torch::sigmoid(1.702 * gate)).mul_(y);
+        } else {
             const auto &y = chunks[0];
             const auto &gate = chunks[1];
             t = functional::silu(gate).mul_(y);
@@ -369,24 +348,6 @@ at::Tensor MultiHeadAttentionImpl::forward(at::Tensor x) {
         }
     }
     attn_output_ntc = at::empty({N, T, C}, x.options());
-#if DORADO_CUDA_BUILD
-    int res = KOI_NOT_SUPPORTED;
-    bool use_koi_attention = x.is_cuda() && utils::get_dev_opt<bool>("use_koi_attention", true) &&
-                             koi_can_use_cutlass();
-    if (use_koi_attention) {
-        utils::ScopedProfileRange spr("KOI_MEA", 3);
-        auto stream = at::cuda::getCurrentCUDAStream().stream();
-        const auto [win_upper, win_lower] = attn_window;
-        res = host_masked_attention_f16(stream, static_cast<int>(N), static_cast<int>(T), nhead,
-                                        head_dim, win_upper, win_lower, qkv[0].data_ptr(),
-                                        qkv[1].data_ptr(), qkv[2].data_ptr(),
-                                        attn_output_ntc.data_ptr());
-        if (res != KOI_SUCCESS && res != KOI_NOT_SUPPORTED) {
-            throw std::runtime_error("Koi windowed attention failed.");
-        }
-    }
-    if (res == KOI_NOT_SUPPORTED)
-#endif
     {
         utils::ScopedProfileRange spr("MEA", 3);
         auto attn_window_mask = get_attn_window_mask(T);
@@ -475,6 +436,7 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
     auto f8_opts = x_f16.options().dtype(torch::kFloat8_e4m3fn);
     bool use_f8 = (koi_tc_is_available(KOI_E4M3) == KOI_SUCCESS) &&
                   utils::get_dev_opt<bool>("koi_use_f8", true);
+    const bool use_uswiglu = utils::get_dev_opt("use_uswiglu", false);
 
     if (!t_res_weights.numel()) {
         // Weights for the Q,K and V tensors which will be multiplied with the inputs
@@ -617,7 +579,7 @@ void TxEncoderImpl::koi_forward(utils::ScaledTensor &scaled_tensor, at::Tensor &
         KoiTensorExt fc1_wts(t_fc1_wts.t, {'N', 'K', 'n', 'k'}, t_fc1_wts.scale, 'K');
         int use_f32_accum = int(utils::get_dev_opt<bool>("koi_swiglu_f32_accum", false));
         res = koi_mm_swiglu(stream, &in_mk, &fc1_wts, &fc1_out, ctr[2].data_ptr<int>(),
-                            use_f32_accum);
+                            use_f32_accum, use_uswiglu);
     }
     if (res == KOI_SUCCESS && ++calls) {
         // Fully connected
@@ -658,6 +620,7 @@ void TxEncoderImpl::koi_volta_forward(at::Tensor &x_f16) {
     bool useFloatAccumSwiglu = utils::get_dev_opt("volta_f32_accum_swiglu", false);
     bool useFloatAccumfc2 = utils::get_dev_opt("volta_f32_accum_fc2", false);
     bool useBiasfc2 = false;  // No bias for fc2
+    const bool use_uswiglu = utils::get_dev_opt("use_uswiglu", false);
 
     utils::ScopedProfileRange layer_spr("TxLayerKoiVoltaTiled", 2);
     const float alpha = params.deepnorm_alpha;
@@ -752,7 +715,7 @@ void TxEncoderImpl::koi_volta_forward(at::Tensor &x_f16) {
         // Matmul + SWIGLU
         utils::ScopedProfileRange spr("FC1+SILU Volta", 3);
         koi_volta_mm_swiglu(stream, t_out_rms1.data_ptr(), t_fc1_wts_f16.t.data_ptr(),
-                            t_fc1_out.data_ptr(), useFloatAccumSwiglu, N * T);
+                            t_fc1_out.data_ptr(), useFloatAccumSwiglu, use_uswiglu, N * T);
     }
     if (res == KOI_SUCCESS && ++calls) {
         // Koi linear matmul, fc2 weights (K=2048)
