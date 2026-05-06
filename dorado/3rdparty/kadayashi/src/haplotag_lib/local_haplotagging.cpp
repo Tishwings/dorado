@@ -3223,8 +3223,8 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
                                                                // there's no known read that
                                                                // overlaps with the right edge.
         }
-        spdlog::info("[kdys::{}] {}:{}-{} has {} lanes (subject to capping)", __func__, refname,
-                     itvl_start, itvl_end, n_lanes);
+        spdlog::debug("[kdys::{}] {}:{}-{} has {} lanes (subject to capping)", __func__, refname,
+                      itvl_start, itvl_end, n_lanes);
     }
 
     // Give placeholder names 1-index to empty entries in left and right qnames

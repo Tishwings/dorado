@@ -46,7 +46,8 @@ public:
                          const HaplotagSource hap_source,      // Where the column value comes from.
                          const std::optional<std::filesystem::path>& phasing_bin,
                          const bool include_snp_qv_column,
-                         const KadayashiOptions& kadayashi_opt);
+                         const KadayashiOptions& kadayashi_opt,
+                         const bool legacy_feature_gen);
 
     ~EncoderReadAlignment() = default;
 
@@ -92,6 +93,7 @@ private:
     HaplotagSource m_hap_source;
     bool m_clip_to_zero = false;
     bool m_right_align_insertions = false;
+    bool m_legacy_feature_gen = false;
     std::optional<std::filesystem::path> m_phasing_bin;
     KadayashiOptions m_kadayashi_opt;
     std::mutex m_mtx;

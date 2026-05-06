@@ -56,7 +56,8 @@ PolisherResources create_resources(const secondary::ModelConfig& model_config,
                                    const std::optional<int32_t>& min_mapq_override,
                                    const std::optional<secondary::HaplotagSource>& haptag_source,
                                    const std::optional<std::filesystem::path>& phasing_bin_fn,
-                                   const secondary::KadayashiOptions& kadayashi_opt);
+                                   const secondary::KadayashiOptions& kadayashi_opt,
+                                   bool legacy_feature_gen);
 
 /**
  * \brief For a given consensus, goes through the sequence and removes all '*' characters.

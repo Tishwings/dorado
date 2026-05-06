@@ -111,6 +111,7 @@ struct Options {
 
     secondary::KadayashiOptions kadayashi_opt;
     bool dump_variants = false;
+    bool legacy_feature_gen = false;
 };
 
 /// \brief Define the CLI options.
@@ -363,6 +364,10 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Write individual Kadayashi and inference variants if the output is to a "
                       "folder.")
                 .flag();
+        parser.add_argument("--legacy-feature-gen")
+                .hidden()
+                .help("Use legacy read alignment feature generation.")
+                .flag();
     }
 }
 
@@ -470,6 +475,7 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.kadayashi_opt.use_dvr_for_phasing = parser.get<bool>("kada-use-dvr");
 
     opt.dump_variants = parser.get<bool>("dump-variants");
+    opt.legacy_feature_gen = parser.get<bool>("legacy-feature-gen");
 
     return opt;
 }
@@ -1394,7 +1400,7 @@ int variant_caller(int argc, char* argv[]) {
                 model_config, opt.in_ref_fastx_fn, opt.in_aln_bam_fn, opt.device_str, opt.threads,
                 opt.infer_threads, opt.full_precision, opt.read_group, opt.tag_name, opt.tag_value,
                 opt.min_snp_accuracy, opt.tag_keep_missing, opt.min_mapq, opt.haplotag_source,
-                opt.phasing_bin_path, opt.kadayashi_opt);
+                opt.phasing_bin_path, opt.kadayashi_opt, opt.legacy_feature_gen);
 
         // Progress bar.
         secondary::Stats stats;

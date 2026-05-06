@@ -34,7 +34,8 @@ std::unique_ptr<EncoderBase> encoder_factory(
         const std::optional<int32_t>& min_mapq_override,
         const std::optional<HaplotagSource>& hap_source,
         const std::optional<std::filesystem::path>& phasing_bin_fn,
-        const KadayashiOptions& kadayashi_opt);
+        const KadayashiOptions& kadayashi_opt,
+        bool legacy_feature_gen);
 
 FeatureColumnMap feature_column_map_factory(const ModelConfig& config);
 

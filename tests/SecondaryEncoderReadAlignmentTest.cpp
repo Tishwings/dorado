@@ -19,6 +19,7 @@
 #include <fstream>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -38,6 +39,7 @@ struct BamRecord {
     uint16_t flag{0};
     uint8_t mapq{0};
     std::string_view cigar{};
+    std::string md{};
     std::string_view seq{};
     std::string_view qual{};
     std::vector<int8_t> dwell_tag{};
@@ -77,6 +79,9 @@ dorado::SamHdrPtr make_bam_hdr(const std::span<const std::pair<std::string, std:
 // Constructs a HTS-style BAM record (bam1_t*) from given data.
 dorado::BamPtr make_bam1(const BamRecord& record) {
     const std::vector<uint32_t> cigar_vec = parse_cigar_from_string_hts(record.cigar);
+    if (std::empty(record.md)) {
+        throw std::runtime_error{"Synthetic BAM record is missing an explicit MD tag."};
+    }
 
     dorado::BamPtr ret{bam_init1()};
 
@@ -117,6 +122,10 @@ dorado::BamPtr make_bam1(const BamRecord& record) {
                        reinterpret_cast<const uint8_t*>(&(*record.nm)));
     }
 
+    const int32_t md_len = static_cast<int32_t>(std::size(record.md) + 1);
+    bam_aux_append(ret.get(), "MD", 'Z', md_len,
+                   reinterpret_cast<const uint8_t*>(record.md.c_str()));
+
     return ret;
 }
 
@@ -130,6 +139,9 @@ void write_bam(const std::filesystem::path& out_fn,
     dorado::SamHdrPtr header = make_bam_hdr(targets);
     hts_file.set_header(header.get());
     for (const BamRecord& r : records) {
+        if ((r.tid < 0) || (r.tid >= std::ssize(targets))) {
+            throw std::runtime_error{"Synthetic BAM record has an invalid target id."};
+        }
         dorado::BamPtr bam_record = make_bam1(r);
         hts_file.write(bam_record.get());
     }
@@ -299,7 +311,7 @@ CATCH_TEST_CASE("read_ids", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -328,7 +340,7 @@ CATCH_TEST_CASE("read_ids", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -391,7 +403,7 @@ CATCH_TEST_CASE("Compute haptags", TEST_GROUP) {
                                  tag_keep_missing, read_group, min_mapq, max_reads,
                                  min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                  right_align_insertions, include_haplotype_column, hap_source,
-                                 phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                 phasing_bin, include_snp_qv_column, kadayashi_opt, false);
 
     const Sample result = encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -462,11 +474,11 @@ CATCH_TEST_CASE("snp_accuracy_filter", TEST_GROUP) {
     CATCH_INFO(TEST_GROUP << " Test name: " << test_case.test_name);
 
     // Run UUT.
-    EncoderReadAlignment encoder(in_ref_fn, in_bam_aln_fn, dtypes, tag_name, tag_value,
-                                 tag_keep_missing, read_group, min_mapq, max_reads,
-                                 test_case.min_snp_accuracy, row_per_read, include_dwells,
-                                 clip_to_zero, right_align_insertions, include_haplotype_column,
-                                 hap_source, phasing_bin, include_snp_qv_column, kadayashi_opt);
+    EncoderReadAlignment encoder(
+            in_ref_fn, in_bam_aln_fn, dtypes, tag_name, tag_value, tag_keep_missing, read_group,
+            min_mapq, max_reads, test_case.min_snp_accuracy, row_per_read, include_dwells,
+            clip_to_zero, right_align_insertions, include_haplotype_column, hap_source, phasing_bin,
+            include_snp_qv_column, kadayashi_opt, false);
 
     const Sample result = encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -504,15 +516,15 @@ CATCH_TEST_CASE("synthetic_test_01", TEST_GROUP) {
                 {"contig_1", "ACTGAACTGA"},
         };
         const std::vector<BamRecord> records{
-            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 50 /*mapq*/, "10M" /*cigar*/, "ACTGAACTGA" /*seq*/, "" /*qual*/, {} /*dwell*/, {} /*hp*/, 0 /*NM*/},                           // Full-span.
-            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 51 /*mapq*/, "10M", "ACTGAACTGA", "", {}, {}, 0},                           // Duplicate.
-            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 52 /*mapq*/, "10M", "ACTGAACTGA", "", {}, {}, 0},                           // Duplicate.
-            {"read_02", 0 /*tid*/, 0 /*pos*/, 16 /*flag*/, 53 /*mapq*/, "5M", "ACTGA", "", {}, 3, 1},                                  // Left-flank only. Reverse. NM = 1 and cigar = 5M make snp_qv = 6.98.
-            {"read_03", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 54 /*mapq*/, "3M", "ACT", "", {5, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}, 5, 2},  // This should share the row with the next one. NM = 2 and cigar = 3M make snp_qv = 1.76.
-            {"read_04", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 55 /*mapq*/, "2M", "GA", "", {}, {}, 1},                                    // This should share the row with the previous.
-            {"read_05", 0 /*tid*/, 1 /*pos*/, 0  /*flag*/, 56 /*mapq*/, "8M", "CTGAACTG", "1234567890", {}, {}, 3},                    // Contained. Has quals. NM = 3 and cigar = 8M make snp_qv = 4.26.
-            {"read_06", 0 /*tid*/, 5 /*pos*/, 0  /*flag*/, 57 /*mapq*/, "5M", "ACTGA", "", {}, {}, 5},                                 // Right-flank only.
-            {"read_06", 0 /*tid*/, 5 /*pos*/, 0  /*flag*/, 58 /*mapq*/, "5M", "ACTGA", "", {}, {}, 0},                                 // Duplicate.
+            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 50 /*mapq*/, "10M" /*cigar*/, "10" /*MD*/, "ACTGAACTGA" /*seq*/, "" /*qual*/, {} /*dwell*/, {} /*hp*/, 0 /*NM*/},    // Full-span.
+            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 51 /*mapq*/, "10M", "10", "ACTGAACTGA", "", {}, {}, 0},                              // Duplicate.
+            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 52 /*mapq*/, "10M", "10", "ACTGAACTGA", "", {}, {}, 0},                              // Duplicate.
+            {"read_02", 0 /*tid*/, 0 /*pos*/, 16 /*flag*/, 53 /*mapq*/, "5M", "0A4", "ACTGA", "", {}, 3, 1},                                    // Left-flank only. Reverse. NM = 1 and cigar = 5M make snp_qv = 6.98.
+            {"read_03", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 54 /*mapq*/, "3M", "0A0C1", "ACT", "", {5, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}, 5, 2},  // This should share the row with the next one. NM = 2 and cigar = 3M make snp_qv = 1.76.
+            {"read_04", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 55 /*mapq*/, "2M", "0G1", "GA", "", {}, {}, 1},                                      // This should share the row with the previous.
+            {"read_05", 0 /*tid*/, 1 /*pos*/, 0  /*flag*/, 56 /*mapq*/, "8M", "0C0T0G5", "CTGAACTG", "1234567890", {}, {}, 3},                  // Contained. Has quals. NM = 3 and cigar = 8M make snp_qv = 4.26.
+            {"read_06", 0 /*tid*/, 5 /*pos*/, 0  /*flag*/, 57 /*mapq*/, "5M", "0A0C0T0G0A0", "ACTGA", "", {}, {}, 5},                           // Right-flank only.
+            {"read_06", 0 /*tid*/, 5 /*pos*/, 0  /*flag*/, 58 /*mapq*/, "5M", "5", "ACTGA", "", {}, {}, 0},                                     // Duplicate.
         };
         // clang-format on
 
@@ -675,7 +687,7 @@ CATCH_TEST_CASE("synthetic_test_01", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -706,7 +718,7 @@ CATCH_TEST_CASE("synthetic_test_01", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
 
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
@@ -740,7 +752,7 @@ CATCH_TEST_CASE("synthetic_test_01", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -773,7 +785,7 @@ CATCH_TEST_CASE("synthetic_test_01", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -806,7 +818,7 @@ CATCH_TEST_CASE("synthetic_test_01", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -831,7 +843,7 @@ CATCH_TEST_CASE("synthetic_test_01", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
 
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
@@ -886,7 +898,7 @@ CATCH_TEST_CASE("synthetic_test_01", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
 
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
@@ -912,9 +924,9 @@ CATCH_TEST_CASE("synthetic_test_02", TEST_GROUP) {
                 {"contig_1", "ACTGAACTGA"},
         };
         const std::vector<BamRecord> records{
-            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "8M1D1M", "ACTGAACTA", "", {}, {}},     // Full-span.
-            {"read_02", 0 /*tid*/, 0 /*pos*/, 0 /*flag*/,  60 /*mapq*/, "2M2I1M", "ACAAT", "", {}, {}},         // Reusable row, part 1.
-            {"read_03", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "2M", "GA", "", {}, {}},                // Reusable row, part 2.
+            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "8M1D1M", "8^G1", "ACTGAACTA", "", {}, {}, 0},  // Full-span.
+            {"read_02", 0 /*tid*/, 0 /*pos*/, 0 /*flag*/,  60 /*mapq*/, "2M2I1M", "3", "ACAAT", "", {}, {}, 0},         // Reusable row, part 1.
+            {"read_03", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "2M", "2", "GA", "", {}, {}, 0},                // Reusable row, part 2.
         };
         // clang-format on
 
@@ -1040,7 +1052,7 @@ CATCH_TEST_CASE("synthetic_test_02", TEST_GROUP) {
                                  tag_keep_missing, read_group, min_mapq, max_reads,
                                  min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                  right_align_insertions, include_haplotype_column, hap_source,
-                                 phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                 phasing_bin, include_snp_qv_column, kadayashi_opt, false);
     const Sample result = encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
     eval_sample(expected, result);
@@ -1063,9 +1075,9 @@ CATCH_TEST_CASE("synthetic_test_03-one_read_per_row", TEST_GROUP) {
                 {"contig_1", "ACTGAACTGA"},
         };
         const std::vector<BamRecord> records{
-            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "8M1D1M", "ACTGAACTA", "", {}, {}},     // Full-span.
-            {"read_02", 0 /*tid*/, 0 /*pos*/, 0 /*flag*/,  60 /*mapq*/, "2M2I1M", "ACAAT", "", {}, {}},         // Reusable row, part 1.
-            {"read_03", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "2M", "GA", "", {}, {}},                // Reusable row, part 2.
+            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "8M1D1M", "8^G1", "ACTGAACTA", "", {}, {}, 0},  // Full-span.
+            {"read_02", 0 /*tid*/, 0 /*pos*/, 0 /*flag*/,  60 /*mapq*/, "2M2I1M", "3", "ACAAT", "", {}, {}, 0},         // Reusable row, part 1.
+            {"read_03", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "2M", "2", "GA", "", {}, {}, 0},                // Reusable row, part 2.
         };
         // clang-format on
 
@@ -1205,7 +1217,7 @@ CATCH_TEST_CASE("synthetic_test_03-one_read_per_row", TEST_GROUP) {
                                  tag_keep_missing, read_group, min_mapq, max_reads,
                                  min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                  right_align_insertions, include_haplotype_column, hap_source,
-                                 phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                 phasing_bin, include_snp_qv_column, kadayashi_opt, false);
     const Sample result = encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
     eval_sample(expected, result);
@@ -1238,9 +1250,9 @@ CATCH_TEST_CASE("synthetic_test_04-max_reads", TEST_GROUP) {
                 {"contig_1", "ACTGAACTGA"},
         };
         const std::vector<BamRecord> records{
-            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "8M1D1M", "ACTGAACTA", "", {}, {}},     // Full-span.
-            {"read_02", 0 /*tid*/, 0 /*pos*/, 0 /*flag*/,  60 /*mapq*/, "2M2I1M", "ACAAT", "", {}, {}},         // Reusable row, part 1.
-            {"read_03", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "2M", "GA", "", {}, {}},                // Reusable row, part 2.
+            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "8M1D1M", "8^G1", "ACTGAACTA", "", {}, {}, 0},  // Full-span.
+            {"read_02", 0 /*tid*/, 0 /*pos*/, 0 /*flag*/,  60 /*mapq*/, "2M2I1M", "3", "ACAAT", "", {}, {}, 0},         // Reusable row, part 1.
+            {"read_03", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "2M", "2", "GA", "", {}, {}, 0},                // Reusable row, part 2.
         };
         // clang-format on
 
@@ -1351,7 +1363,7 @@ CATCH_TEST_CASE("synthetic_test_04-max_reads", TEST_GROUP) {
                                  tag_keep_missing, read_group, min_mapq, max_reads,
                                  min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                  right_align_insertions, include_haplotype_column, hap_source,
-                                 phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                 phasing_bin, include_snp_qv_column, kadayashi_opt, false);
     const Sample result = encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
     const std::vector<int64_t> shape(std::begin(result.features.sizes()),
@@ -1378,9 +1390,9 @@ CATCH_TEST_CASE("synthetic_test_05-haplotags", TEST_GROUP) {
                 {"contig_1", "ACTGAACTGA"},
         };
         const std::vector<BamRecord> records{
-            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "8M1D1M", "ACTGAACTA", "", {}, {}},     // Full-span.
-            {"read_02", 0 /*tid*/, 0 /*pos*/, 0 /*flag*/,  60 /*mapq*/, "2M2I1M", "ACAAT", "", {}, {}},         // Reusable row, part 1.
-            {"read_03", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "2M", "GA", "", {}, {}},                // Reusable row, part 2.
+            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "8M1D1M", "8^G1", "ACTGAACTA", "", {}, {}, 0},  // Full-span.
+            {"read_02", 0 /*tid*/, 0 /*pos*/, 0 /*flag*/,  60 /*mapq*/, "2M2I1M", "3", "ACAAT", "", {}, {}, 0},         // Reusable row, part 1.
+            {"read_03", 0 /*tid*/, 8 /*pos*/, 0  /*flag*/, 60 /*mapq*/, "2M", "2", "GA", "", {}, {}, 0},                // Reusable row, part 2.
         };
         // clang-format on
 
@@ -1511,7 +1523,7 @@ CATCH_TEST_CASE("synthetic_test_05-haplotags", TEST_GROUP) {
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
 
@@ -1545,10 +1557,10 @@ CATCH_TEST_CASE("synthetic_test_06-calculate_read_alignment_fix_for_high_coverag
                 {"contig_1", "ACTGAACTGA"},
         };
         const std::vector<BamRecord> records{
-            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 51 /*mapq*/, "10M" /*cigar*/, "ACTGAACTGA" /*seq*/, "" /*qual*/, {} /*dwell*/, {} /*hp*/, 0 /*NM*/},                           // Full-span.
-            {"read_02", 0 /*tid*/, 0 /*pos*/, 16 /*flag*/, 52 /*mapq*/, "5M", "ACTGA", "", {}, 3, 1},                                  // Left-flank only. Reverse. NM = 1 and cigar = 5M make snp_qv = 6.98.
-            {"read_03", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 53 /*mapq*/, "3M", "ACT", "", {5, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}, 5, 2},  // This should share the row with the next one. NM = 2 and cigar = 3M make snp_qv = 1.76.
-            {"read_04", 0 /*tid*/, 1 /*pos*/, 0  /*flag*/, 54 /*mapq*/, "9M", "CTGAACTGA", "123456789", {}, {}, 3},                    // Contained. Has quals. NM = 3 and cigar = 9M make snp_qv = 4.77.
+            {"read_01", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 51 /*mapq*/, "10M" /*cigar*/, "10" /*MD*/, "ACTGAACTGA" /*seq*/, "" /*qual*/, {} /*dwell*/, {} /*hp*/, 0 /*NM*/},    // Full-span.
+            {"read_02", 0 /*tid*/, 0 /*pos*/, 16 /*flag*/, 52 /*mapq*/, "5M", "0A4", "ACTGA", "", {}, 3, 1},                                    // Left-flank only. Reverse. NM = 1 and cigar = 5M make snp_qv = 6.98.
+            {"read_03", 0 /*tid*/, 0 /*pos*/, 0  /*flag*/, 53 /*mapq*/, "3M", "0A0C1", "ACT", "", {5, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}, 5, 2},  // This should share the row with the next one. NM = 2 and cigar = 3M make snp_qv = 1.76.
+            {"read_04", 0 /*tid*/, 1 /*pos*/, 0  /*flag*/, 54 /*mapq*/, "9M", "0C0T0G6", "CTGAACTGA", "123456789", {}, {}, 3},                  // Contained. Has quals. NM = 3 and cigar = 9M make snp_qv = 4.77.
         };
         // clang-format on
 
@@ -1684,7 +1696,7 @@ CATCH_TEST_CASE("synthetic_test_06-calculate_read_alignment_fix_for_high_coverag
                                      tag_keep_missing, read_group, min_mapq, max_reads,
                                      min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                      right_align_insertions, include_haplotype_column, hap_source,
-                                     phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                     phasing_bin, include_snp_qv_column, kadayashi_opt, false);
 
         const Sample result =
                 encoder.encode_region(ref_name, ref_start, ref_end, ref_id, haplotags);
@@ -1785,7 +1797,7 @@ CATCH_TEST_CASE("EncoderReadAlignment::collate preserves padded batch shape afte
 
     const std::vector<std::pair<std::string, std::string>> targets{{"contig_1", "ACTGAACTGA"}};
     const std::vector<BamRecord> records{
-            {"read_01", 0, 0, 0, 50, "10M", "ACTGAACTGA", "", {}, {}, 0},
+            {"read_01", 0, 0, 0, 50, "10M", "10", "ACTGAACTGA", "", {}, {}, 0},
     };
     write_bam(temp_in_bam_fn, targets, records);
     write_ref(temp_in_ref_fn, targets);
@@ -1812,7 +1824,7 @@ CATCH_TEST_CASE("EncoderReadAlignment::collate preserves padded batch shape afte
                                  tag_keep_missing, read_group, min_mapq, max_reads,
                                  min_snp_accuracy, row_per_read, include_dwells, clip_to_zero,
                                  right_align_insertions, include_haplotype_column, hap_source,
-                                 phasing_bin, include_snp_qv_column, kadayashi_opt);
+                                 phasing_bin, include_snp_qv_column, kadayashi_opt, false);
 
     const at::TensorOptions opts = at::TensorOptions().dtype(at::kChar).device(at::kCPU);
     std::vector<at::Tensor> batch;

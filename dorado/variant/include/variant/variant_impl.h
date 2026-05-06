@@ -81,6 +81,7 @@ void signal_worker_terminate(std::atomic<bool>& worker_terminate);
  * \param haptag_source Optional haplotag source selection.
  * \param phasing_bin_fn Optional path to an external phasing binary.
  * \param kadayashi_opt Kadayashi-specific configuration.
+ * \param legacy_feature_gen Use legacy read alignment feature generation.
  * \return Fully initialized resources for the async variant-calling pipeline.
  */
 VariantResources create_resources(const secondary::ModelConfig& model_config,
@@ -98,7 +99,8 @@ VariantResources create_resources(const secondary::ModelConfig& model_config,
                                   const std::optional<int32_t>& min_mapq_override,
                                   const std::optional<secondary::HaplotagSource>& haptag_source,
                                   const std::optional<std::filesystem::path>& phasing_bin_fn,
-                                  const secondary::KadayashiOptions& kadayashi_opt);
+                                  const secondary::KadayashiOptions& kadayashi_opt,
+                                  bool legacy_feature_gen);
 
 /**
  * \brief Reads BAM windows, haplotags reads, calls simple variants and builds inference samples.
