@@ -140,9 +140,9 @@ struct BasecallModelConfig {
     BatchParams basecaller;
 
     // True if this model config describes a LSTM model
-    bool is_lstm_model() const { return !is_tx_model(); }
+    bool is_lstm_model() const { return !is_tx_model() && !is_flstm_model(); }
     // True if this model config describes a factorised LSTM model
-    bool is_flstm_model() const { return is_lstm_model() && lstm_inner_dim.has_value(); }
+    bool is_flstm_model() const { return !is_tx_model() && lstm_inner_dim.has_value(); }
     // True if this model config describes a transformer model
     bool is_tx_model() const { return tx.has_value(); };
 

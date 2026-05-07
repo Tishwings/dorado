@@ -56,6 +56,7 @@ ConvParams parse_conv_params(const toml::value &segment, const bool clamp) {
     params.size = toml::find<int>(segment, "size");
     params.winlen = toml::find<int>(segment, "winlen");
     params.stride = toml::find<int>(segment, "stride");
+    params.inner_dim = 0;
 
     const auto &activation = toml::find<std::string>(segment, keys::ACTIVATION);
     if (activation == "swish") {

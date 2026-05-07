@@ -1,6 +1,7 @@
 #include "nn/FLSTMStack.h"
 
 #include "torch_utils/gpu_profiling.h"
+#include "torch_utils/tensor_utils.h"
 
 #include <stdexcept>
 #include <tuple>
@@ -52,7 +53,10 @@ at::Tensor FLSTMStackImpl::forward(at::Tensor x) {
 #if DORADO_CUDA_BUILD
 
 void FLSTMStackImpl::reserve_working_memory(WorkingMemory &wm) {
-    if ((wm.layout == TensorLayout::CUBLAS_TNC) || (wm.layout == TensorLayout::CUTLASS_TNC_F16)) {
+    if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
+        wm.temp({(2 * wm.T * (int64_t)wm.N * (2 * K_)) + (4 * (wm.T * (int64_t)wm.N))}, torch::kU8);
+    } else if ((wm.layout == TensorLayout::CUBLAS_TNC) ||
+               (wm.layout == TensorLayout::CUTLASS_TNC_F16)) {
         wm.temp({wm.N * ((2 * K_) + (4 * C_))}, torch::kF16);
     } else {
         throw std::runtime_error("FLSTMStack error: unsupported TensorLayout!");
@@ -62,11 +66,111 @@ void FLSTMStackImpl::reserve_working_memory(WorkingMemory &wm) {
 void FLSTMStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *aux) {
     if (aux) {
         throw std::runtime_error("FLSTMStack error: variable chunks are not supported!");
-    }
-    if ((wm.layout == TensorLayout::CUBLAS_TNC) || (wm.layout == TensorLayout::CUTLASS_TNC_F16)) {
-        return forward_cublas(wm);
+    } else if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
+        forward_koi(wm);
+    } else if ((wm.layout == TensorLayout::CUBLAS_TNC) ||
+               (wm.layout == TensorLayout::CUTLASS_TNC_F16)) {
+        forward_cublas(wm);
     } else {
         throw std::runtime_error("FLSTMStack error: unsupported TensorLayout!");
+    }
+}
+
+void FLSTMStackImpl::forward_koi(WorkingMemory &wm) {
+    auto inout = wm.current;
+    inout[0] = 0;
+    inout[wm.T + 1] = 0;
+    inout[wm.T + 2] = 1;
+
+    auto stream = at::cuda::getCurrentCUDAStream().stream();
+    auto opts_f16 = wm.current.options().dtype(torch::kF16);
+    auto opts_i32 = opts_f16.dtype(torch::kI32);
+
+    const int64_t dn_bfr_size = 2 * wm.T * (int64_t)wm.N * (2 * K_);
+    const int64_t dn_scale_bfr_size = 4 * (wm.T * (int64_t)wm.N);
+
+    auto temp_bfr = wm.temp({dn_bfr_size + dn_scale_bfr_size}, torch::kU8);
+    temp_bfr.zero_();
+
+    auto dn_bfr = temp_bfr.narrow(0, 0, dn_bfr_size);
+    auto dn_scale_bfr = temp_bfr.narrow(0, dn_bfr_size, dn_scale_bfr_size);
+
+    for (int layer = 0; layer < std::ssize(layers_); ++layer) {
+        utils::ScopedProfileRange spr_lstm("flstm_layer", 3);
+
+        const bool reverse = first_reverse_ ^ (layer & 1);
+
+        auto workspace_bfr = torch::empty({8192}, opts_i32);
+
+        if (std::ssize(device_up_weights_) == layer) {  // move weights to GPU first time around
+            const auto &params = layers_[layer]->named_parameters();
+
+            auto scaled_dn_weights_ih =
+                    utils::quantize_tensor(params["dn_weight_ih"].to(opts_f16), 1);
+
+            scaled_dn_weights_ih.t = scaled_dn_weights_ih.t.view({-1, 2, 2, 2, 2, 2, C_})
+                                             .permute({2, 0, 4, 1, 3, 5, 6})
+                                             .contiguous()
+                                             .view({K_, C_});
+            scaled_dn_weights_ih.scale = scaled_dn_weights_ih.scale.view({-1, 2, 2, 2, 2, 2})
+                                                 .permute({2, 0, 4, 1, 3, 5})
+                                                 .contiguous()
+                                                 .view({K_});
+
+            device_dn_weights_ih_.push_back(scaled_dn_weights_ih.t);
+            device_dn_weights_scale_ih_.push_back(scaled_dn_weights_ih.scale.to(opts_f16));
+
+            auto scaled_dn_weights_hh =
+                    utils::quantize_tensor(params["dn_weight_hh"].to(opts_f16), 1);
+
+            scaled_dn_weights_hh.t = scaled_dn_weights_hh.t.view({-1, 2, 2, 2, 2, 2, C_})
+                                             .permute({2, 0, 4, 1, 3, 5, 6})
+                                             .contiguous()
+                                             .view({K_, C_});
+            scaled_dn_weights_hh.scale = scaled_dn_weights_hh.scale.view({-1, 2, 2, 2, 2, 2})
+                                                 .permute({2, 0, 4, 1, 3, 5})
+                                                 .contiguous()
+                                                 .view({K_});
+
+            device_dn_weights_hh_.push_back(scaled_dn_weights_hh.t);
+            device_dn_weights_scale_hh_.push_back(scaled_dn_weights_hh.scale.to(opts_f16));
+
+            auto up_weights_ih = params["up_weight_ih"].to(opts_f16);
+            auto up_weights_hh = params["up_weight_hh"].to(opts_f16);
+            auto up_weights = torch::cat({up_weights_ih, up_weights_hh}, 1);
+
+            auto scaled_up_weights = utils::quantize_tensor(up_weights, 1);
+            device_up_weights_.push_back(scaled_up_weights.t.view({4, -1, 2, 2, 2, 2, 2 * K_})
+                                                 .permute({1, 5, 0, 2, 3, 4, 6})
+                                                 .contiguous()
+                                                 .view({-1, 2 * K_}));
+            device_up_weights_scale_.push_back(scaled_up_weights.scale.to(opts_f16)
+                                                       .view({4, -1, 2, 2, 2, 2})
+                                                       .permute({1, 5, 2, 3, 4, 0})
+                                                       .contiguous()
+                                                       .view({-1}));
+
+            auto up_bias = params["up_bias_ih"].to(opts_f16);
+            device_up_bias_.push_back(up_bias.view({4, -1, 2, 2, 2, 2})
+                                              .permute({1, 5, 2, 3, 4, 0})
+                                              .contiguous()
+                                              .view({-1}));
+        }
+
+        const int parity = (1 - (layer % 2U));
+
+        host_factorised_lstm(stream, wm.N, wm.T, reverse ? -1 : 1, parity, inout.data_ptr(),
+                             nullptr,  // state
+                             nullptr,  // encoding
+                             device_dn_weights_ih_[layer].data_ptr(),
+                             device_dn_weights_scale_ih_[layer].data_ptr(),
+                             device_dn_weights_hh_[layer].data_ptr(),
+                             device_dn_weights_scale_hh_[layer].data_ptr(), dn_bfr.data_ptr(),
+                             dn_scale_bfr.data_ptr(), device_up_weights_[layer].data_ptr(),
+                             device_up_weights_scale_[layer].data_ptr(),
+                             device_up_bias_[layer].data_ptr());
+
+        wm.is_input_to_rev_lstm = !reverse;
     }
 }
 
@@ -77,14 +181,17 @@ void FLSTMStackImpl::forward_cublas(WorkingMemory &wm) {
 
     auto stream = at::cuda::getCurrentCUDAStream().stream();
 
-    auto temp_bfr = wm.temp({wm.N * ((2 * K_) + (4 * C_))}, torch::kF16);
+    const int64_t dn_bfr_size = wm.N * (2 * K_);
+    const int64_t up_bfr_size = wm.N * (4 * C_);
 
-    auto dn_bfr = temp_bfr.narrow(0, 0, wm.N * (2 * K_)).view({wm.N, 2, K_});
+    auto temp_bfr = wm.temp({dn_bfr_size + up_bfr_size}, torch::kF16);
+
+    auto dn_bfr = temp_bfr.narrow(0, 0, dn_bfr_size).view({wm.N, 2, K_});
     auto dn_ih_bfr = dn_bfr.select(1, 0);
     auto dn_hh_bfr = dn_bfr.select(1, 1);
     dn_bfr = dn_bfr.view({wm.N, -1});
 
-    auto up_bfr = temp_bfr.narrow(0, wm.N * (2 * K_), wm.N * (4 * C_)).view({wm.N, 4 * C_});
+    auto up_bfr = temp_bfr.narrow(0, dn_bfr_size, up_bfr_size).view({wm.N, 4 * C_});
 
     for (int layer = 0; layer < std::ssize(layers_); ++layer) {
         utils::ScopedProfileRange spr_lstm("flstm_layer", 3);

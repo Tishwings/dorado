@@ -275,7 +275,7 @@ BasecallModelConfig load_lstm_model_config(const std::filesystem::path &path) {
                                          std::to_string(flstm_layers));
             }
             config.lstm_layers = flstm_layers;
-            config.convs.back().flstm = true;
+            config.convs.back().inner_dim = config.lstm_inner_dim.value();
         }
     } else {
         // pre-v4 model
@@ -289,10 +289,10 @@ BasecallModelConfig load_lstm_model_config(const std::filesystem::path &path) {
                                        : 4;
 
         config.convs.push_back(
-                ConvParams{config.num_features, first_conv, 5, 1, Activation::SWISH});
-        config.convs.push_back(ConvParams{first_conv, 16, 5, 1, Activation::SWISH});
+                ConvParams{config.num_features, first_conv, 5, 1, Activation::SWISH, 0});
+        config.convs.push_back(ConvParams{first_conv, 16, 5, 1, Activation::SWISH, 0});
         config.convs.push_back(
-                ConvParams{16, config.lstm_size, 19, config.stride, Activation::SWISH});
+                ConvParams{16, config.lstm_size, 19, config.stride, Activation::SWISH, 0});
     }
 
     const auto &global_norm = toml::find(config_toml, keys::GLOBAL_NORM);

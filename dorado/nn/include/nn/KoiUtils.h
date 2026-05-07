@@ -6,5 +6,7 @@ namespace dorado::nn {
 bool koi_can_use_cutlass(/* current device */);
 bool koi_can_use_cutlass(int device_id);
 bool koi_can_use_quantised_lstm(/* current device */);
+bool koi_can_run_flstm(/* current device */);
+bool koi_can_run_flstm(int device_id);
 
 }  // namespace dorado::nn

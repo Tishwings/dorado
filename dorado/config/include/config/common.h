@@ -43,7 +43,7 @@ struct ConvParams {
     int winlen;
     int stride = 1;
     Activation activation;
-    bool flstm = false;
+    int inner_dim;
     std::string to_string() const;
 };
 

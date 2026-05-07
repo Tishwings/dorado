@@ -24,7 +24,7 @@ using namespace torch::nn;
 using namespace config;
 
 std::vector<torch::Tensor> load_lstm_model_weights(const BasecallModelConfig &cfg) {
-    if (!cfg.is_lstm_model()) {
+    if (!cfg.is_lstm_model() && !cfg.is_flstm_model()) {
         throw std::runtime_error("load_lstm_model_weights expected a lstm model config from: '" +
                                  cfg.model_path.string() + "'");
     }
