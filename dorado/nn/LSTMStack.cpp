@@ -132,11 +132,17 @@ void LSTMStackImpl::forward_cutlass(WorkingMemory &wm, const AuxiliaryData *cons
     // LSTM state h(-1) in either direction.
     if (aux && !reverse_first) {
         throw std::runtime_error(
-                "LSTM layer error: unsupported first forward layer with variable chunks.");
+                "LSTM stack error: unsupported first forward layer with variable chunks.");
+    }
+    if (aux && ((std::size(rnns) / 2U) == 0)) {
+        throw std::runtime_error(
+                "LSTM stack error: unsupported even number of layers with variable chunks.");
     }
 
-    wm.current[0] = 0;
-    wm.current[wm.T + 2] = 0;
+    if (aux == nullptr) {
+        wm.current[0] = 0;
+        wm.current[wm.T + 2] = 0;
+    }
 
     auto stream = at::cuda::getCurrentCUDAStream().stream();
     auto opts_f16 = wm.current.options().dtype(torch::kF16);

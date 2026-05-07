@@ -44,7 +44,7 @@ void set_torch_allocator_max_split_size() {
     // so increase it to a value that works (see INSTX-9750).
     auto max_split_size_mb = 250;
 #else
-    auto max_split_size_mb = 25;
+    auto max_split_size_mb = 27;  // increased from 25 for v6 models
 #endif
     std::string settings = "max_split_size_mb:" + std::to_string(max_split_size_mb);
 

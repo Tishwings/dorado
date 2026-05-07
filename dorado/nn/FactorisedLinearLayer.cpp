@@ -29,37 +29,37 @@ at::Tensor FactorisedLinearLayerImpl::forward(const at::Tensor x) {
 
 void FactorisedLinearLayerImpl::reserve_working_memory(WorkingMemory &wm,
                                                        const AuxiliaryData *aux) {
-    if (aux) {
-        throw std::runtime_error(
-                "FactorisedLinearLayer error: unsupported variable chunks code path!");
-    } else if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
-        wm.temp((wm.T * (int64_t)wm.N * K_) + (wm.T * (int64_t)wm.N * C_out_), torch::kF16);
+    if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
+        if (aux) {
+            wm.temp({(wm.T * (int64_t)wm.N * K_) + ((int64_t)aux->NT_out_max() * C_out_)},
+                    torch::kF16);
+        } else {
+            wm.temp({(wm.T * (int64_t)wm.N * K_) + (wm.T * (int64_t)wm.N * C_out_)}, torch::kF16);
+        }
     } else {
         throw std::runtime_error("FactorisedLinearLayer error: unsupported TensorLayout!");
     }
 }
 
 void FactorisedLinearLayerImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *aux) {
-    if (aux) {
-        throw std::runtime_error(
-                "FactorisedLinearLayer error: unsupported variable chunks code path!");
-    } else if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
-        forward_koi(wm);
+    if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
+        forward_koi(wm, aux);
     } else {
         throw std::runtime_error("FactorisedLinearLayer error: unsupported TensorLayout!");
     }
 }
 
-void FactorisedLinearLayerImpl::forward_koi(WorkingMemory &wm) {
+void FactorisedLinearLayerImpl::forward_koi(WorkingMemory &wm, const AuxiliaryData *aux) {
     utils::ScopedProfileRange spr("factorised_linear", 2);
 
     auto stream = at::cuda::getCurrentCUDAStream().stream();
     auto opts_f16 = wm.current.options().dtype(torch::kF16);
 
-    auto in_bfr = wm.current.narrow(0, 2, wm.T);
+    auto in_bfr = wm.current.narrow(0, aux ? 3 : 2, wm.T);
 
     const int64_t dn_bfr_size = wm.T * (int64_t)wm.N * K_;
-    const int64_t out_bfr_size = wm.T * (int64_t)wm.N * C_out_;
+    const int64_t out_bfr_size =
+            aux ? ((int64_t)aux->NT_out() * C_out_) : (wm.T * (int64_t)wm.N * C_out_);
 
     auto temp = wm.temp({dn_bfr_size + out_bfr_size}, torch::kF16);
     auto dn_bfr = temp.narrow(0, 0, dn_bfr_size);
@@ -88,18 +88,21 @@ void FactorisedLinearLayerImpl::forward_koi(WorkingMemory &wm) {
     }
 
     const int parity = 1;
+    void *const out_layout = aux ? aux->device_out_layout.data_ptr() : nullptr;
 
     host_factorised_linear(stream, wm.N, wm.T, parity, in_bfr.data_ptr(),
                            device_dn_weight_.data_ptr(), device_dn_weight_scale_.data_ptr(),
                            dn_bfr.data_ptr(), device_up_weight_.data_ptr(),
                            nullptr,  // bias
-                           SCALE,
-                           nullptr,  // out_layout
-                           out_bfr.data_ptr());
+                           SCALE, out_layout, out_bfr.data_ptr());
 
     // manually update working memory
     wm.layout = TensorLayout::NTC;
     wm.C = C_out_;
+    if (aux) {
+        wm.N = 1;
+        wm.T = aux->NT_out();
+    }
     wm.current = out_bfr.view({wm.N, wm.T, wm.C});
 }
 

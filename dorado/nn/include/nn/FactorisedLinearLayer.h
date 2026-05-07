@@ -19,7 +19,7 @@ struct FactorisedLinearLayerImpl : LinearLayerImpl {
     virtual void run_koi(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */) override;
 
 private:
-    void forward_koi(WorkingMemory &wm);
+    void forward_koi(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */);
 
     at::Tensor device_dn_weight_;
     at::Tensor device_dn_weight_scale_;

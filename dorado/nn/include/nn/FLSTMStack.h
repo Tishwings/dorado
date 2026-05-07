@@ -34,7 +34,7 @@ struct FLSTMStackImpl : RNNStackImpl {
     void run_koi(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */) override;
 
 private:
-    void forward_koi(WorkingMemory &wm);
+    void forward_koi(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */);
     void forward_cublas(WorkingMemory &wm);
 
     std::vector<at::Tensor> device_dn_weights_ih_;

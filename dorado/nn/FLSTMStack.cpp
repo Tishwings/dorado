@@ -54,7 +54,10 @@ at::Tensor FLSTMStackImpl::forward(at::Tensor x) {
 
 void FLSTMStackImpl::reserve_working_memory(WorkingMemory &wm) {
     if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
-        wm.temp({(2 * wm.T * (int64_t)wm.N * (2 * K_)) + (4 * (wm.T * (int64_t)wm.N))}, torch::kU8);
+        wm.temp({(2 * (wm.T + 1) * (int64_t)wm.N * (2 * K_)) +  // char
+                 (4 * ((wm.T + 1) * (int64_t)wm.N)) +           // float
+                 (2 * (2 * (int64_t)wm.N * C_))},               // half
+                torch::kU8);
     } else if ((wm.layout == TensorLayout::CUBLAS_TNC) ||
                (wm.layout == TensorLayout::CUTLASS_TNC_F16)) {
         wm.temp({wm.N * ((2 * K_) + (4 * C_))}, torch::kF16);
@@ -64,36 +67,56 @@ void FLSTMStackImpl::reserve_working_memory(WorkingMemory &wm) {
 }
 
 void FLSTMStackImpl::run_koi(WorkingMemory &wm, const AuxiliaryData *aux) {
-    if (aux) {
-        throw std::runtime_error("FLSTMStack error: variable chunks are not supported!");
-    } else if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
-        forward_koi(wm);
+    if (wm.layout == TensorLayout::CUTLASS_TNC_I8) {
+        forward_koi(wm, aux);
     } else if ((wm.layout == TensorLayout::CUBLAS_TNC) ||
                (wm.layout == TensorLayout::CUTLASS_TNC_F16)) {
+        if (aux) {
+            throw std::runtime_error("FLSTMStack error: unsupported variable chunks path!");
+        }
         forward_cublas(wm);
     } else {
         throw std::runtime_error("FLSTMStack error: unsupported TensorLayout!");
     }
 }
 
-void FLSTMStackImpl::forward_koi(WorkingMemory &wm) {
+void FLSTMStackImpl::forward_koi(WorkingMemory &wm, const AuxiliaryData *aux) {
+    if (aux && !first_reverse_) {
+        throw std::runtime_error(
+                "FLSTM stack error: unsupported first forward layer with variable chunks.");
+    }
+    if (aux && ((std::size(layers_) / 2U) == 0)) {
+        throw std::runtime_error(
+                "FLSTM stack error: unsupported even number of layers with variable chunks.");
+    }
+
     auto inout = wm.current;
-    inout[0] = 0;
-    inout[wm.T + 1] = 0;
-    inout[wm.T + 2] = 1;
+
+    if (aux == nullptr) {
+        inout[0] = 0;
+        inout[wm.T + 1] = 0;
+        inout[wm.T + 2] = 1;
+    } else {
+        inout[wm.T + 2] = 0;
+        inout[wm.T + 3] = 0;
+    }
 
     auto stream = at::cuda::getCurrentCUDAStream().stream();
     auto opts_f16 = wm.current.options().dtype(torch::kF16);
     auto opts_i32 = opts_f16.dtype(torch::kI32);
 
-    const int64_t dn_bfr_size = 2 * wm.T * (int64_t)wm.N * (2 * K_);
-    const int64_t dn_scale_bfr_size = 4 * (wm.T * (int64_t)wm.N);
+    const int64_t dn_bfr_size = 2 * (wm.T + 1) * (int64_t)wm.N * (2 * K_);
+    const int64_t dn_scale_bfr_size = 4 * ((wm.T + 1) * (int64_t)wm.N);
+    const int64_t state_bfr_size = 2 * (2 * (int64_t)wm.N * C_);
 
-    auto temp_bfr = wm.temp({dn_bfr_size + dn_scale_bfr_size}, torch::kU8);
+    auto temp_bfr = wm.temp({dn_bfr_size + dn_scale_bfr_size + state_bfr_size}, torch::kU8);
     temp_bfr.zero_();
 
     auto dn_bfr = temp_bfr.narrow(0, 0, dn_bfr_size);
     auto dn_scale_bfr = temp_bfr.narrow(0, dn_bfr_size, dn_scale_bfr_size);
+    auto state_bfr = temp_bfr.narrow(0, dn_bfr_size + dn_scale_bfr_size, state_bfr_size);
+
+    void *const state = aux ? state_bfr.data_ptr() : nullptr;
 
     for (int layer = 0; layer < std::ssize(layers_); ++layer) {
         utils::ScopedProfileRange spr_lstm("flstm_layer", 3);
@@ -159,16 +182,18 @@ void FLSTMStackImpl::forward_koi(WorkingMemory &wm) {
 
         const int parity = (1 - (layer % 2U));
 
-        host_factorised_lstm(stream, wm.N, wm.T, reverse ? -1 : 1, parity, inout.data_ptr(),
-                             nullptr,  // state
-                             nullptr,  // encoding
-                             device_dn_weights_ih_[layer].data_ptr(),
-                             device_dn_weights_scale_ih_[layer].data_ptr(),
-                             device_dn_weights_hh_[layer].data_ptr(),
-                             device_dn_weights_scale_hh_[layer].data_ptr(), dn_bfr.data_ptr(),
-                             dn_scale_bfr.data_ptr(), device_up_weights_[layer].data_ptr(),
-                             device_up_weights_scale_[layer].data_ptr(),
-                             device_up_bias_[layer].data_ptr());
+        void *const encoding = aux ? (reverse ? aux->device_bwd_encoding.data_ptr()
+                                              : aux->device_fwd_encoding.data_ptr())
+                                   : nullptr;
+
+        host_factorised_lstm(
+                stream, wm.N, wm.T + (aux && reverse), reverse ? -1 : 1, parity, inout.data_ptr(),
+                state, encoding, device_dn_weights_ih_[layer].data_ptr(),
+                device_dn_weights_scale_ih_[layer].data_ptr(),
+                device_dn_weights_hh_[layer].data_ptr(),
+                device_dn_weights_scale_hh_[layer].data_ptr(), dn_bfr.data_ptr(),
+                dn_scale_bfr.data_ptr(), device_up_weights_[layer].data_ptr(),
+                device_up_weights_scale_[layer].data_ptr(), device_up_bias_[layer].data_ptr());
 
         wm.is_input_to_rev_lstm = !reverse;
     }
@@ -229,7 +254,7 @@ void FLSTMStackImpl::forward_cublas(WorkingMemory &wm) {
                                up_bfr.data_ptr(), state_bfr.data_ptr(), inout[t_o].data_ptr());
         }
 
-        wm.is_input_to_rev_lstm = !reverse;  // needed?
+        wm.is_input_to_rev_lstm = !reverse;
     }
 }
 

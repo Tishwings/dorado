@@ -37,7 +37,11 @@ bool check_variable_chunk_sizes_supported(
                ((model_config.lstm_size % 128) == 0);
     }
     if (model_config.is_flstm_model()) {
-        return false;
+        if (std::any_of(std::cbegin(device_ids), std::cend(device_ids),
+                        [](const int device_id) { return !nn::koi_can_run_flstm(device_id); })) {
+            return false;
+        }
+        return (model_config.lstm_size == 1024) && (model_config.lstm_inner_dim.value() == 128);
     }
     if (model_config.is_tx_model()) {
         return false;
