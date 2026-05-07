@@ -17,11 +17,11 @@ dorado_bin=$(cd "$(dirname $1)"; pwd -P)/$(basename $1)
 model=${2:-"hac"}
 batch=${3:-384}
 
-# Test ion a tempdir to shorted filepaths which can cause issues on windows
+# Test in a tempdir to shorten filepaths which can cause issues on windows
 TMPDIR="$(mktemp -d 2>/dev/null || mktemp -d -t tmp)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
-output_dir_name=test_output_nested_structure_${RANDOM}
+output_dir_name=test_nested_${RANDOM}
 output_dir=${TMPDIR}/${output_dir_name}
 mkdir -p ${output_dir}
 
@@ -130,7 +130,7 @@ if [ $RUN_TESTS_INLINE_DEMUX -eq 1 ]; then
 {
     # Inline demultiplexing without sample sheet into BAM
     title "Testing nested output structure with inline demux into BAM"
-    dest="${output_dir}/demux_structure_BAM"
+    dest="${output_dir}/dmx_struct_BAM"
     core="20230807_NA_RBK114_BARCODECONTAMINATION/no_sample/20230807_1018_2H_PAO25751_0d85015e"
     expected=(
         "${core}/bam_pass/barcode01/PAO25751_pass_barcode01_0d85015e_9bf5b3eb_0.bam"
@@ -144,7 +144,7 @@ if [ $RUN_TESTS_INLINE_DEMUX -eq 1 ]; then
 {
     # Inline demultiplexing without sample sheet into FASTQ
     title "Testing nested output structure with inline demux into FASTQ"
-    dest="${output_dir}/demux_structure_FASTQ"
+    dest="${output_dir}/dmx_struct_FQ"
     core="20230807_NA_RBK114_BARCODECONTAMINATION/no_sample/20230807_1018_2H_PAO25751_0d85015e"
     expected=(
         "${core}/fastq_pass/barcode01/PAO25751_pass_barcode01_0d85015e_9bf5b3eb_0.fastq"
@@ -158,7 +158,7 @@ if [ $RUN_TESTS_INLINE_DEMUX -eq 1 ]; then
 {
     # Inline demultiplexing without sample sheet into cram
     title "Testing nested output structure with inline demux into cram"
-    dest="${output_dir}/demux_structure_cram"
+    dest="${output_dir}/dmx_struct_cram"
     core="20230807_NA_RBK114_BARCODECONTAMINATION/no_sample/20230807_1018_2H_PAO25751_0d85015e"
     expected=(
         "${core}/bam_pass/barcode01/PAO25751_pass_barcode01_0d85015e_9bf5b3eb_0.cram"
@@ -172,7 +172,7 @@ if [ $RUN_TESTS_INLINE_DEMUX -eq 1 ]; then
 {
     # Inline demultiplexing with sample sheet into SAM
     title "Testing nested output structure with inline demux and sample sheet into SAM"
-    dest="${output_dir}/demux_sample_sheet_structure_SAM"
+    dest="${output_dir}/dmx_ss_struct_SAM"
     core="20230807_NA_RBK114_BARCODECONTAMINATION/no_sample/20230807_1018_2H_PAO25751_0d85015e"
     expected=(
         "${core}/bam_pass/patient_id_1/PAO25751_pass_patient_id_1_0d85015e_9bf5b3eb_0.sam"
@@ -185,7 +185,7 @@ if [ $RUN_TESTS_INLINE_DEMUX -eq 1 ]; then
 {
     # Inline demultiplexing with sample sheet into CRAM
     title "Testing nested output structure with inline demux and sample sheet into CRAM"
-    dest="${output_dir}/demux_sample_sheet_structure_CRAM"
+    dest="${output_dir}/dmx_ss_struct_CRAM"
     core="20230807_NA_RBK114_BARCODECONTAMINATION/no_sample/20230807_1018_2H_PAO25751_0d85015e"
     expected=(
         "${core}/bam_pass/patient_id_1/PAO25751_pass_patient_id_1_0d85015e_9bf5b3eb_0.cram"
@@ -198,7 +198,7 @@ if [ $RUN_TESTS_INLINE_DEMUX -eq 1 ]; then
 {
     # Inline demultiplexing with sample sheet into FASTQ
     title "Testing nested output structure with inline demux and sample sheet into FASTQ"
-    dest="${output_dir}/demux_sample_sheet_structure"
+    dest="${output_dir}/dmx_ss_struct_FQ"
     core="20230807_NA_RBK114_BARCODECONTAMINATION/no_sample/20230807_1018_2H_PAO25751_0d85015e"
     expected=(
         "${core}/fastq_pass/patient_id_1/PAO25751_pass_patient_id_1_0d85015e_9bf5b3eb_0.fastq"
@@ -239,7 +239,7 @@ fi # RUN_TESTS_INLINE_DEMUX
 # Testing for post-run demux where we have untrimmed basecalls and run barcode classification
 if [ $RUN_TESTS_POSTRUN_DEMUX -eq 1 ]; then
 {
-    postrun_output_dir="${output_dir}/postrun_demux"
+    postrun_output_dir="${output_dir}/postrun_dmx"
     mkdir -p $postrun_output_dir
 }
 {
