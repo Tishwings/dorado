@@ -265,8 +265,9 @@ if [ $RUN_TESTS_POSTRUN_DEMUX -eq 1 ]; then
 
     dest="${postrun_output_dir}/fastq"
     $dorado_bin demux ${calls_notrim_fastq} --kit-name SQK-RBK114-96 --output-dir ${dest} --emit-fastq
-    # The position_id and acquisition_id are not currently available in FASTQ headers - their placeholders are used instead
-    core="20230807_NA_RBK114_BARCODECONTAMINATION/no_sample/20230807_1018_0_PAO25751_0d85015e"
+    # The position_id, acquisition_id are not currently available in FASTQ headers - their placeholders are used instead
+    # protocol_group_id (experiment_name) is also not available in FASTQ headers - there is no defined placeholder for this, so it is empty
+    core="no_sample/20230807_1018_0_PAO25751_0d85015e"
     expected=(
         "${core}/fastq_pass/unclassified/PAO25751_pass_unclassified_0d85015e_00000000_0.fastq"
         "${core}/fastq_pass/barcode01/PAO25751_pass_barcode01_0d85015e_00000000_0.fastq"
