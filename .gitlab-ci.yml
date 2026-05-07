@@ -727,6 +727,7 @@ test:macos:arm:
           - "nvidia/cuda:${CUDA}.0-devel-ubuntu20.04"
           - "nvidia/cuda:${CUDA}.0-devel-ubuntu22.04"
           - "nvidia/cuda:${CUDA}.0-devel-ubuntu24.04"
+          #- "nvidia/cuda:${CUDA}.0-devel-ubuntu26.04" # doesn't exist yet
           - "nvidia/cuda:${CUDA}.0-devel-rockylinux8"
       # CPU environment
       - RUNNER_TAG: "docker-as"
@@ -734,6 +735,7 @@ test:macos:arm:
           - "${DORADO_DOCKER_EXT}/ubuntu:20.04"
           - "${DORADO_DOCKER_EXT}/ubuntu:22.04"
           - "${DORADO_DOCKER_EXT}/ubuntu:24.04"
+          - "${DORADO_DOCKER_EXT}/ubuntu:26.04"
           - "${DORADO_DOCKER_EXT}/rockylinux:8"
 
 test_archive:linux:x86:cuda12:
