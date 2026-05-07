@@ -11,6 +11,12 @@
 #include <iterator>
 #include <set>
 #include <stdexcept>
+#include <string_view>
+
+namespace {
+using namespace std::literals;
+constexpr std::string_view PROTOCOL_GROUP_ID_KEY = "protocol_group_id"sv;
+}  // namespace
 
 namespace dorado::file_info {
 
@@ -70,6 +76,15 @@ std::unordered_map<std::string, ReadGroup> load_read_groups(
             std::string sample_id = run_info_data->sample_id;
             std::string position_id = run_info_data->sequencer_position;
             std::string experiment_id = run_info_data->experiment_name;
+
+            if (experiment_id.empty()) {
+                for (size_t i = 0; i < run_info_data->tracking_id.size; ++i) {
+                    if (run_info_data->tracking_id.keys[i] == PROTOCOL_GROUP_ID_KEY) {
+                        experiment_id = run_info_data->tracking_id.values[i];
+                        break;
+                    }
+                }
+            }
 
             std::string id = std::string(run_id).append("_").append(model_name);
             read_groups[id] = ReadGroup{

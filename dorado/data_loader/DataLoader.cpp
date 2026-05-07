@@ -26,9 +26,12 @@
 namespace dorado::data_loader {
 
 namespace {
+using namespace std::literals;
 
 // 37 = number of bytes in UUID (32 hex digits + 4 dashes + null terminator)
 const uint32_t POD5_READ_ID_LEN = 37;
+
+constexpr std::string_view PROTOCOL_GROUP_ID_KEY = "protocol_group_id"sv;
 
 std::vector<std::filesystem::directory_entry> collect_pod5_dataset(
         const std::vector<std::filesystem::directory_entry>& files) {
@@ -198,7 +201,19 @@ SimplexReadPtr process_pod5_thread_fn(
     new_read->read_common.protocol_start_time_ms = run_info_data->protocol_start_time_ms;
     new_read->read_common.is_duplex = false;
 
-    new_read->read_common.experiment_id = run_info_data->experiment_name;
+    // pod5s converted from fast5 don't necessarily have the experiment name
+    // if it's missing, check the tracking info instead
+    std::string experiment_name = run_info_data->experiment_name;
+    if (experiment_name.empty()) {
+        for (size_t i = 0; i < run_info_data->tracking_id.size; ++i) {
+            if (run_info_data->tracking_id.keys[i] == PROTOCOL_GROUP_ID_KEY) {
+                experiment_name = run_info_data->tracking_id.values[i];
+                break;
+            }
+        }
+    }
+
+    new_read->read_common.experiment_id = std::move(experiment_name);
     new_read->read_common.num_minknow_events = read_data.num_minknow_events;
 
     // Get the condition_info from the run_info_data to determine if the sequencing kit
