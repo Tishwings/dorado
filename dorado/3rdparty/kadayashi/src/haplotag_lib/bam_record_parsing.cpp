@@ -128,16 +128,17 @@ bool parse_variants_for_one_read(const bam1_t *aln,
                                  int *right_clip_len,
                                  const int SNPonly,
                                  BlockedBloomFilter *bf) {
-    // note: caller ensure that MD tag exists and
-    //       does not have unexpected operations.
-    // note2: bloom filter:
-    //        (1)if bloom filter is provided and is not set to be frozen,
-    //        then when a position is seen for the first time,
-    //        it will be inserted into the bloom filter and not collected
-    //        into the read. This is only intended to be used in the
-    //        initial unphased pileup, and caller should ensure no race.
-    //        (2)If the bloom filter is provided and is frozen, we will check
-    //        with it and only collect known variants.
+    // MD tag is required: caller ensure that MD tag exists and its sanity.
+    // Position of indels: for both insertions and deletions, position refers
+    //   to the base before the insertion/deletion.
+    // Bloom filter:
+    //  (1)if bloom filter is provided and is not set to be frozen,
+    //  then when a position is seen for the first time,
+    //  it will be inserted into the bloom filter and not collected
+    //  into the read. This is only intended to be used in the
+    //  initial unphased pileup, and caller should ensure no race.
+    //  (2)If the bloom filter is provided and is frozen, we will check
+    //  with it and only collect known variants.
     assert(aln);
     bool failed = false;
 
@@ -186,10 +187,10 @@ bool parse_variants_for_one_read(const bam1_t *aln,
             if (!SNPonly) {
                 const bool do_insert = check_blockedbloomfilter_to_decide_inserting(bf, ref_pos);
                 if (do_insert) {
-                    add_allele_qa_v(vars, ref_pos, seq, VAR_OP_I);  // push_to_vvar_t()
+                    add_allele_qa_v(vars, ref_pos - 1, seq, VAR_OP_I);
                 }
             }
-            insertions.push_back(((uint64_t)op_l) << 32 | self_pos);
+            insertions.push_back(((uint64_t)op_l) << 32 | (self_pos - 1));  // -1: same as above
             self_pos += op_l;
         } else if (op == BAM_CDEL) {
             ref_pos += op_l;
@@ -240,7 +241,9 @@ bool parse_variants_for_one_read(const bam1_t *aln,
                 ref_pos += l;
                 self_pos += l;
                 while (prev_ins_idx < insertions.size() &&
-                       self_pos >= static_cast<uint32_t>(insertions[prev_ins_idx])) {
+                       self_pos > static_cast<uint32_t>(insertions[prev_ins_idx])) {
+                    // `>` above is because ins is at the end of the prev base,
+                    // not start of the current base. `>=` is wrong.
                     self_pos += insertions[prev_ins_idx] >> 32;
                     prev_ins_idx++;
                 }
@@ -250,7 +253,7 @@ bool parse_variants_for_one_read(const bam1_t *aln,
                         const bool do_insert =
                                 check_blockedbloomfilter_to_decide_inserting(bf, ref_pos);
                         if (do_insert) {
-                            add_allele_qa_v(vars, ref_pos,
+                            add_allele_qa_v(vars, ref_pos - 1,
                                             md_ss.substr(prev_md_i + 1, i - prev_md_i - 1),
                                             VAR_OP_D);
                         }

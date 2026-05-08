@@ -681,8 +681,10 @@ void variant_graph_do_simple_haptag_threaded(chunk_t &ck,
     double T2 = T;
     worker_simple_2a2p_st st = {.ck = ck, .seedreadID = {}, .arr_read2hp = {}};
 
-    for (const ta_t &var : ck.varcalls) {
-        LOG_TRACE("[kdys::{}] info site pos {}", __func__, var.pos);
+    if constexpr (DEBUG_PRINT) {
+        for (const ta_t &var : ck.varcalls) {
+            LOG_TRACE("[kdys::{}] info site pos {}", __func__, var.pos);
+        }
     }
 
     // get seed readIDs
@@ -937,9 +939,6 @@ void haptag_variants_2ad(dorado::secondary::BamFile &hf,
                 uint32_t qpos = q.pos;
 
                 // check position
-                if (q.allele.back() == VAR_OP_I || q.allele.back() == VAR_OP_D) {
-                    qpos -= 1;
-                }
                 if constexpr (DEBUG_PRINT) {
                     LOG_TRACE("kdys::[{}]   pos={}", __func__, qpos);
                 }
@@ -1513,20 +1512,35 @@ std::string make_vcf_line_given_variant_fullinfo_t(std::string_view ref_name,
                                                    const variant_fullinfo_t &var,
                                                    uint32_t &phaseblockID_fallback,
                                                    const bool vcf_out_allow_N) {
-    // note: need to first calcualte phaseblockID,
-    //       then format the line.
+    // note:
+    //   - need to first calcualte phaseblockID, then format the line.
+    //   - multi-allelic variant must either be one line whose genotype
+    //     contains 1 and 2, or two lines and their genotypes contain 0 and 1.
+    //     Using the latter representation here.
     if (!var.is_valid) {
         return {};
     }
     std::string oline0_s;
     std::string oline1_s;
 
+    char genotype0[3];
+    char genotype1[3];
+    std::memcpy(genotype0, var.genotype0, 3);
+    std::memcpy(genotype1, var.genotype1, 3);
+
+    if (var.is_multi_allele) {
+        genotype0[0]--;
+        genotype0[2]--;
+        genotype1[0]--;
+        genotype1[2]--;
+    }
+
     // decide phaseblock ID
     int phaseblockID = -1;
-    const bool a1_is_phased_het = (var.genotype0[0] != var.genotype0[2]) && var.is_phased0;
-    const bool a2_is_phased_het = (var.genotype1[0] != var.genotype1[2]) && var.is_phased1;
-    assert(!a1_is_phased_het || (var.genotype0[1] == '|'));
-    assert(!a2_is_phased_het || (var.genotype1[1] == '|'));
+    const bool a1_is_phased_het = (genotype0[0] != genotype0[2]) && var.is_phased0;
+    const bool a2_is_phased_het = (genotype1[0] != genotype1[2]) && var.is_phased1;
+    assert(!a1_is_phased_het || (genotype0[1] == '|'));
+    assert(!a2_is_phased_het || (genotype1[1] == '|'));
     if (a1_is_phased_het || a2_is_phased_het) {
         if (phaseblockID_fallback == 0) {
             phaseblockID_fallback = var.pos0 + 1;  // use 1-index
@@ -1564,11 +1578,11 @@ std::string make_vcf_line_given_variant_fullinfo_t(std::string_view ref_name,
 
     // sample
     oline0_s += "\t";
-    oline0_s.append(var.genotype0, 3);
+    oline0_s.append(genotype0, 3);
     oline0_s += ":";
     if (var.is_multi_allele) {  // the second allele on different line
         oline1_s += "\t";
-        oline1_s.append(var.genotype1, 3);
+        oline1_s.append(genotype1, 3);
         oline1_s += ":";
     }
 

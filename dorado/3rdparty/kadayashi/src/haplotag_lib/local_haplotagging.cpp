@@ -1223,7 +1223,256 @@ phase_return_t kadayashi_simple_single_region_wrapper1(samFile *fp_bam,
             fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end, pp);
 }
 
+struct ta_t_del_info {
+    int del_len;
+    int del_idx;
+};
+ta_t_del_info ta_t_check_and_get_del_allele(const ta_t &var) {
+    // (note: if both are deletions, return the info of the longer one)
+    int len = 0;
+    int idx = 0;
+    for (size_t i = 0; i < var.alleles.size(); i++) {
+        const std::vector<uint8_t> &allele = var.alleles[i];
+        int allele_len = static_cast<int>(allele.size()) - 1;
+        if (allele.back() == VAR_OP_D && allele_len > len) {
+            len = allele_len;
+            idx = i;
+        }
+    }
+    return ta_t_del_info{.del_len = len, .del_idx = idx};
+}
+
+std::pair<std::string, std::string> ta_t_reconstruct_haplotypes_for_del_absorbtion(
+        chunk_t &ck,
+        uint32_t range_start,  // inclusive
+        uint32_t range_end,    // exclusive
+        const std::string &ref_seq_substring,
+        const std::vector<uint32_t> var_indices) {
+    // Helper routine to ck_absorb_variants_covered_by_deletion_run_on_other_hap.
+    // Given a range and variants selected within the range,
+    // produce the full sequence of the haplotypes.
+    // (For simplicity the reconstruction is done by first retrieving
+    //  the refseq, then apply variants one by one in reverse order.
+    //  This function is not expected to be called on large regions so this
+    //  should not matter much.)
+    // `var_indices`:
+    //  - must be sorted
+    //  - all variants refered must be either hom or phased het
+    //  - the first var is also assumed to be/have a deletion
+
+    if (var_indices.empty()) {
+        return {"", ""};
+    }
+
+    std::string hap0 =
+            ref_seq_substring.substr(range_start - ck.abs_start, range_end - range_start);
+    std::string hap1 = hap0;
+
+    auto insert_one_var_to_hap_recon = [&range_start](std::string &hap, const ta_t &var,
+                                                      uint32_t i_allele) {
+        const uint8_t cigar_op = var.alleles[i_allele].back();
+        const uint32_t cigar_len = var.alleles[i_allele].size() - 1;
+        const std::string var_str = nt4seq2seq(var.alleles[i_allele]);
+        if (cigar_op == VAR_OP_X) {
+            hap[var.pos - range_start] = var_str[0];
+        } else if (cigar_op == VAR_OP_I) {  // +1 because pos considered refbase
+            hap = hap.substr(0, var.pos + 1 - range_start) + var_str +
+                  hap.substr(var.pos + 1 - range_start);
+        } else if (cigar_op == VAR_OP_D) {  // +1 because pos considered refbase
+            hap = hap.substr(0, var.pos + 1 - range_start) +
+                  ((var.pos + 1 + cigar_len - range_start >= hap.size())
+                           ? ""
+                           : hap.substr(var.pos + 1 + cigar_len - range_start));
+        } else {
+            throw std::runtime_error{
+                    "[kdys::ta_t_reconstruct_haplotypes_for_del_absorbtion] unexpected cigar op: " +
+                    std::to_string(cigar_op)};
+        }
+    };
+
+    for (int i_idx = static_cast<int>(var_indices.size() - 1); i_idx >= 0; i_idx--) {
+        const uint32_t var_idx = var_indices[i_idx];
+        const ta_t &var = ck.varcalls[var_idx];
+
+        if (var.genotype[0] == var.genotype[2]) {  // hom
+            insert_one_var_to_hap_recon(hap0, var, 0);
+            insert_one_var_to_hap_recon(hap1, var, 0);
+        } else {  // het
+            assert(var.genotype[1] == '|');
+            if (var.type == TA_TYPE_HETMULTI) {
+                if (var.genotype[0] == '1') {  // for chunk_t variants, multi-allelic
+                                               // is not genotype 1/2 yet. fullinfo vars are.
+                    assert(var.genotype[2] == '0');
+                    insert_one_var_to_hap_recon(hap0, var, 1);
+                    insert_one_var_to_hap_recon(hap1, var, 0);
+                } else if (var.genotype[0] == '0') {
+                    assert(var.genotype[2] == '1');
+                    insert_one_var_to_hap_recon(hap0, var, 0);
+                    insert_one_var_to_hap_recon(hap1, var, 1);
+                } else {
+                    throw std::runtime_error{
+                            "[kdys::" + std::string(__func__) +
+                            "] unexpected genotype(multi-allelic): " +
+                            std::string(var.genotype.data()) + " , query range was " + ck.refname +
+                            ":" + std::to_string(range_start) + "-" + std::to_string(range_end) +
+                            " , var.pos was " + std::to_string(var.pos)};
+                }
+            } else {
+                if (var.genotype[0] == '1') {
+                    assert(var.genotype[2] == '0');
+                    insert_one_var_to_hap_recon(
+                            hap0, var, var.alleles[0][0] == SENTINEL_REF_ALLELE_INT ? 1 : 0);
+                } else if (var.genotype[2] == '1') {
+                    assert(var.genotype[0] == '0');
+                    insert_one_var_to_hap_recon(
+                            hap1, var, var.alleles[0][0] == SENTINEL_REF_ALLELE_INT ? 1 : 0);
+                } else {
+                    throw std::runtime_error{
+                            "[kdys::" + std::string(__func__) +
+                            "] unexpected genotype(single-allelic): " +
+                            std::string(var.genotype.data()) + " , query range was " + ck.refname +
+                            ":" + std::to_string(range_start) + "-" + std::to_string(range_end) +
+                            " , var.pos was " + std::to_string(var.pos)};
+                }
+            }
+        }  // insert var seq into haplotype seq for one var
+    }  // insert var seqs
+
+    return {std::move(hap0), std::move(hap1)};
+}
+
+void ck_absorb_variants_covered_by_deletion_run_on_other_hap(
+        chunk_t &ck,
+        const std::unordered_map<uint32_t, uint8_t> phasing_breakpoints,
+        const std::string &ref_seq_substring) {
+    // Consider the following dummy case:
+    //  pos   123456789012
+    //  ref   AAAAAAAAAATT
+    //  hap1  AA--------TT
+    //  hap2  AAAGGAAGAATT
+    //                 ^ins(G)
+    // We want to report this as one multi-allelic variant:
+    //  chrom 2 AAAAAAAAA A,AAGGAAGAGA 1|2
+    //
+    // This should happen after we have produced genotype & phasing string,
+    //  and will only treat confident & phased variants. (If there are
+    //  unsure variants within an affected region, the reigon will be
+    //  handed to the big model & all kadayashi variants replaced anyways;
+    //  unphased het should be always unconfident.)
+    //
+    // Note that in the example above, if hap2 has a deletion that
+    //  overlaps with and outruns hap1's deletion, we must look beyond
+    //  hap1's deletion to see if any variant need to be included. Repeat
+    //  until both are in match with the ref.
+    // Access to the reference sequence is required because
+    //  ref bases in between of variants were not saved in
+    //  the chunk struct.
+    constexpr int MAX_RANGE_SIZE = 10;
+    for (size_t i_var = 0; i_var < ck.varcalls.size(); i_var++) {
+        ta_t &var = ck.varcalls[i_var];
+
+        if (var.is_used != TA_STAT_ACCEPTED || var.genotype[1] != '|') {
+            continue;
+        }
+
+        const ta_t_del_info stat1 = ta_t_check_and_get_del_allele(var);
+        if (stat1.del_len == 0) {
+            continue;
+        }
+
+        // We will get the range first, and then reconstruct
+        // the two haplotypes, before marking varints as
+        // unused and replace one of them with the generated sequence.
+
+        // (get range)
+        uint32_t range_start = var.pos;
+        uint32_t range_end = var.pos + 1 + stat1.del_len;  // +1 because pos considered the refbase
+        std::vector<uint32_t> var_indices;
+        var_indices.push_back(i_var);
+        for (size_t j_var = i_var + 1; j_var < ck.varcalls.size(); j_var++) {
+            const ta_t &var2 = ck.varcalls[j_var];
+            if (var2.is_used != TA_STAT_ACCEPTED) {
+                continue;
+            }
+            if (!(var2.genotype[1] == '|' ||
+                  var2.genotype[0] == var.genotype[2])) {  // require hom or phased het
+                continue;
+            }
+
+            if (var2.pos >= range_end) {
+                break;
+            }
+
+            var_indices.push_back(j_var);
+
+            const ta_t_del_info stat2 = ta_t_check_and_get_del_allele(var2);
+            if (stat2.del_len != 0) {
+                const uint32_t tmp_end = var2.pos + stat2.del_len + 1;
+                if (tmp_end > range_end) {
+                    range_end = tmp_end;
+                }
+            }
+        }
+        if (var_indices.size() <= 1) {  // nothing to be absorbed
+            continue;
+        }
+
+        // (if there's phasing breakpoints in the range, don't do anything)
+        bool broke = false;
+        for (uint32_t i = 0; i < var_indices.size() - 1; i++) {
+            // [0,size-1) because breakpoint are set on a variant position
+            // when phasing to the next variant is unknown.
+            if (phasing_breakpoints.find(ck.varcalls[var_indices[i]].pos) !=
+                phasing_breakpoints.end()) {
+                broke = true;
+                break;
+            }
+        }
+        if (broke) {
+            continue;
+        }
+
+        // (if range is not trivial, don't do anything)
+        if (range_end - range_start > MAX_RANGE_SIZE) {
+            continue;
+        }
+
+        // (reconstruct haplotypes)
+        std::pair<std::string, std::string> hap_recon =
+                ta_t_reconstruct_haplotypes_for_del_absorbtion(ck, range_start, range_end,
+                                                               ref_seq_substring, var_indices);
+
+        // (replace the original: now phased multi-allelic)
+        // (the haplotype reconstruction's phasing order was in
+        // concordance with the first variant)
+        // caveat: `allele2readIDs` is not updated.
+        //  We only consolidate variants when they are
+        //  coverved by deletion(s) on the other hap, this
+        //  should rarely exceed read boundary. And since genophase
+        //  is already collected, `allele2readIDs` will be used
+        //  by nobody.
+        if (var.type != TA_TYPE_HETMULTI) {
+            var.genotype[0] += 1;
+            var.genotype[2] += 1;
+        }
+        var.type = TA_TYPE_HETMULTI_CONSOLIDATED;
+        var.ref_len = range_end - range_start;
+        var.alleles[0] = seq2nt4seq(hap_recon.first);
+        var.alleles[0].push_back(VAR_OP_CONSOLIDATED_MULTIALLELE);
+        var.alleles[1] = seq2nt4seq(hap_recon.second);
+        var.alleles[1].push_back(VAR_OP_CONSOLIDATED_MULTIALLELE);
+
+        // (mark absorbed vars as not used)
+        for (uint32_t i = 1; i < var_indices.size(); i++) {
+            ck.varcalls[var_indices[i]].is_used = TA_STAT_UNCALLED;
+        }
+    }  // iter through all called variants
+}
+
 void ck_derive_variant_genophase_from_phased_read(chunk_t &ck) {
+    // note: for multi-allele variant, the genotype will be assigned
+    // 0 or 1 here rather than 1 or 2. Afterwards
+    // derive_variant_fullinfo_from_varcall is expected to be called.
     constexpr int MIN_AMBIGUOUS_ALT_COV = 4;
     for (ta_t &var : ck.varcalls) {
         var.genotype = {'.', '/', '.', '\0'};
@@ -1272,7 +1521,8 @@ void ck_derive_variant_genophase_from_phased_read(chunk_t &ck) {
                 var.genotype[0] = '0';
                 var.genotype[2] = '1';
             } else {
-                // note: here set both het and multihet to 01, let this be resolved when writing vcf
+                // note: here set both het and multihet to 01, let this be resolved
+                // when we parse ta_t var into fullinfo var
                 if (n_hap0 > n_hap1) {
                     var.genotype = {'0', '|', '1', '\0'};
                 } else if (n_hap1 > n_hap0) {
@@ -1283,6 +1533,7 @@ void ck_derive_variant_genophase_from_phased_read(chunk_t &ck) {
                 }
             }
         }  // determine het variant phase+geno
+
     }  // iter through variants
 }
 
@@ -1292,7 +1543,7 @@ variant_dorado_style_t convert_fullinfo_var_to_dorado_style(const variant_fullin
     std::string alt0 = var.alt_allele_seq0;
     std::string alt1 = var.is_multi_allele ? var.alt_allele_seq1 : "";
     if (var.is_multi_allele) {
-        if (var.genotype0[0] == '0') {
+        if (var.genotype0[0] < var.genotype0[2]) {
             genotype = {'2', '1'};
         } else {
             genotype = {'1', '2'};
@@ -1328,42 +1579,47 @@ variant_dorado_style_t convert_fullinfo_var_to_dorado_style(const variant_fullin
 }
 
 variant_fullinfo_t derive_variant_fullinfo_from_varcall(const ta_t &var,
-                                                        const std::string_view refseq_s,
+                                                        const std::string_view refseq_substring,
                                                         const uint32_t ref_start,
                                                         const bool allow_N_base) {
     // Note:
     //   - Variant position will be in 0-index.
+    //   - Multi-allele variant should have genotypes 1 or 2.
     variant_fullinfo_t ret;
 
     std::string ref_s;
+    std::string ref_consolidatedmultiallel_s;
     std::string alt_s;
     std::string alt2_s;
 
     // store ref base
-    if (var.pos < ref_start) {  // might happen if pileup used expanded interval
-        ret.is_valid = false;
-        ret.is_confident = false;
-        return ret;
-    } else if (var.pos == ref_start) {
-        if (!allow_N_base) {
+    if (var.type == TA_TYPE_HETMULTI_CONSOLIDATED) {
+        ref_consolidatedmultiallel_s =
+                std::string(refseq_substring.substr(var.pos - ref_start, var.ref_len));
+    } else {
+        if (var.pos < ref_start) {  // might happen if pileup used expanded interval
             ret.is_valid = false;
             ret.is_confident = false;
             return ret;
-        }
-        ref_s = "N";  // store extra 1 base before
-        ref_s += refseq_s[var.pos - ref_start];
-    } else {
-        const int tmppos = var.pos - ref_start;  // 0-index
-        if (!allow_N_base) {
-            if ((refseq_s[tmppos - 1] == 'N') || (refseq_s[tmppos] == 'N') ||
-                (refseq_s[tmppos - 1] == 'n') || (refseq_s[tmppos] == 'n')) {
+        } else if (var.pos == ref_start) {
+            if (!allow_N_base) {
                 ret.is_valid = false;
                 ret.is_confident = false;
                 return ret;
             }
+            ref_s += refseq_substring[var.pos - ref_start];
+        } else {
+            const int tmppos = var.pos - ref_start;  // 0-index
+            if (!allow_N_base) {
+                if ((refseq_substring[tmppos - 1] == 'N') || (refseq_substring[tmppos] == 'N') ||
+                    (refseq_substring[tmppos - 1] == 'n') || (refseq_substring[tmppos] == 'n')) {
+                    ret.is_valid = false;
+                    ret.is_confident = false;
+                    return ret;
+                }
+            }
+            ref_s += refseq_substring[tmppos];
         }
-        ref_s = refseq_s[tmppos - 1];  // store extra 1 base before
-        ref_s += refseq_s[tmppos];
     }
 
     // store alt base
@@ -1417,110 +1673,61 @@ variant_fullinfo_t derive_variant_fullinfo_from_varcall(const ta_t &var,
         ret.qual1 = 0;
     }
 
-    if (is_del0) {
-        ret.pos0 = var.pos - 1;  // 0-index
-        ret.ref_allele_seq0 = ref_s[0] + alt_s;
-        ret.alt_allele_seq0 = ref_s[0];
-    } else if (is_ins0) {
-        ret.pos0 = var.pos - 1;  // 0-index
-        ret.ref_allele_seq0 = ref_s[0];
-        ret.alt_allele_seq0 = ref_s[0] + alt_s;
-    } else {
-        ret.pos0 = var.pos;  // 0-index
-        ret.ref_allele_seq0 = ref_s.c_str() + 1;
+    ret.pos0 = var.pos;
+    ret.pos1 = 0;
+    ret.qual1 = 0;
+    if (var.type == TA_TYPE_HETMULTI_CONSOLIDATED) {
+        ret.ref_allele_seq0 = ref_consolidatedmultiallel_s;
         ret.alt_allele_seq0 = alt_s;
+    } else {
+        if (is_del0) {
+            ret.ref_allele_seq0 = ref_s[0] + alt_s;
+            ret.alt_allele_seq0 = ref_s[0];
+        } else if (is_ins0) {
+            ret.ref_allele_seq0 = ref_s[0];
+            ret.alt_allele_seq0 = ref_s[0] + alt_s;
+        } else {
+            ret.ref_allele_seq0 = ref_s;
+            ret.alt_allele_seq0 = alt_s;
+        }
     }
     ret.genotype0[0] = var.genotype[0];
     ret.genotype0[1] = var.genotype[1];
     ret.genotype0[2] = var.genotype[2];
     ret.is_phased0 = var.genotype[1] == '|';
-    ret.pos1 = 0;
-    ret.qual1 = 0;
 
-    ret.is_multi_allele = (var.type == TA_TYPE_HETMULTI);
+    ret.is_multi_allele =
+            (var.type == TA_TYPE_HETMULTI || var.type == TA_TYPE_HETMULTI_CONSOLIDATED);
     if (ret.is_multi_allele) {
-        if (is_del1) {
-            ret.pos1 = var.pos - 1;  // 0-index
-            ret.ref_allele_seq1 = ref_s[0] + alt2_s;
-            ret.alt_allele_seq1 = ref_s[0];
-        } else if (is_ins1) {
-            ret.pos1 = var.pos - 1;  // 0-index
-            ret.ref_allele_seq1 = ref_s[0];
-            ret.alt_allele_seq1 = ref_s[0] + alt2_s;
-        } else {
-            ret.pos1 = var.pos;  // 0-index
-            ret.ref_allele_seq1 = ref_s.c_str() + 1;
+        ret.pos1 = var.pos;
+        if (var.type == TA_TYPE_HETMULTI_CONSOLIDATED) {
+            ret.ref_allele_seq1 = ref_consolidatedmultiallel_s;
             ret.alt_allele_seq1 = alt2_s;
+        } else {
+            if (is_del1) {
+                ret.ref_allele_seq1 = ref_s[0] + alt2_s;
+                ret.alt_allele_seq1 = ref_s[0];
+            } else if (is_ins1) {
+                ret.ref_allele_seq1 = ref_s[0];
+                ret.alt_allele_seq1 = ref_s[0] + alt2_s;
+            } else {
+                ret.ref_allele_seq1 = ref_s;
+                ret.alt_allele_seq1 = alt2_s;
+            }
         }
-        ret.genotype1[0] = var.genotype[2];
-        ret.genotype1[1] = var.genotype[1];
-        ret.genotype1[2] = var.genotype[0];
+
+        // adjust genotype from {0,1} to {1,2}
+        ret.genotype0[0] += 1;
+        ret.genotype0[2] += 1;
+
+        // assigned genotype to the other allele
+        ret.genotype1[0] = ret.genotype0[2];
+        ret.genotype1[1] = ret.genotype0[1];
+        ret.genotype1[2] = ret.genotype0[0];
         ret.is_phased1 = var.genotype[1] == '|';
     }
 
     return ret;
-}
-
-void fix_variant_fullinfo_genotype_snp_in_del(std::vector<variant_fullinfo_t> &vars) {
-    // Note (variant representation):
-    //    If at a position, one hap has a substitution while the other hap
-    //    has a deletion that started prior to this position & extends to
-    //    cover it, it may be preferrable to mark the substitution's genotype
-    //    as hom. For an example,  see HG002 chr6:1128114 .
-    //    `ta_t` saves this case as het,
-    //    because the other hap doesn't have the ref base and thus is different.
-    //    Let's convert it to hom here.
-    for (int64_t i = 1; i < std::ssize(vars); i++) {
-        const variant_fullinfo_t &prev_var = vars[i - 1];
-        variant_fullinfo_t &var = vars[i];
-        bool should_set_to_hom = false;
-
-        if (var.genotype0[0] == var.genotype0[2]) {
-            continue;
-        }  // already hom
-        if (!var.is_valid || !prev_var.is_valid) {
-            continue;
-        }
-        if (!prev_var.is_confident) {
-            continue;
-        }
-        if (var.is_multi_allele) {
-            continue;
-        }
-        if (var.ref_allele_seq0.size() != var.alt_allele_seq0.size()) {
-            continue;
-        }
-
-        if (prev_var.ref_allele_seq0.size() > prev_var.alt_allele_seq0.size()) {  // is del
-            const uint32_t del_len = static_cast<uint32_t>(prev_var.ref_allele_seq0.size());
-            if (prev_var.pos0 + del_len >= var.pos0) {
-                should_set_to_hom = true;
-            }
-        }
-        if (prev_var.is_multi_allele) {
-            if (prev_var.ref_allele_seq1.size() > prev_var.alt_allele_seq1.size()) {  // is del
-                const uint32_t del_len = static_cast<uint32_t>(prev_var.ref_allele_seq1.size());
-                if (prev_var.pos1 + del_len >= var.pos1) {
-                    should_set_to_hom = true;
-                }
-            }
-        }
-
-        if (should_set_to_hom) {
-            if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
-                LOG_DEBUG(
-                        "[kdys::{}] substitution het candidate at pos {} shadowed by del ({:d} "
-                        "{}->{}), "
-                        "setting to hom.",
-                        __func__, static_cast<int>(var.pos0) + 1,
-                        static_cast<int>(prev_var.pos0) + 1, prev_var.ref_allele_seq0,
-                        prev_var.alt_allele_seq0);
-            }
-            var.genotype0[0] = '1';
-            var.genotype0[1] = '/';  // also marking as unphased
-            var.genotype0[2] = '1';
-        }
-    }
 }
 
 enum read_downsampling_rw { READ_DOWNSAMPLING_QUERY_ONLY, READ_DOWNSAMPLING_QUERY_AND_UPDATE };
@@ -1581,7 +1788,6 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                           const uint32_t itvl_end,
                           const pileup_pars_t &pp) {
     // A simpler pileup that allows hom variants, non-SNPs and multi-alleles.
-    // This is for variant calling.
 
     const bool enable_downsample = true;
     const int downsample_window = 10000;
@@ -2003,6 +2209,7 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
 
         const bool is_done =
                 classify_variant_prefilter(q, pos, refseq_s.c_str(), refseq_l, abs_start, qname2hp);
+
         if (is_done) {
             continue;
         }
@@ -2405,23 +2612,29 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
     chunk_t ck = variant_pileup_ht(hf_view, {}, fai, &phasing_result.qname2hp, ref_name, ref_start,
                                    ref_end, pp_phased_round);
 
+    const std::string span_s = create_region_string(ref_name, ref_start, ref_end);
+    const std::string refseq_s = kadayashi::hts_utils::fetch_seq(fai, span_s);
+
     // variant phasing+genotype
     ck_derive_variant_genophase_from_phased_read(ck);
+
+    // consolidate variants locally
+    ck_absorb_variants_covered_by_deletion_run_on_other_hap(ck, phasing_result.phasing_breakpoints,
+                                                            refseq_s);
 
     // produce variants (no phaseblock info)
     ck_and_varcall_result_t ret;
     varcall_result_internal_t &vr = ret.vr;
-    const std::string span_s = create_region_string(ref_name, ref_start, ref_end);
-    const std::string refseq_s = kadayashi::hts_utils::fetch_seq(fai, span_s);
-
     for (const ta_t &varcall : ck.varcalls) {
+        if (varcall.is_used == TA_STAT_UNCALLED) {
+            continue;
+        }
         const variant_fullinfo_t var =
                 derive_variant_fullinfo_from_varcall(varcall, refseq_s, ref_start, true);
         if (var.is_valid) {
             vr.variants.push_back(var);
         }
     }
-    fix_variant_fullinfo_genotype_snp_in_del(vr.variants);
 
     vr.qname2hp =
             std::move(phasing_result.qname2hp);  // 0-index because this is an internal function
@@ -2739,10 +2952,12 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
         // end_pos of read later.
         gck.all_snp_qv.push_back(get_snp_qv_medaka_style(r));
 
-        // adjust insertion position
+        // adjust deletion position:
+        // `parse_variants_for_one_read` saves deletion positions one base
+        // prior to their true positions due to vcf formating needs.
         for (qa_t &var : r.vars) {
-            if (var.allele.back() == VAR_OP_I) {
-                var.pos--;
+            if (var.allele.back() == VAR_OP_D) {
+                var.pos++;
             }
         }
 
