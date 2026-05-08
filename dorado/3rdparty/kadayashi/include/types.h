@@ -158,7 +158,7 @@ struct pileup_pars_t {
     float min_varcall_fraction{0.2f};
     int max_clipping{10000000};
     int min_mapq{10};
-    int min_strand_cov{1};
+    int min_strand_cov{3};  // consider using 1 if low depth region encounter issue
     float min_strand_cov_frac{0.033f};
 
     float max_gapcompressed_seqdiv{0.1f};

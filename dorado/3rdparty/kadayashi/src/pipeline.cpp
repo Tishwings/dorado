@@ -2057,9 +2057,13 @@ intervals_t region_strings_to_intervals(dorado::secondary::BamFile &hf,
                                         const int window_size,
                                         const std::vector<std::string> &query_regions) {
     intervals_t ret;
-    const query_regions_t qregs = region_strings_to_ht(query_regions);
+    query_regions_t qregs = region_strings_to_ht(query_regions);
+    const bool get_all = qregs.empty();
     for (auto i = 0; i < hf.hdr()->n_targets; i++) {
         const char *chrom = hf.hdr()->target_name[i];
+        if (get_all) {
+            qregs[chrom] = {};  // instruct the block below to use the whole refseq
+        }
         const auto it_qreg = qregs.find(chrom);
 
         if (it_qreg == qregs.cend()) {

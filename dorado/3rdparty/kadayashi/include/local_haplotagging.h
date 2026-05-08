@@ -426,6 +426,22 @@ struct MedakaFeatureMatrixOptions {
     double min_snp_accuracy;
 };
 
+/**
+ * @brief Given access to aligned reads, a query interval and
+ * optionally a set of desirable read haptags, return a read pileup matrix
+ * of the scheme of `dorado::secondary::ReadAlignmentData`.
+ *
+ * @par Thread safety
+ * Bam file.
+ *
+ * @param hf      Bam file access for aligned reads.
+ * @param refname Query region's reference sequence name.
+ * @param itvl_start Start of query region, 0-index inclusive.
+ * @param itvl_end   End of query region,   0-index exclusive.
+ * @param qname2hp   Mapping from read names to their haptags.
+ * @param options    Options and hyperparameters for the read pileup matrix.
+ *                   Note `hap_source` which can be used to ignore `qname2hp`.
+ */
 MedakaFeatureMatrix gen_medaka_feature_matrix(
         dorado::secondary::BamFileView &hf,
         std::string_view refname,
@@ -434,6 +450,23 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
         const std::unordered_map<std::string, int32_t> &qname2hp,
         const MedakaFeatureMatrixOptions &options);
 
+/**
+ * @brief Wrapper of gen_medaka_feature_matrix (BamFile rather than BamFileView).
+ * Given access to aligned reads, a query interval and
+ * optionally a set of desirable read haptags, return a read pileup matrix
+ * of the scheme of `dorado::secondary::ReadAlignmentData`.
+ *
+ * @par Thread safety
+ * Bam file.
+ *
+ * @param hf      Bam file access for aligned reads.
+ * @param refname Query region's reference sequence name.
+ * @param itvl_start Start of query region, 0-index inclusive.
+ * @param itvl_end   End of query region,   0-index exclusive.
+ * @param qname2hp   Mapping from read names to their haptags.
+ * @param options    Options and hyperparameters for the read pileup matrix.
+ *                   Note `hap_source` which can be used to ignore `qname2hp`.
+ */
 MedakaFeatureMatrix gen_medaka_feature_matrix_wrapper(
         dorado::secondary::BamFile &bam_file,
         std::string refname,
