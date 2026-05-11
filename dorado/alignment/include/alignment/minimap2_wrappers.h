@@ -2,10 +2,7 @@
 
 #ifdef _WIN32
 #pragma warning(push)
-#pragma warning(disable : 4193)
-#pragma warning(disable : 4200)
-#pragma warning(disable : 4244)
-#pragma warning(disable : 4267)
+#pragma warning(disable : 4200)  // nonstandard extension used: zero-sized array in struct/union
 #endif
 #include <minimap.h>
 #ifdef _WIN32
