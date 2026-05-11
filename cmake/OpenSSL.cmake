@@ -1,3 +1,7 @@
+if(TARGET OpenSSL::SSL)
+  return()
+endif()
+
 if(ECM_ENABLE_SANITIZERS)
   set(OPENSSL_USE_STATIC_LIBS FALSE)
 else()
