@@ -16,7 +16,7 @@ namespace dorado::config {
 static const std::unordered_map<std::string, SublayerType> sublayer_map = {
         {"clamp", SublayerType::CLAMP},
         {"convolution", SublayerType::CONVOLUTION},
-        {"flstm", SublayerType::FLSTM},
+        {"flstm_softout", SublayerType::FLSTM_SOFTOUT},
         {"linear", SublayerType::LINEAR},
         {"linearcrfencoder", SublayerType::LINEAR_CRF_ENCODER},
         {"lstm", SublayerType::LSTM},

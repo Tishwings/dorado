@@ -254,7 +254,7 @@ BasecallModelConfig load_lstm_model_config(const std::filesystem::path &path) {
                 config.scale = toml::find_or<float>(segment, "scale", 1.f);
             } else if (type == SublayerType::LSTM) {
                 config.lstm_layers++;
-            } else if (type == SublayerType::FLSTM) {
+            } else if (type == SublayerType::FLSTM_SOFTOUT) {
                 ++flstm_layers;
                 const int inner_dim = toml::find<int>(segment, "inner_dim");
                 if (config.lstm_inner_dim.has_value()) {
@@ -267,6 +267,9 @@ BasecallModelConfig load_lstm_model_config(const std::filesystem::path &path) {
                     config.lstm_inner_dim = inner_dim;
                 }
             }
+        }
+        if ((config.lstm_layers == 0) && (flstm_layers == 0)) {
+            throw std::runtime_error("Invalid CRF model configuration - found 0 (F)LSTM layers");
         }
         if (flstm_layers > 0) {
             if (config.lstm_layers > 0) {
