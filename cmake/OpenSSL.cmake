@@ -1,3 +1,7 @@
+if(TARGET OpenSSL::SSL)
+  return()
+endif()
+
 if(ECM_ENABLE_SANITIZERS)
   set(OPENSSL_USE_STATIC_LIBS FALSE)
 else()
@@ -5,19 +9,19 @@ else()
 endif()
 
 if(NOT DEFINED OPENSSL_ROOT_DIR)
-    set(OPENSSL_VERSION 3.5.1)
+    set(OPENSSL_VERSION 3.5.5)
     if(APPLE)
         download_and_extract(
             ${DORADO_CDN_URL}/openssl-${OPENSSL_VERSION}-macos-aarch64.zip
             openssl-${OPENSSL_VERSION}-macos-aarch64
-            "d3a7c9dd9eaf09e6667c5ecfd213133fe3235b10a82c36246387e4d38b29ecd3"
+            "afba0cc43232833343db607d2ed999cfd9af43df1e889b8edb2ebd6766844ae2"
         )
         set(OPENSSL_ROOT_DIR ${DORADO_3RD_PARTY_DOWNLOAD}/openssl-${OPENSSL_VERSION}-macos-aarch64)
     elseif(WIN32)
         download_and_extract(
             ${DORADO_CDN_URL}/openssl-${OPENSSL_VERSION}-win.zip
             openssl-${OPENSSL_VERSION}-win
-            "eeb4300919d6a44c896b30cf9e3afb851980b61b7a9b655c5cf1da9cc78aeb73"
+            "200bd6d518c58b74d30319a382df32673ce8b3f28aa527f4dccb46bf3bfd2392"
         )
         set(OPENSSL_ROOT_DIR ${DORADO_3RD_PARTY_DOWNLOAD}/openssl-${OPENSSL_VERSION}-win)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -25,14 +29,14 @@ if(NOT DEFINED OPENSSL_ROOT_DIR)
             download_and_extract(
                 ${DORADO_CDN_URL}/openssl-${OPENSSL_VERSION}-linux-x86_64.zip
                 openssl-${OPENSSL_VERSION}-Linux-x86_64
-                "1f5e232fd4fb6dc441a0ce51eec631125a8585447454bc1e6a4d25ff32869b3a"
+                "20d7e3caf86368e03f61071c67d152cc3e18865d8b38e369df74ae4c57d1421b"
             )
             set(OPENSSL_ROOT_DIR ${DORADO_3RD_PARTY_DOWNLOAD}/openssl-${OPENSSL_VERSION}-Linux-x86_64)
         elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64*|^arm*")
             download_and_extract(
                 ${DORADO_CDN_URL}/openssl-${OPENSSL_VERSION}-linux-aarch64.zip
                 openssl-${OPENSSL_VERSION}-Linux-aarch64
-                "38111138e7c22f74d59760ac4144f998ad62ed7e6671a792f952349c3ace13fd"
+                "5d31d284e6f5734d390e7c36584e001f764613109111520420a9f84c4bd6fd2d"
             )
             set(OPENSSL_ROOT_DIR ${DORADO_3RD_PARTY_DOWNLOAD}/openssl-${OPENSSL_VERSION}-Linux-aarch64)
         endif()
