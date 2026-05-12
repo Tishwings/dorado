@@ -27,7 +27,6 @@ Stereo models should fail.
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 1
   [error] Inputs from duplex basecalling are not supported. Detected model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3' in the input BAM.
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Using `--model-override` with a stereo basecaller model should emit warnings.
 This succeeds because the model was explicitly specified.
@@ -48,7 +47,6 @@ This succeeds because the model was explicitly specified.
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g' | sed -E "s/user-specified model: '[^']*'/user-specified model/g"
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [warning] Inputs from duplex basecalling are not supported. Detected model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3' in the input BAM. This may produce inferior results.
   [warning] Skipping basecaller compatibility checks for user-specified model. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
@@ -72,7 +70,6 @@ Since `--model-override` is used and the model explicitly specified, only warnin
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g' | sed -E "s/user-specified model: '[^']*'/user-specified model/g"
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [warning] Inputs from duplex basecalling are not supported. Detected model: 'dna_r10.4.1_e8.2_5khz_stereo@v1.3' in the input BAM. This may produce inferior results.
   [warning] Skipping basecaller compatibility checks for user-specified model. The accuracy of the results is not guaranteed.
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
@@ -89,4 +86,3 @@ This should error out.
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 1
   [error] Input BAM file has a mix of different basecaller models. Only one basecaller model can be processed. List of all basecaller models found in the BAM file: dna_r10.4.1_e8.2_400bps_hac@v5.0.0, dna_r10.4.1_e8.2_5khz_stereo@v1.3
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.

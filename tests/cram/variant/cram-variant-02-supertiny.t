@@ -15,4 +15,3 @@ Run a supertiny test case.
   > diff out/expected.no_header.no_qual.vcf out/result.no_header.no_qual.vcf
   > grep "\[E::" out/stderr || true
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.

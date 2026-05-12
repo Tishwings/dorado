@@ -19,4 +19,3 @@ Internally call simple variants and run inference only on computed candidate reg
   > diff out/expected.no_header.no_qual.vcf out/result.no_header.no_qual.vcf
   > diff out/expected.processed_regions.sorted.bed out/processed_regions.sorted.bed
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.

@@ -16,4 +16,3 @@ This sets it very high, so all variants should be low quality.
   > sed 's/PASS/LowQual/g' out/expected.no_header.no_qual.vcf > out/expected.no_header.no_qual.low_qual.vcf
   > diff out/expected.no_header.no_qual.low_qual.vcf out/result.no_header.no_qual.vcf
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.

@@ -20,7 +20,6 @@ Provide candidate variant sites to seed inference windows (the --candidates feat
   > diff out/expected.no_header.no_qual.vcf out/result.no_header.no_qual.vcf
   > diff out/expected.processed_regions.sorted.bed out/processed_regions.sorted.bed
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Additionally provide a regions BED file to limit where the candidate sites are considered for inference.
   $ rm -rf out; mkdir -p out
@@ -45,7 +44,6 @@ Additionally provide a regions BED file to limit where the candidate sites are c
   > diff out/expected.no_header.no_qual.vcf out/result.no_header.no_qual.vcf
   > diff out/expected.processed_regions.sorted.bed out/processed_regions.sorted.bed
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Tiled region selection is the default windowing approach for candidate-filtered inference.
   $ rm -rf out; mkdir -p out
@@ -69,7 +67,6 @@ Tiled region selection is the default windowing approach for candidate-filtered 
   > diff out/expected.no_header.no_qual.vcf out/result.no_header.no_qual.vcf
   > diff out/expected.processed_regions.sorted.bed out/processed_regions.sorted.bed
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Candidate filtering with an empty candidates file should succeed and produce no calls.
   $ rm -rf out; mkdir -p out
@@ -86,4 +83,3 @@ Candidate filtering with an empty candidates file should succeed and produce no 
   > test ! -s out/result.no_header.vcf
   > test ! -s out/processed_regions.bed
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.

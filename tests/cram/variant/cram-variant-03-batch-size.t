@@ -24,7 +24,6 @@ Negative batch size should fail.
   > grep "Estimating batch memory for fixed batch size" out/stderr | sed -E 's/.*\] //g'
   Exit code: 1
   [error] Batch size should be >= 0. Given: -1.
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Fixed positive batch size should run.
   $ rm -rf out; mkdir -p out
@@ -40,7 +39,6 @@ Fixed positive batch size should run.
   > grep "Using auto computed batch size." out/stderr | sed -E 's/.*\[/\[/g'
   > grep "Estimating batch memory for fixed batch size" out/stderr | sed -E 's/.*\] //g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [info] Using fixed batch size: 1
   Estimating batch memory for fixed batch size:
 
@@ -58,7 +56,6 @@ Auto batch size.
   > grep "Using auto computed batch size." out/stderr | sed -E 's/.*\[/\[/g' | sed -E 's/memory:.*/memory:/g'
   > grep "Estimating batch memory for fixed batch size" out/stderr | sed -E 's/.*\] //g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [info] Using auto computed batch size. Usable per-worker memory:
 
 Batch size zero is auto batch size.
@@ -75,5 +72,4 @@ Batch size zero is auto batch size.
   > grep "Using auto computed batch size." out/stderr | sed -E 's/.*\[/\[/g' | sed -E 's/memory:.*/memory:/g'
   > grep "Estimating batch memory for fixed batch size" out/stderr | sed -E 's/.*\] //g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [info] Using auto computed batch size. Usable per-worker memory:
