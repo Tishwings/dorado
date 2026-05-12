@@ -1804,14 +1804,8 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                           const pileup_pars_t &pp) {
     // A simpler pileup that allows hom variants, non-SNPs and multi-alleles.
 
-    const bool enable_downsample = true;
-    const int downsample_window = 10000;
-    const int downsample_readcap = 150;  // 10k window 30x has ~50 reads
+    constexpr bool ENABLE_DOWNSAMPLE = true;
 
-    if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
-        LOG_DEBUG("[kdys::{}] pileup at {}:{}-{} (1-index, close-open)", __func__, refname,
-                  itvl_start + 1, itvl_end);
-    }
     vc_variants1_t ht;
 
     chunk_t ck = {
@@ -1825,18 +1819,25 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
             .refname = std::string(refname),
             .vg = {},
     };
-    uint32_t abs_start = ck.abs_start;
-    uint32_t abs_end = ck.abs_end;
+    if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
+        LOG_DEBUG("[kdys::{}] pileup at {}:{}-{} (1-index, close-open)", __func__, refname,
+                  ck.abs_start + 1, ck.abs_end);
+    }
 
-    const std::string itvl = create_region_string(refname, itvl_start, itvl_end);
+    // note: use `span_{start,end}` rather than `ck.abs_{start,end}`
+    // except for when trimming off the interval expansion (if any).
+    uint32_t span_start = ck.abs_start;
+    uint32_t span_end = ck.abs_end;
+
+    const std::string itvl = create_region_string(refname, ck.abs_start, ck.abs_end);
     HtsItrPtr bamitr = HtsItrPtr(sam_itr_querys(hf.idx, hf.hdr, itvl.c_str()), HtsItrDestructor());
     BamPtr aln = BamPtr(bam_init1(), BamDestructor());
 
     if (!pp.disable_region_expansion) {
-        interval_t new_itvl = expand_query_interval(hf, refname, itvl_start, itvl_end);
-        abs_start = new_itvl.start;
-        abs_end = new_itvl.end;
-        const std::string itvl2 = create_region_string(refname, abs_start, abs_end);
+        interval_t new_itvl = expand_query_interval(hf, refname, ck.abs_start, ck.abs_end);
+        span_start = new_itvl.start;
+        span_end = new_itvl.end;
+        const std::string itvl2 = create_region_string(refname, span_start, span_end);
 
         bamitr = HtsItrPtr(sam_itr_querys(hf.idx, hf.hdr, itvl2.c_str()), HtsItrDestructor());
         if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
@@ -1853,8 +1854,8 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
     // downsample helper
     int downsample_filtered = 0;
     std::vector<int> downsample_counter;
-    const int n_counter = (abs_end - abs_start) / downsample_window + 1;
-    if (enable_downsample) {
+    const int n_counter = (span_end - span_start) / DOWNSAMPLE_WINDOW + 1;
+    if (ENABLE_DOWNSAMPLE) {
         downsample_counter.resize(n_counter, 0);
     }
     uint32_t n_reads = 0;
@@ -1907,10 +1908,10 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
         const uint32_t r_start_pos = static_cast<uint32_t>(aln.get()->core.pos);
         const uint32_t r_end_pos = static_cast<uint32_t>(bam_endpos(aln.get()));
 
-        if (enable_downsample) {
+        if (ENABLE_DOWNSAMPLE) {
             const bool read_may_be_accepted = read_downsampling_query_or_update_counter(
-                    READ_DOWNSAMPLING_QUERY_AND_UPDATE, r_start_pos, r_end_pos, itvl_start,
-                    itvl_end, downsample_counter, downsample_window, downsample_readcap);
+                    READ_DOWNSAMPLING_QUERY_AND_UPDATE, r_start_pos, r_end_pos, span_start,
+                    span_end, downsample_counter, DOWNSAMPLE_WINDOW, DOWNSAMPLE_READCAP);
             if (!read_may_be_accepted) {
                 downsample_filtered++;
                 continue;  // go parse the next read
@@ -1945,10 +1946,10 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                 filter_lift_qa_v_given_conf_list(read_vars_buffer, r.vars, ht_refvars);
             }
             for (uint32_t i = 0; i < r.vars.size(); i++) {
-                if (r.vars[i].pos < abs_start) {
+                if (r.vars[i].pos < span_start) {
                     continue;
                 }
-                if (r.vars[i].pos >= abs_end) {
+                if (r.vars[i].pos >= span_end) {
                     break;
                 }
                 const int is_not_seen_before =
@@ -2020,14 +2021,14 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
     if constexpr (DEBUG_LOCAL_HAPLOTAGGING) {
         spdlog::debug(
                 "[kdys::{}] ht size is {}, ck size {} (downsample={}, filtered={}), n_reads={}",
-                __func__, ht.size(), ck.reads.size(), enable_downsample, downsample_filtered,
+                __func__, ht.size(), ck.reads.size(), ENABLE_DOWNSAMPLE, downsample_filtered,
                 n_reads);
     }
 
     if (pileup_failed) {
         spdlog::error(
                 "[kdys::{}] query {}:{}-{} (1-index [) ]) pileup's initial collection failed.",
-                __func__, refname, itvl_start + 1, itvl_end);
+                __func__, refname, ck.abs_start + 1, ck.abs_end);
         return {};
     }
 
@@ -2049,9 +2050,9 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
     int refseq_l = 0;
     if (fai) {
         if (!pp.disable_low_complexity_masking) {
-            hplowcmp_mask = get_lowcmp_mask(fai, refname, abs_start, abs_end);
+            hplowcmp_mask = get_lowcmp_mask(fai, refname, span_start, span_end);
         }
-        const std::string span_s = create_region_string(refname, abs_start, abs_end);
+        const std::string span_s = create_region_string(refname, span_start, span_end);
         refseq_s = kadayashi::hts_utils::fetch_seq(fai, span_s.c_str());
         refseq_l = static_cast<int>(refseq_s.size());
     }
@@ -2222,8 +2223,8 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
                                     b.cov.cov_hap0 + b.cov.cov_hap1 + b.cov.cov_unphased;
                          });
 
-        const bool is_done =
-                classify_variant_prefilter(q, pos, refseq_s.c_str(), refseq_l, abs_start, qname2hp);
+        const bool is_done = classify_variant_prefilter(q, pos, refseq_s.c_str(), refseq_l,
+                                                        span_start, qname2hp);
 
         if (is_done) {
             continue;
@@ -2234,7 +2235,7 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
         if (qname2hp) {  // phased varcall
             assert(fai);
             const var_classify_t result =
-                    classify_variant_phased(q, pos, refseq_s.c_str(), refseq_l, abs_start,
+                    classify_variant_phased(q, pos, refseq_s.c_str(), refseq_l, span_start,
                                             pp.min_strand_cov, pp.min_strand_cov_frac);
             q.is_accepted = result.is_accepted;
             q.type = result.type;
@@ -2860,13 +2861,11 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
     BamPtr aln = BamPtr(bam_init1(), BamDestructor());
 
     // helpers for read downsampling (adapted from pileup_ht)
-    const bool enable_downsample = true;
-    const int downsample_window = 1000;
-    const int downsample_readcap = 60;
+    constexpr bool ENABLE_DOWNSAMPLE = true;
     gck.n_downsample_filtered = 0;
     std::vector<int> downsample_counter;
-    const int n_counter = (gck.itvl_end - gck.itvl_start) / downsample_window + 1;
-    if (enable_downsample) {
+    const int n_counter = (gck.itvl_end - gck.itvl_start) / DOWNSAMPLE_WINDOW + 1;
+    if (ENABLE_DOWNSAMPLE) {
         downsample_counter.resize(n_counter, 0);
     }
 
@@ -2927,10 +2926,10 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
         // Consider depth-based filtering.
         // Don't update the counter yet, we might want to ignore the read
         // based on other criteria.
-        if (enable_downsample) {
+        if (ENABLE_DOWNSAMPLE) {
             const bool read_may_be_accepted = read_downsampling_query_or_update_counter(
                     READ_DOWNSAMPLING_QUERY_ONLY, r_start_pos, r_end_pos, gck.itvl_start,
-                    gck.itvl_end, downsample_counter, downsample_window, downsample_readcap);
+                    gck.itvl_end, downsample_counter, DOWNSAMPLE_WINDOW, DOWNSAMPLE_READCAP);
             if (!read_may_be_accepted) {
                 gck.n_downsample_filtered++;
                 continue;  // go parse the next read
@@ -2967,7 +2966,7 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
         // Read is accepted. Update the downsampling counter.
         read_downsampling_query_or_update_counter(
                 READ_DOWNSAMPLING_QUERY_AND_UPDATE, r_start_pos, r_end_pos, gck.itvl_start,
-                gck.itvl_end, downsample_counter, downsample_window, downsample_readcap);
+                gck.itvl_end, downsample_counter, DOWNSAMPLE_WINDOW, DOWNSAMPLE_READCAP);
 
         // save haptag from the alignment record if requested.
         if (gck.options.include_haplotype_column && ((gck.options.hap_source == USE_BAM_HAP_TAG))) {

@@ -138,8 +138,8 @@ struct chunk_t {
     std::vector<ta_t> varcalls;
     std::vector<std::string> qnames;
     std::unordered_map<std::string, int> qname2ID;
-    uint32_t abs_start;
-    uint32_t abs_end;
+    uint32_t abs_start;  // query interval start, not including any expansions
+    uint32_t abs_end;    // similar to the above
     std::string refname;
     variant_graph_t vg;
 };
