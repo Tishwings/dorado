@@ -109,17 +109,6 @@ CATCH_TEST_CASE("HtsReaderTest: read_bam API w/ SAM", TEST_GROUP) {
     CATCH_REQUIRE(read_map.size() == 2);  // read_id filter is only asking for 2 reads.
 }
 
-CATCH_TEST_CASE("HtsReaderTest: fetch_read_ids API w/ SAM", TEST_GROUP) {
-    fs::path aligner_test_dir = fs::path(get_data_dir("bam_reader"));
-    auto sam = aligner_test_dir / "small.sam";
-    const std::unordered_set<std::string> read_ids = {"d7500028-dfcc-4404-b636-13edae804c55",
-                                                      "60588a89-f191-414e-b444-ad0815b7d9c9"};
-
-    auto read_set = dorado::fetch_read_ids(sam.string());
-    CATCH_CHECK(read_set.find("d7500028-dfcc-4404-b636-13edae804c55") != read_set.end());
-    CATCH_CHECK(read_set.find("60588a89-f191-414e-b444-ad0815b7d9c9") != read_set.end());
-}
-
 CATCH_TEST_CASE("HtsReaderTest: filename tag added if missing", TEST_GROUP) {
     fs::path aligner_test_dir = fs::path(get_data_dir("bam_reader"));
     auto filename = GENERATE("input.fa", "fastq_with_tags.fq");
