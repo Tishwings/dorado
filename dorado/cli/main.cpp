@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
             {"trim", &dorado::trim},
             {"correct", &dorado::correct},
             {"polish", &dorado::polish},
-            {"variant", &dorado::variant_caller},
+            {"smallvar", &dorado::small_variant_caller},
     };
 
     const std::vector<std::string_view> arguments(argv + 1, argv + argc);

@@ -5,7 +5,7 @@
 
 #include <string>
 
-namespace dorado::variant {
+namespace dorado::smallvar {
 
 class VariantProgressTracker {
 public:
@@ -27,4 +27,4 @@ private:
     double m_last_progress_written = -1.;
 };
 
-}  // namespace dorado::variant
+}  // namespace dorado::smallvar

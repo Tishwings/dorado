@@ -14,6 +14,7 @@
 #include "secondary/consensus/window_utils.h"
 #include "secondary/features/haplotag_source.h"
 #include "secondary/features/variant_candidate_source.h"
+#include "smallvar_progress_tracker.h"
 #include "torch_utils/auto_detect_device.h"
 #include "torch_utils/torch_utils.h"
 #include "utils/AsyncQueue.h"
@@ -23,7 +24,6 @@
 #include "utils/string_utils.h"
 #include "utils/thread_utils.h"
 #include "variant/variant_impl.h"
-#include "variant_progress_tracker.h"
 
 #include <IntervalTree.h>
 #include <spdlog/spdlog.h>
@@ -969,7 +969,7 @@ void init_progress_tracker(secondary::Stats& stats,
 void run_variant_calling(const Options& opt,
                          const secondary::BamInfo& bam_info,
                          const secondary::ModelConfig& model_config,
-                         variant::VariantResources& resources,
+                         smallvar::VariantResources& resources,
                          secondary::Stats& stats) {
     spdlog::info("Threads: {}, inference threads: {}, number of devices: {}", opt.threads,
                  opt.infer_threads, std::size(resources.devices));
@@ -1161,14 +1161,14 @@ void run_variant_calling(const Options& opt,
     }
 
     utils::AsyncQueue<secondary::Window> bam_region_queue(opt.queue_size);
-    utils::AsyncQueue<variant::InferenceData> sample_queue(opt.queue_size);
-    utils::AsyncQueue<variant::InferenceData> batch_queue(opt.queue_size);
-    utils::AsyncQueue<variant::DecodeData> decode_queue(opt.queue_size);
+    utils::AsyncQueue<smallvar::InferenceData> sample_queue(opt.queue_size);
+    utils::AsyncQueue<smallvar::InferenceData> batch_queue(opt.queue_size);
+    utils::AsyncQueue<smallvar::DecodeData> decode_queue(opt.queue_size);
     utils::AsyncQueue<secondary::VariantCallingSample> vc_data_queue(opt.queue_size);
     utils::AsyncQueue<int64_t> vc_writer_queue(opt.queue_size);
 
     // Initialize data needed to reduce the processing (decode/merge/trim results).
-    std::vector<variant::ChromosomeReduceData> chrom_reduce_data(std::size(input_regions));
+    std::vector<smallvar::ChromosomeReduceData> chrom_reduce_data(std::size(input_regions));
     {
         for (int64_t seq_id = 0; seq_id < std::ssize(bam_regions); ++seq_id) {
             auto& crd = chrom_reduce_data[seq_id];
@@ -1233,7 +1233,7 @@ void run_variant_calling(const Options& opt,
         // Create a thread for worker_sample_producer.
         auto thread_sample_producer = utils::jthread([&] {
             utils::set_thread_name("worker_sample_producer");
-            variant::worker_sample_producer(
+            smallvar::worker_sample_producer(
                     bam_region_queue, sample_queue, chrom_reduce_data, resources, stats,
                     worker_terminate, wrs_sample_producer, bam_regions, draft_lens, draft_seqs,
                     variant_candidate_source, candidate_trees_from_file, opt.threads, window_len,
@@ -1245,15 +1245,15 @@ void run_variant_calling(const Options& opt,
         // Create a thread for worker_batch_producer.
         auto thread_batch_producer = utils::jthread([&] {
             utils::set_thread_name("worker_batch_producer");
-            variant::worker_batch_producer(sample_queue, batch_queue, worker_terminate,
-                                           wrs_batch_producer, *resources.models.front(),
-                                           window_len, opt.batch_size, usable_mem,
-                                           opt.continue_on_error);
+            smallvar::worker_batch_producer(sample_queue, batch_queue, worker_terminate,
+                                            wrs_batch_producer, *resources.models.front(),
+                                            window_len, opt.batch_size, usable_mem,
+                                            opt.continue_on_error);
         });
 
         auto thread_infer = utils::jthread([&] {
             utils::set_thread_name("worker_infer_samples_in_parallel");
-            variant::worker_infer_samples_in_parallel(
+            smallvar::worker_infer_samples_in_parallel(
                     batch_queue, decode_queue, resources.models, worker_terminate, wrs_infer,
                     resources.streams, resources.encoders, draft_lens, opt.continue_on_error);
         });
@@ -1262,14 +1262,14 @@ void run_variant_calling(const Options& opt,
             utils::set_thread_name("worker_separate_decode_data");
             const int32_t num_threads = static_cast<int32_t>(
                     std::min(std::ssize(resources.models), std::ssize(resources.encoders)));
-            variant::worker_separate_decode_data(decode_queue, vc_data_queue, worker_terminate,
-                                                 wrs_separate_infer_output, num_threads,
-                                                 opt.continue_on_error);
+            smallvar::worker_separate_decode_data(decode_queue, vc_data_queue, worker_terminate,
+                                                  wrs_separate_infer_output, num_threads,
+                                                  opt.continue_on_error);
         });
 
         auto thread_call_variants = utils::jthread([&] {
             utils::set_thread_name("worker_variant_calling_reduce");
-            variant::worker_variant_calling_reduce(
+            smallvar::worker_variant_calling_reduce(
                     vc_data_queue, vc_writer_queue, chrom_reduce_data, worker_terminate,
                     wrs_thread_call_variants, stats, draft_readers, opt.continue_on_error,
                     opt.threads, draft_lens, *resources.decoder, opt.pass_min_qual, opt.ambig_ref,
@@ -1279,14 +1279,14 @@ void run_variant_calling(const Options& opt,
 
         auto thread_write_variants = utils::jthread([&] {
             utils::set_thread_name("worker_variant_writer");
-            variant::worker_variant_writer(vc_writer_queue, chrom_reduce_data, worker_terminate,
-                                           wrs_thread_write_variants, *vcf_writer, ofs_regions,
-                                           vcf_writer_kadayashi, vcf_writer_inference,
-                                           opt.continue_on_error);
+            smallvar::worker_variant_writer(vc_writer_queue, chrom_reduce_data, worker_terminate,
+                                            wrs_thread_write_variants, *vcf_writer, ofs_regions,
+                                            vcf_writer_kadayashi, vcf_writer_inference,
+                                            opt.continue_on_error);
         });
     }
 
-    variant::signal_worker_terminate(worker_terminate);
+    smallvar::signal_worker_terminate(worker_terminate);
 
     // Propagate exceptions from threads.
     for (const auto& wrs :
@@ -1300,16 +1300,16 @@ void run_variant_calling(const Options& opt,
 
 }  // namespace
 
-int variant_caller(int argc, char* argv[]) {
+int small_variant_caller(int argc, char* argv[]) {
     try {
         spdlog::warn(
-                "This is an alpha preview of Dorado Variant. Results should be considered "
+                "This is an alpha preview of Dorado SmallVar. Results should be considered "
                 "experimental.");
 
         // Initialize CLI options. The parse_args below requires a non-const reference.
         // Verbosity is passed into a callback, so we need it here.
         int verbosity = 0;
-        argparse::ArgumentParser parser("dorado variant", DORADO_VERSION,
+        argparse::ArgumentParser parser("dorado smallvar", DORADO_VERSION,
                                         argparse::default_arguments::help);
         add_arguments(parser, verbosity);
 
@@ -1396,7 +1396,7 @@ int variant_caller(int argc, char* argv[]) {
         }
 
         // Create the models, encoders and BAM handles.
-        variant::VariantResources resources = variant::create_resources(
+        smallvar::VariantResources resources = smallvar::create_resources(
                 model_config, opt.in_ref_fastx_fn, opt.in_aln_bam_fn, opt.device_str, opt.threads,
                 opt.infer_threads, opt.full_precision, opt.read_group, opt.tag_name, opt.tag_value,
                 opt.min_snp_accuracy, opt.tag_keep_missing, opt.min_mapq, opt.haplotag_source,
@@ -1405,7 +1405,7 @@ int variant_caller(int argc, char* argv[]) {
         // Progress bar.
         secondary::Stats stats;
         std::vector<dorado::stats::StatsReporter> stats_reporters;
-        variant::VariantProgressTracker tracker;
+        smallvar::VariantProgressTracker tracker;
         std::vector<dorado::stats::StatsCallable> stats_callables;
         stats_callables.push_back([&tracker, &stats](const stats::NamedStats& /*stats*/) {
             tracker.update_progress_bar(stats.get_stats());

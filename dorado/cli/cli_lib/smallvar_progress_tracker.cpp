@@ -1,4 +1,4 @@
-#include "variant_progress_tracker.h"
+#include "smallvar_progress_tracker.h"
 
 #include "utils/tty_utils.h"
 
@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-namespace dorado::variant {
+namespace dorado::smallvar {
 
 VariantProgressTracker::VariantProgressTracker() = default;
 
@@ -57,4 +57,4 @@ void VariantProgressTracker::internal_set_progress(double progress) {
     m_progress_bar.set_progress(progress);
 }
 
-}  // namespace dorado::variant
+}  // namespace dorado::smallvar

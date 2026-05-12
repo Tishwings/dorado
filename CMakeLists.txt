@@ -220,7 +220,7 @@ add_subdirectory(dorado/resume_loader)
 add_subdirectory(dorado/secondary)
 add_subdirectory(dorado/splitter)
 add_subdirectory(dorado/utils)
-add_subdirectory(dorado/variant)
+add_subdirectory(dorado/smallvar)
 add_subdirectory(tests)
 
 if (NOT DORADO_DISABLE_DORADO)

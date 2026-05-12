@@ -20,7 +20,7 @@ There should be no "downloading" log line and the process should succeed.
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
   > model_var="--models-directory ${MODEL_ROOT_DIR}"
-  > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" -v ${model_var} > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" -v ${model_var} > out/out.vcf 2> out/out.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from input data: 'dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0'" out/out.stderr | wc -l | awk '{ print $1 }'
   > grep -- " - downloading" out/out.stderr | wc -l | awk '{ print $1 }'
@@ -29,7 +29,7 @@ There should be no "downloading" log line and the process should succeed.
   Exit code: 0
   1
   0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Attempt to download a model which is not available.
   $ rm -rf out; mkdir -p out
@@ -40,7 +40,7 @@ Attempt to download a model which is not available.
   > ### Run the unit under test.
   > in_bam=out/in.modified.bam
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 -v > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --device cpu ${in_bam} ${in_ref} -t 4 -v > out/out.vcf 2> out/out.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from input data: 'dna_r10.4.1_e8.2_400bps_sup@v5.0.0_variant_mv@v1.0'" out/out.stderr | wc -l | awk '{ print $1 }'
   > grep -- " - downloading" out/out.stderr | wc -l | awk '{ print $1 }'
@@ -50,7 +50,7 @@ Attempt to download a model which is not available.
   0
   0
   [error] Could not find any variant calling model compatible with the basecaller model 'dna_r10.4.1_e8.2_400bps_sup@v5.0.0'.
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 ##############################################
 ### Test auto-resolve from the Basecaller  ###
@@ -64,7 +64,7 @@ Resolve the model from a Basecaller model name `dna_r10.4.1_e8.2_400bps_hac@v5.0
   > in_ref=${in_dir}/in.ref.fasta.gz
   > model="dna_r10.4.1_e8.2_400bps_hac@v5.0.0"
   > resolved_model="${model}_variant_mv@v1.0"
-  > ${DORADO_BIN} variant --model-override ${model} --models-directory ${MODEL_ROOT_DIR} --device cpu ${in_bam} ${in_ref} -t 4  --regions "chr20:1-100" -v > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override ${model} --models-directory ${MODEL_ROOT_DIR} --device cpu ${in_bam} ${in_ref} -t 4  --regions "chr20:1-100" -v > out/out.vcf 2> out/out.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from user-specified basecaller model name: '${resolved_model}'" out/out.stderr | wc -l | awk '{ print $1 }'
   > grep -- " - downloading ${resolved_model} with " out/out.stderr | wc -l | awk '{ print $1 }'
@@ -73,7 +73,7 @@ Resolve the model from a Basecaller model name `dna_r10.4.1_e8.2_400bps_hac@v5.0
   Exit code: 0
   1
   0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Resolve the model from an exact Variant Calling model name.
   $ rm -rf out; mkdir -p out
@@ -81,7 +81,7 @@ Resolve the model from an exact Variant Calling model name.
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
   > model="dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0"
-  > ${DORADO_BIN} variant --model-override ${model} --models-directory ${MODEL_ROOT_DIR} --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" -v > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override ${model} --models-directory ${MODEL_ROOT_DIR} --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" -v > out/out.vcf 2> out/out.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from user-specified variant calling model name: 'dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0'" out/out.stderr | wc -l | awk '{ print $1 }'
   > grep -- " - downloading ${model} with " out/out.stderr | wc -l | awk '{ print $1 }'
@@ -90,7 +90,7 @@ Resolve the model from an exact Variant Calling model name.
   Exit code: 0
   1
   0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Resolve the model from a local path.
   $ rm -rf out; mkdir -p out
@@ -98,7 +98,7 @@ Resolve the model from a local path.
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
   > model=${MODEL_DIR}
-  > ${DORADO_BIN} variant --model-override ${model} --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" -v > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override ${model} --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" -v > out/out.vcf 2> out/out.stderr
   > echo "Exit code: $?"
   > grep "Resolved model from user-specified path: " out/out.stderr | wc -l | awk '{ print $1 }'
   > grep -- " - downloading" out/out.stderr | wc -l | awk '{ print $1 }'
@@ -107,7 +107,7 @@ Resolve the model from a local path.
   Exit code: 0
   1
   0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [warning] Skipping basecaller compatibility checks for user-specified model
 
 ##############################################
@@ -125,7 +125,7 @@ Negative test: no dwells in data, but the model uses them for polishing.
   > ### Run the unit under test.
   > in_bam=out/in.no_dwells.bam
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > ${DORADO_BIN} variant --models-directory ${MODEL_ROOT_DIR} --device cpu ${in_bam} ${in_ref} -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --models-directory ${MODEL_ROOT_DIR} --device cpu ${in_bam} ${in_ref} -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "Resolved model from input data: 'dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0'" out/out.stderr | wc -l | awk '{ print $1 }'
@@ -134,7 +134,7 @@ Negative test: no dwells in data, but the model uses them for polishing.
   Exit code: 1
   1
   [error] Input data does not contain move tables, but a model which requires move tables has been chosen.
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Passing test with warnings: Basecaller model specified in the BAM does not match the Basecaller model specified in the Variant Calling model.
 Using `--model-override`.
@@ -148,13 +148,13 @@ Using `--model-override`.
   > ### Run the unit under test.
   > in_bam=out/in.bam
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > ${DORADO_BIN} variant --model-override ${model} --device cpu ${in_bam} ${in_ref} -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override ${model} --device cpu ${in_bam} ${in_ref} -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g' | sed -E 's/model: .*/model/g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [warning] Skipping basecaller compatibility checks for user-specified model
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
 
@@ -172,7 +172,7 @@ Using `--model-override`.
   > ### Run the unit under test.
   > in_bam=out/in.no_dwells.bam
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > ${DORADO_BIN} variant --model-override "${model}" --models-directory ${MODEL_ROOT_DIR} --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override "${model}" --models-directory ${MODEL_ROOT_DIR} --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "Resolved model from user-specified variant calling model name: 'dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0'" out/out.stderr | wc -l | awk '{ print $1 }'
@@ -180,7 +180,7 @@ Using `--model-override`.
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 0
   1
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [warning] Input data does not contain move tables, but a model which requires move tables has been chosen. This may produce inferior results.
 
 Passing test with warnings: Basecaller model specified in the BAM does not match the Basecaller model specified in the Variant Calling model.
@@ -195,13 +195,13 @@ Using `--model-override`.
   > ### Run the unit under test.
   > in_bam=out/in.bam
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > ${DORADO_BIN} variant --model-override ${model} --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override ${model} --device cpu ${in_bam} ${in_ref} -t 4 --regions "chr20:1-100" --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g' | sed -E 's/model: .*/model/g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [warning] Skipping basecaller compatibility checks for user-specified model
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
 
@@ -213,13 +213,13 @@ Using `--model-override`.
   > ### Run the unit under test.
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
-  > ${DORADO_BIN} variant --model-override ${model} --device cpu ${in_bam} ${in_ref} -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override ${model} --device cpu ${in_bam} ${in_ref} -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g' | sed -E 's/model: .*/model/g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [warning] Skipping basecaller compatibility checks for user-specified model
   [warning] Incompatible model label scheme! Expected DiploidLabelScheme but got HaploidLabelScheme. This may produce unexpected results.
 
@@ -232,14 +232,14 @@ Negative test: Cannot resolve the model, it does not match a Basecaller model, a
   > in_bam="data/in.micro.bam"
   > model="unknown"
   > ### Run the unit under test.
-  > ${DORADO_BIN} variant --model-override "${model}" --device cpu ${in_bam} ${in_dir}/in.ref.fasta.gz -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override "${model}" --device cpu ${in_bam} ${in_dir}/in.ref.fasta.gz -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 1
   [error] Could not resolve model from string: 'unknown'.
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Negative test: 'auto' is not accepted as a model override alias.
   $ rm -rf out; mkdir -p out
@@ -247,14 +247,14 @@ Negative test: 'auto' is not accepted as a model override alias.
   > in_bam="data/in.micro.bam"
   > model="auto"
   > ### Run the unit under test.
-  > ${DORADO_BIN} variant --model-override "${model}" --device cpu ${in_bam} ${in_dir}/in.ref.fasta.gz -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --model-override "${model}" --device cpu ${in_bam} ${in_dir}/in.ref.fasta.gz -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 1
   [error] Could not resolve model from string: 'auto'.
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Negative test: BAM has a model which is not available for download in auto mode.
   $ rm -rf out; mkdir -p out
@@ -264,14 +264,14 @@ Negative test: BAM has a model which is not available for download in auto mode.
   > samtools view -h ${in_bam} | sed -E 's/dna_r10.4.1_e8.2_400bps_hac@v5.0.0/dna_r10.4.1_e8.2_400bps_hac@v1.0.0/g' | samtools view -Sb > out/in.bam
   > samtools index out/in.bam
   > ### Run the unit under test.
-  > ${DORADO_BIN} variant --device cpu out/in.bam ${in_dir}/in.ref.fasta.gz -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --device cpu out/in.bam ${in_dir}/in.ref.fasta.gz -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 1
   [error] Could not find any variant calling model compatible with the basecaller model 'dna_r10.4.1_e8.2_400bps_hac@v1.0.0'.
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Negative test: using auto mode but the BAM has no models listed (no RG tags).
   $ rm -rf out; mkdir -p out
@@ -281,11 +281,11 @@ Negative test: using auto mode but the BAM has no models listed (no RG tags).
   > samtools view -h ${in_bam} | grep -v "@RG" | samtools view -Sb > out/in.bam
   > samtools index out/in.bam
   > ### Run the unit under test.
-  > ${DORADO_BIN} variant --device cpu out/in.bam ${in_dir}/in.ref.fasta.gz -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
+  > ${DORADO_BIN} smallvar --device cpu out/in.bam ${in_dir}/in.ref.fasta.gz -t 4 --infer-threads 1 -vv > out/out.vcf 2> out/out.stderr
   > ### Eval.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   Exit code: 1
   [error] Input BAM file has no basecaller models listed in the header.
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.

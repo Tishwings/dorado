@@ -187,10 +187,10 @@ Note that Dorado `polish` is a **haploid** polishing tool and does _not_ impleme
 
 For more information on how to get started, head to the [Dorado `polish` documentation](https://software-docs.nanoporetech.com/dorado/latest/assembly/polish/).
 
-### Variant Calling - Alpha preview release
+### Small Variant Calling - Alpha preview release
 
-Dorado `variant` is an early-stage diploid small variant caller, released for experimental use and evaluation purposes.
-This version is intended for feedback and should not yet be considered production-ready. For more information check out the [Dorado `variant` documentation](https://software-docs.nanoporetech.com/dorado/latest/assembly/variant/).
+Dorado `smallvar` is an early-stage diploid small variant caller, released for experimental use and evaluation purposes.
+This version is intended for feedback and should not yet be considered production-ready. For more information check out the [Dorado `smallvar` documentation](https://software-docs.nanoporetech.com/dorado/latest/assembly/smallvar/).
 
 ## Available basecalling models
 

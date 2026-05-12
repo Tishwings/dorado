@@ -5,7 +5,7 @@ Run a supertiny test case.
   > in_ref=${in_dir}/in.ref.fasta.gz
   > in_expected=${in_dir}/expected.dorado.vcf
   > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
-  > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups > out/out.vcf 2> out/stderr
+  > ${DORADO_BIN} smallvar --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
@@ -15,4 +15,4 @@ Run a supertiny test case.
   > diff out/expected.no_header.no_qual.vcf out/result.no_header.no_qual.vcf
   > grep "\[E::" out/stderr || true
   Exit code: 0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.

@@ -15,7 +15,7 @@ Negative batch size should fail.
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
   > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
-  > ${DORADO_BIN} variant -vv --batchsize -1 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
+  > ${DORADO_BIN} smallvar -vv --batchsize -1 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
@@ -24,7 +24,7 @@ Negative batch size should fail.
   > grep "Estimating batch memory for fixed batch size" out/stderr | sed -E 's/.*\] //g'
   Exit code: 1
   [error] Batch size should be >= 0. Given: -1.
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
 
 Fixed positive batch size should run.
   $ rm -rf out; mkdir -p out
@@ -32,7 +32,7 @@ Fixed positive batch size should run.
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
   > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
-  > ${DORADO_BIN} variant -vv --batchsize 1 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-110" > out/out.vcf 2> out/stderr
+  > ${DORADO_BIN} smallvar -vv --batchsize 1 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-110" > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
@@ -40,7 +40,7 @@ Fixed positive batch size should run.
   > grep "Using auto computed batch size." out/stderr | sed -E 's/.*\[/\[/g'
   > grep "Estimating batch memory for fixed batch size" out/stderr | sed -E 's/.*\] //g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [info] Using fixed batch size: 1
   Estimating batch memory for fixed batch size:
 
@@ -50,7 +50,7 @@ Auto batch size.
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
   > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
-  > ${DORADO_BIN} variant -vv --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
+  > ${DORADO_BIN} smallvar -vv --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
@@ -58,7 +58,7 @@ Auto batch size.
   > grep "Using auto computed batch size." out/stderr | sed -E 's/.*\[/\[/g' | sed -E 's/memory:.*/memory:/g'
   > grep "Estimating batch memory for fixed batch size" out/stderr | sed -E 's/.*\] //g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [info] Using auto computed batch size. Usable per-worker memory:
 
 Batch size zero is auto batch size.
@@ -67,7 +67,7 @@ Batch size zero is auto batch size.
   > in_bam="data/in.micro.bam"
   > in_ref=${in_dir}/in.ref.fasta.gz
   > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
-  > ${DORADO_BIN} variant -vv --batchsize 0 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
+  > ${DORADO_BIN} smallvar -vv --batchsize 0 --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} --ignore-read-groups --window-len 100 --window-overlap 10 --regions "chr20:1-100" > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/stderr | sed -E 's/.*\[/\[/g'
@@ -75,5 +75,5 @@ Batch size zero is auto batch size.
   > grep "Using auto computed batch size." out/stderr | sed -E 's/.*\[/\[/g' | sed -E 's/memory:.*/memory:/g'
   > grep "Estimating batch memory for fixed batch size" out/stderr | sed -E 's/.*\] //g'
   Exit code: 0
-  [warning] This is an alpha preview of Dorado Variant. Results should be considered experimental.
+  [warning] This is an alpha preview of Dorado SmallVar. Results should be considered experimental.
   [info] Using auto computed batch size. Usable per-worker memory:
