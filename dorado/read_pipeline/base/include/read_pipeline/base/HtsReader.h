@@ -47,8 +47,9 @@ public:
 
     bool has_tag(const char* tagname);
 
-    bool is_aligned{false};
     BamPtr record;
+    htsExactFormat exact_format{htsExactFormat::unknown_format};
+    bool is_aligned{false};
 
     sam_hdr_t* header();
     const sam_hdr_t* header() const;

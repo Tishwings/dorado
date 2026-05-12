@@ -53,6 +53,7 @@ public:
 
     sam_hdr_t* header() const { return m_header.get(); }
     const std::string& format() const { return m_format; }
+    htsExactFormat exact_format() const { return hts_get_format(m_file.get())->format; }
 
     bool try_get_next_record(bam1_t& record) {
         return sam_read1(m_file.get(), m_header.get(), &record) >= 0;
@@ -96,6 +97,7 @@ bool HtsReader::try_initialise_generator(const std::string& filepath, std::size_
     }
     m_header = generator->header();
     m_format = generator->format();
+    exact_format = generator->exact_format();
     m_bam_record_generator = [generator_ = std::move(generator),
                               filename = std::filesystem::path(filepath).filename().string(),
                               this](bam1_t& bam_record) {

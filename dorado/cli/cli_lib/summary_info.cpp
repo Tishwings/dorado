@@ -11,35 +11,25 @@ namespace dorado::cli {
 
 namespace {
 
-void update_alignment_counts(const std::filesystem::path& path,
-                             AlignmentCounts& alignment_counts,
-                             std::size_t num_threads) {
-    const auto file = dorado::HtsFilePtr(hts_open(path.string().c_str(), "r"));
-    if (file->format.format != htsExactFormat::sam && file->format.format != htsExactFormat::bam &&
-        file->format.format != htsExactFormat::cram) {
+void update_alignment_counts(HtsReader& file, AlignmentCounts& alignment_counts) {
+    if (file.exact_format != htsExactFormat::sam && file.exact_format != htsExactFormat::bam &&
+        file.exact_format != htsExactFormat::cram) {
+        return;
+    } else if (!file.is_aligned) {
         return;
     }
 
-    if (num_threads > 0) {
-        hts_set_threads(file.get(), num_threads);
-    }
-
-    dorado::SamHdrPtr header(sam_hdr_read(file.get()));
-    if (header->n_targets == 0) {
-        return;
-    }
-
-    BamPtr record(bam_init1());
     std::size_t num_reads = 0;
-    while (sam_read1(file.get(), header.get(), record.get()) >= 0) {
+    while (file.read()) {
         if (++num_reads % 50'000 == 0) {
             spdlog::debug("Preprocessed {} reads", num_reads);
         }
 
+        const auto& record = file.record;
         if (record->core.flag & BAM_FUNMAP) {
             continue;
         }
-        auto& read_counts = alignment_counts[bam_get_qname(record.get())];
+        auto& read_counts = alignment_counts[bam_get_qname(record)];
         if (record->core.flag & BAM_FSUPPLEMENTARY) {
             ++read_counts[2];
         }
@@ -66,8 +56,9 @@ std::tuple<hts_writer::SummaryFileWriter::FieldFlags, AlignmentCounts> make_summ
         const std::size_t num_threads = std::thread::hardware_concurrency();
 
         for (const auto& input_file : all_files) {
-            update_alignment_counts(input_file, alignment_counts, num_threads);
             HtsReader reader(input_file.string(), std::nullopt, num_threads);
+            update_alignment_counts(reader, alignment_counts);
+
             if (reader.is_aligned) {
                 flags |= SummaryFileWriter::ALIGNMENT_FIELDS;
             }
