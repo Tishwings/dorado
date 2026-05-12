@@ -52,7 +52,8 @@ std::tuple<hts_writer::SummaryFileWriter::FieldFlags, AlignmentCounts> make_summ
             SummaryFileWriter::BASECALLING_FIELDS | SummaryFileWriter::EXPERIMENT_FIELDS;
     AlignmentCounts alignment_counts;
     if (!(all_files.size() == 1 && all_files[0] == "-")) {
-        const std::size_t num_threads = 1;
+        // We're the only thing running, so use all the threads.
+        const std::size_t num_threads = std::thread::hardware_concurrency();
 
         for (const auto& input_file : all_files) {
             update_alignment_counts(input_file, alignment_counts, num_threads);
