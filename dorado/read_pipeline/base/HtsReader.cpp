@@ -213,20 +213,20 @@ ReadMap read_bam(const std::string& filename,
         uint8_t* sequence = bam_get_seq(reader.record);
 
         uint32_t seqlen = reader.record->core.l_qseq;
-        std::vector<uint8_t> qualities(seqlen);
-        std::vector<char> nucleotides(seqlen);
+        std::string qualities(seqlen, '\0');
+        std::string nucleotides(seqlen, '\0');
 
         // Todo - there is a better way to do this.
         for (uint32_t i = 0; i < seqlen; i++) {
-            qualities[i] = qstring[i] + 33;
+            qualities[i] = static_cast<char>(qstring[i] + 33);
             nucleotides[i] = seq_nt16_str[bam_seqi(sequence, i)];
         }
 
         auto tmp_read = std::make_unique<SimplexRead>();
         tmp_read->read_common.read_id = read_id;
-        tmp_read->read_common.seq = std::string(nucleotides.begin(), nucleotides.end());
-        tmp_read->read_common.qstring = std::string(qualities.begin(), qualities.end());
-        reads[read_id] = std::move(tmp_read);
+        tmp_read->read_common.seq = std::move(nucleotides);
+        tmp_read->read_common.qstring = std::move(qualities);
+        reads[std::move(read_id)] = std::move(tmp_read);
     }
 
     return reads;
