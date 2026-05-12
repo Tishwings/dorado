@@ -41,7 +41,7 @@ std::tuple<hts_writer::SummaryFileWriter::FieldFlags, AlignmentCounts> make_summ
         }
     }
 
-    return {flags, alignment_counts};
+    return {flags, std::move(alignment_counts)};
 }
 
 }  // namespace dorado::cli
