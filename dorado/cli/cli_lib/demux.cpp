@@ -7,6 +7,7 @@
 #include "demux/parse_custom_kit.h"
 #include "dorado_version.h"
 #include "hts_utils/HeaderMapper.h"
+#include "hts_utils/KString.h"
 #include "hts_utils/bam_utils.h"
 #include "hts_writer/HtsFileWriterBuilder.h"
 #include "hts_writer/SummaryFileWriter.h"
