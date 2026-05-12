@@ -61,7 +61,7 @@ DEFINE_TEST("Split read pairing") {
 
     // Load a pre-determined read to exercise the mapping pathway.
     const auto fa_file = std::filesystem::path(get_aligner_data_dir()) / "long_target.fa";
-    dorado::HtsReader reader(fa_file.string(), std::nullopt);
+    dorado::TestHtsReader reader(fa_file.string());
     // Skip the first sequence and use the second one.
     CATCH_REQUIRE(reader.read());
     CATCH_REQUIRE(reader.read());

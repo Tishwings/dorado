@@ -72,7 +72,7 @@ public:
 
 protected:
     void generate_bam(HtsFile::OutputMode mode, int num_threads) {
-        HtsReader reader(m_in_sam.string(), std::nullopt);
+        TestHtsReader reader(m_in_sam.string());
 
         utils::HtsFile hts_file(m_out_bam.string(), mode, num_threads, false);
         hts_file.set_header(reader.header());
@@ -133,7 +133,7 @@ CATCH_TEST_CASE("HtsWriterTest: Read and write FASTQ with tag", TEST_GROUP) {
     auto out_fastq = tmp_dir.m_path / "output.fq";
 
     // Read input file to check all tags are reads.
-    HtsReader reader(input_fastq.string(), std::nullopt);
+    TestHtsReader reader(input_fastq.string());
     {
         // Write with tags into temporary folder.
         utils::HtsFile hts_file(out_fastq.string(), HtsFile::OutputMode::FASTQ, 2, false);
@@ -153,7 +153,7 @@ CATCH_TEST_CASE("HtsWriterTest: Read and write FASTQ with tag", TEST_GROUP) {
     }
 
     // Read temporary file to make sure tags were correctly set.
-    HtsReader new_fastq_reader(out_fastq.string(), std::nullopt);
+    TestHtsReader new_fastq_reader(out_fastq.string());
     new_fastq_reader.read();
     CATCH_CHECK_THAT(
             bam_aux2Z(bam_aux_get(new_fastq_reader.record.get(), "RG")),

@@ -9,11 +9,17 @@ namespace dorado::cli {
 
 namespace {
 
-void update_alignment_counts(const std::filesystem::path& path, AlignmentCounts& alignment_counts) {
+void update_alignment_counts(const std::filesystem::path& path,
+                             AlignmentCounts& alignment_counts,
+                             std::size_t num_threads) {
     const auto file = dorado::HtsFilePtr(hts_open(path.string().c_str(), "r"));
     if (file->format.format != htsExactFormat::sam && file->format.format != htsExactFormat::bam &&
         file->format.format != htsExactFormat::cram) {
         return;
+    }
+
+    if (num_threads > 0) {
+        hts_set_threads(file.get(), num_threads);
     }
 
     dorado::SamHdrPtr header(sam_hdr_read(file.get()));
@@ -46,9 +52,11 @@ std::tuple<hts_writer::SummaryFileWriter::FieldFlags, AlignmentCounts> make_summ
             SummaryFileWriter::BASECALLING_FIELDS | SummaryFileWriter::EXPERIMENT_FIELDS;
     AlignmentCounts alignment_counts;
     if (!(all_files.size() == 1 && all_files[0] == "-")) {
+        const std::size_t num_threads = 1;
+
         for (const auto& input_file : all_files) {
-            update_alignment_counts(input_file, alignment_counts);
-            HtsReader reader(input_file.string(), std::nullopt);
+            update_alignment_counts(input_file, alignment_counts, num_threads);
+            HtsReader reader(input_file.string(), std::nullopt, num_threads);
             if (reader.is_aligned) {
                 flags |= SummaryFileWriter::ALIGNMENT_FIELDS;
             }

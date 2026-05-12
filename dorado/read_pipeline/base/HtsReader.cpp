@@ -27,11 +27,17 @@ class HtsLibBamRecordGenerator {
     std::string m_format{};
 
 public:
-    HtsLibBamRecordGenerator(const std::string& filename) {
+    HtsLibBamRecordGenerator(const std::string& filename, std::size_t num_threads) {
         m_file.reset(hts_open(filename.c_str(), "r"));
         if (!m_file) {
             return;
         }
+
+        // Enable multithreaded loading if asked to do so.
+        if (num_threads > 0) {
+            hts_set_threads(m_file.get(), num_threads);
+        }
+
         // If input format is FASTX, read tags from the query name line.
         hts_set_opt(m_file.get(), FASTQ_OPT_AUX, "1");
         auto format = hts_format_description(hts_get_format(m_file.get()));
@@ -71,11 +77,12 @@ void adjust_tid(const std::vector<uint32_t>& mapping, BamPtr& record) {
 }  // namespace
 
 HtsReader::HtsReader(const std::string& filename,
-                     std::optional<std::unordered_set<std::string>> read_list)
+                     std::optional<std::unordered_set<std::string>> read_list,
+                     std::size_t num_threads)
         : m_filename(filename),
           m_client_info(std::make_shared<DefaultClientInfo>()),
           m_read_list(std::move(read_list)) {
-    if (!try_initialise_generator<HtsLibBamRecordGenerator>(m_filename)) {
+    if (!try_initialise_generator<HtsLibBamRecordGenerator>(m_filename, num_threads)) {
         throw std::runtime_error("Could not open file: " + m_filename);
     }
     is_aligned = m_header->n_targets > 0;
@@ -84,8 +91,8 @@ HtsReader::HtsReader(const std::string& filename,
 }
 
 template <typename T>
-bool HtsReader::try_initialise_generator(const std::string& filepath) {
-    auto generator = std::make_shared<T>(filepath);  // shared to allow copy assignment
+bool HtsReader::try_initialise_generator(const std::string& filepath, std::size_t num_threads) {
+    auto generator = std::make_shared<T>(filepath, num_threads);  // shared to allow copy assignment
     if (!generator->is_valid()) {
         return false;
     }
@@ -190,8 +197,10 @@ const sam_hdr_t* HtsReader::header() const { return m_header; }
 
 const std::string& HtsReader::format() const { return m_format; }
 
-ReadMap read_bam(const std::string& filename, const std::unordered_set<std::string>& read_ids) {
-    HtsReader reader(filename, std::nullopt);
+ReadMap read_bam(const std::string& filename,
+                 const std::unordered_set<std::string>& read_ids,
+                 std::size_t num_threads) {
+    HtsReader reader(filename, std::nullopt, num_threads);
 
     ReadMap reads;
 

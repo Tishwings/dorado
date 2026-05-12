@@ -23,7 +23,8 @@ class Pipeline;
 class HtsReader {
 public:
     HtsReader(const std::string& filename,
-              std::optional<std::unordered_set<std::string>> read_list);
+              std::optional<std::unordered_set<std::string>> read_list,
+              std::size_t num_threads);
 
     // By default we'll add a filename tag to each record to match the current file
     // if one isn't included in the data, but that can be disabled with this method.
@@ -71,7 +72,7 @@ private:
     bool m_add_filename_tag{true};
 
     template <typename T>
-    bool try_initialise_generator(const std::string& filename);
+    bool try_initialise_generator(const std::string& filename, std::size_t num_threads);
 };
 
 template <typename T>
@@ -116,6 +117,14 @@ std::vector<T> HtsReader::get_array(const char* tagname) {
     return tag_value;
 }
 
+// Helper for tests that just need to load a file.
+class TestHtsReader : public HtsReader {
+    static constexpr std::size_t NUM_THREADS = 2;
+
+public:
+    TestHtsReader(const std::string& filename) : HtsReader(filename, std::nullopt, NUM_THREADS) {}
+};
+
 /**
  * @brief Reads a SAM/BAM/CRAM file and returns a map of read IDs to Read objects.
  *
@@ -126,11 +135,14 @@ std::vector<T> HtsReader::get_array(const char* tagname) {
  *
  * @param filename The input BAM file path as a string.
  * @param read_ids A set of read_ids to filter on.
+ * @param num_threads How many threads to use to load the file.
  * @return A map with read IDs as keys and shared pointers to Read objects as values.
  *
  * @note The caller is responsible for managing the memory of the returned map.
  * @note The input BAM file must be properly formatted and readable.
  */
-ReadMap read_bam(const std::string& filename, const std::unordered_set<std::string>& read_ids);
+ReadMap read_bam(const std::string& filename,
+                 const std::unordered_set<std::string>& read_ids,
+                 std::size_t num_threads);
 
 }  // namespace dorado

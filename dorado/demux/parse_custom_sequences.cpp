@@ -8,7 +8,8 @@
 namespace dorado::demux {
 
 std::vector<CustomSequence> parse_custom_sequences(const std::string& sequences_file) {
-    HtsReader reader(sequences_file, std::nullopt);
+    const std::size_t num_threads = 1;
+    HtsReader reader(sequences_file, std::nullopt, num_threads);
     std::vector<CustomSequence> sequences;
     while (reader.read()) {
         CustomSequence custom;

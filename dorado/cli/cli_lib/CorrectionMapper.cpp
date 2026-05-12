@@ -137,7 +137,8 @@ void CorrectionMapper::input_thread_fn() {
 
 void CorrectionMapper::load_read_fn() {
     utils::set_thread_name("errcorr_load");
-    HtsReader reader(m_index_file, {});
+    const std::size_t num_reader_threads = 1;
+    HtsReader reader(m_index_file, std::nullopt, num_reader_threads);
     while (reader.read()) {
         m_reads_queue.try_push(BamPtr(bam_dup1(reader.record.get())));
         m_reads_read++;

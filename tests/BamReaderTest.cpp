@@ -25,7 +25,7 @@ CATCH_TEST_CASE("HtsReaderTest: Read fasta to sink", TEST_GROUP) {
     pipeline_desc.add_node<MessageSinkToVector>({}, 100, bam_records);
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
-    dorado::HtsReader reader(fasta.string(), std::nullopt);
+    dorado::TestHtsReader reader(fasta.string());
     reader.read(*pipeline, 100, false, nullptr, false);
     pipeline->terminate({.fast = utils::AsyncQueueTerminateFast::No});
     CATCH_REQUIRE(bam_records.size() == 10);  // FASTA file has 10 reads.
@@ -35,7 +35,7 @@ CATCH_TEST_CASE("HtsReaderTest: Read fasta line by line", TEST_GROUP) {
     fs::path aligner_test_dir = fs::path(get_data_dir("bam_reader"));
     auto fasta = aligner_test_dir / "input.fa";
 
-    dorado::HtsReader reader(fasta.string(), std::nullopt);
+    dorado::TestHtsReader reader(fasta.string());
     uint32_t read_count = 0;
     while (reader.read()) {
         read_count++;
@@ -48,7 +48,7 @@ CATCH_TEST_CASE("HtsReaderTest: read_bam API w/ fasta", TEST_GROUP) {
     auto fasta = aligner_test_dir / "input.fa";
     const std::unordered_set<std::string> read_ids = {"read_1", "read_2"};
 
-    auto read_map = dorado::read_bam(fasta.string(), read_ids);
+    auto read_map = dorado::read_bam(fasta.string(), read_ids, 1);
     CATCH_REQUIRE(read_map.size() == 2);  // read_id filter is only asking for 2 reads.
 }
 
@@ -61,7 +61,7 @@ CATCH_TEST_CASE("HtsReaderTest: Read SAM to sink", TEST_GROUP) {
     pipeline_desc.add_node<MessageSinkToVector>({}, 100, bam_records);
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);
 
-    dorado::HtsReader reader(sam.string(), std::nullopt);
+    dorado::TestHtsReader reader(sam.string());
     reader.read(*pipeline, 100, false, nullptr, false);
     pipeline->terminate({.fast = utils::AsyncQueueTerminateFast::No});
     CATCH_REQUIRE(bam_records.size() == 11);  // SAM file has 11 reads.
@@ -71,7 +71,7 @@ CATCH_TEST_CASE("HtsReaderTest: Read SAM line by line", TEST_GROUP) {
     fs::path aligner_test_dir = fs::path(get_data_dir("bam_reader"));
     auto sam = aligner_test_dir / "small.sam";
 
-    dorado::HtsReader reader(sam.string(), std::nullopt);
+    dorado::TestHtsReader reader(sam.string());
     uint32_t read_count = 0;
     while (reader.read()) {
         read_count++;
@@ -83,7 +83,7 @@ CATCH_TEST_CASE("HtsReaderTest: get_tag", TEST_GROUP) {
     fs::path aligner_test_dir = fs::path(get_data_dir("bam_reader"));
     auto sam = aligner_test_dir / "small.sam";
 
-    dorado::HtsReader reader(sam.string(), std::nullopt);
+    dorado::TestHtsReader reader(sam.string());
     while (reader.read()) {
         // All records in small.sam have these set.
         CATCH_CHECK(reader.get_tag<int>("XA") == 42);
@@ -105,7 +105,7 @@ CATCH_TEST_CASE("HtsReaderTest: read_bam API w/ SAM", TEST_GROUP) {
     const std::unordered_set<std::string> read_ids = {"d7500028-dfcc-4404-b636-13edae804c55",
                                                       "60588a89-f191-414e-b444-ad0815b7d9c9"};
 
-    auto read_map = dorado::read_bam(sam.string(), read_ids);
+    auto read_map = dorado::read_bam(sam.string(), read_ids, 1);
     CATCH_REQUIRE(read_map.size() == 2);  // read_id filter is only asking for 2 reads.
 }
 
@@ -114,7 +114,7 @@ CATCH_TEST_CASE("HtsReaderTest: filename tag added if missing", TEST_GROUP) {
     auto filename = GENERATE("input.fa", "fastq_with_tags.fq");
     auto fasta = aligner_test_dir / filename;
 
-    dorado::HtsReader reader(fasta.string(), std::nullopt);
+    dorado::TestHtsReader reader(fasta.string());
     while (reader.read()) {
         // All should be given the name of input file.
         CATCH_CHECK(reader.get_tag<std::string>("fn") == filename);

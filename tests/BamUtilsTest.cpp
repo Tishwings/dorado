@@ -4,8 +4,6 @@
 #include "hts_utils/bam_utils.h"
 #include "hts_utils/hts_types.h"
 #include "read_pipeline/base/HtsReader.h"
-#include "utils/PostCondition.h"
-#include "utils/barcode_kits.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <htslib/sam.h>
@@ -83,7 +81,7 @@ CATCH_TEST_CASE("BamUtilsTest: Test bam extraction helpers", TEST_GROUP) {
     fs::path bam_utils_test_dir = fs::path(get_data_dir("bam_utils"));
     auto sam = bam_utils_test_dir / "test.sam";
 
-    HtsReader reader(sam.string(), std::nullopt);
+    TestHtsReader reader(sam.string());
     CATCH_REQUIRE(reader.read());  // Parse first and only record.
     auto record = reader.record.get();
 
@@ -246,7 +244,7 @@ CATCH_TEST_CASE("BamUtilsTest: Remove all alignment tags", TEST_GROUP) {
     fs::path bam_utils_test_dir = fs::path(get_data_dir("bam_utils"));
     auto sam = bam_utils_test_dir / "aligned_record.bam";
 
-    HtsReader reader(sam.string(), std::nullopt);
+    TestHtsReader reader(sam.string());
     reader.set_add_filename_tag(false);
     CATCH_REQUIRE(reader.read());  // Parse first and only record.
     auto record = reader.record.get();

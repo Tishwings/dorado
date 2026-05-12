@@ -447,7 +447,7 @@ int duplex(int argc, char* argv[]) {
             }
 
             spdlog::info("> Loading reads");
-            auto read_map = read_bam(reads, read_list_from_pairs);
+            auto read_map = read_bam(reads, read_list_from_pairs, 1);
 
             for (auto& [key, read] : read_map) {
                 client_info_init_func(read->read_common);

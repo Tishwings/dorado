@@ -302,7 +302,7 @@ CATCH_TEST_CASE(TEST_GROUP " fallback for BAM without RG lines", TEST_GROUP) {
     auto bam_path = write_bam_without_rg(temp_dir.m_path, "no_rg.bam");
 
     utils::HeaderMapper mapper({bam_path}, std::nullopt, nullptr, false);
-    HtsReader reader(bam_path.string(), std::nullopt);
+    TestHtsReader reader(bam_path.string());
     CATCH_REQUIRE(reader.read());
 
     const auto &attrs = mapper.get_read_attributes(reader.record.get());
@@ -323,12 +323,12 @@ CATCH_TEST_CASE(TEST_GROUP " fallback merges multiple BAMs without RG lines", TE
     utils::HeaderMapper mapper({first_bam, second_bam}, std::nullopt, nullptr, false);
 
     // Load attrs and headers of each
-    HtsReader first_reader(first_bam.string(), std::nullopt);
+    TestHtsReader first_reader(first_bam.string());
     CATCH_REQUIRE(first_reader.read());
     const auto &first_attrs = mapper.get_read_attributes(first_reader.record.get());
     const auto &first_header = mapper.get_merged_header(first_attrs);
 
-    HtsReader second_reader(second_bam.string(), std::nullopt);
+    TestHtsReader second_reader(second_bam.string());
     CATCH_REQUIRE(second_reader.read());
     const auto &second_attrs = mapper.get_read_attributes(second_reader.record.get());
     const auto &second_header = mapper.get_merged_header(second_attrs);
@@ -454,7 +454,7 @@ CATCH_TEST_CASE(TEST_GROUP " rewrites record read group ids using remap lookup",
             mapper.get_output_read_group_id(second_bam.string(), original_read_group_id);
     CATCH_REQUIRE(remapped_read_group_id == "shared_rg_1");
 
-    HtsReader reader(second_bam.string(), std::nullopt);
+    TestHtsReader reader(second_bam.string());
     dorado::PipelineDescriptor pipeline_desc;
     const auto collector_handle = pipeline_desc.add_node<BamCollectorNode>({});
     auto pipeline = dorado::Pipeline::create(std::move(pipeline_desc), nullptr);

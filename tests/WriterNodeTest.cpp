@@ -87,7 +87,7 @@ public:
 
 protected:
     void generate_bam(HtsFile::OutputMode mode, int num_threads) {
-        HtsReader reader(m_in_sam.string(), std::nullopt);
+        TestHtsReader reader(m_in_sam.string());
 
         std::vector<std::unique_ptr<hts_writer::IWriter>> writers;
         {
@@ -190,7 +190,7 @@ CATCH_TEST_CASE("HtsFileWriterTest: Read and write FASTQ with tag", TEST_GROUP) 
     auto tmp_dir = make_temp_dir("writer_test");
 
     // Read input file to check all tags are reads.
-    HtsReader reader(input_fastq.string(), std::nullopt);
+    TestHtsReader reader(input_fastq.string());
 
     std::vector<std::unique_ptr<hts_writer::IWriter>> writers;
     {
@@ -235,7 +235,7 @@ CATCH_TEST_CASE("HtsFileWriterTest: Read and write FASTQ with tag", TEST_GROUP) 
     CATCH_CAPTURE(fastq_path);
 
     // Read temporary file to make sure tags were correctly set.
-    HtsReader new_fastq_reader(fastq_path, std::nullopt);
+    TestHtsReader new_fastq_reader(fastq_path);
     new_fastq_reader.read();
     CATCH_CHECK_THAT(
             bam_aux2Z(bam_aux_get(new_fastq_reader.record.get(), "RG")),

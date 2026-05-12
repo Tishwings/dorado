@@ -38,7 +38,8 @@ void ResumeLoader::copy_completed_reads() {
     auto initial_hts_log_level = hts_get_log_level();
     hts_set_log_level(HTS_LOG_OFF);
 
-    HtsReader reader(m_resume_file, std::nullopt);
+    const std::size_t num_threads = 1;
+    HtsReader reader(m_resume_file, std::nullopt, num_threads);
     spdlog::info("Resuming from file {}...", m_resume_file);
 
     auto client_info = std::make_shared<DefaultClientInfo>();
