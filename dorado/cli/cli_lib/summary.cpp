@@ -93,7 +93,8 @@ int summary(int argc, char *argv[]) {
 
     using namespace hts_writer;
     for (const auto &input_file : all_files) {
-        const std::size_t num_reader_threads = 1;
+        // The pipeline is just a sink to a WriterNode, so use all the threads to read from the input.
+        const std::size_t num_reader_threads = std::thread::hardware_concurrency();
         HtsReader reader(input_file.string(), std::nullopt, num_reader_threads);
         ReadInitialiser read_initialiser(reader.header(), alignment_counts, TrimFlags{});
         reader.add_read_initialiser([&read_initialiser](HtsData &data) {
