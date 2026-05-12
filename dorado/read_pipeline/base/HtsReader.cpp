@@ -45,10 +45,8 @@ public:
             m_format = format;
             hts_free(format);
         }
+
         m_header.reset(sam_hdr_read(m_file.get()));
-        if (!m_header) {
-            return;
-        }
     }
 
     bool is_valid() const { return m_file != nullptr && m_header != nullptr; }
