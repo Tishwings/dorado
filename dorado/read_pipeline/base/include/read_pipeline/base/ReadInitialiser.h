@@ -3,7 +3,6 @@
 #include "hts_utils/hts_types.h"
 
 #include <array>
-#include <filesystem>
 #include <string>
 #include <unordered_map>
 
@@ -28,7 +27,5 @@ private:
     int m_minimum_qscore;
     TrimFlags m_trim_flags;
 };
-
-void update_alignment_counts(const std::filesystem::path& path, AlignmentCounts& alignment_counts);
 
 }  // namespace dorado
