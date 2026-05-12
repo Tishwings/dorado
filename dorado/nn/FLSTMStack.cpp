@@ -16,7 +16,7 @@ extern "C" {
 
 namespace dorado::nn {
 
-FLSTMLayerImpl::FLSTMLayerImpl(const int C, const int K) {
+FLSTMLayerImpl::FLSTMLayerImpl(const int C, const int K) : C_(C), K_(K) {
     dn_weight_ih_ = register_parameter("dn_weight_ih", torch::empty({K, C}));
     dn_weight_hh_ = register_parameter("dn_weight_hh", torch::empty({K, C}));
     up_weight_ih_ = register_parameter("up_weight_ih", torch::empty({4 * C, K}));
@@ -26,8 +26,40 @@ FLSTMLayerImpl::FLSTMLayerImpl(const int C, const int K) {
 }
 
 at::Tensor FLSTMLayerImpl::forward(at::Tensor x) {
-    throw std::runtime_error("FLSTMLayer::forward is not supported!");
-    x = x * 1;  // clang-tidy
+    x = x.transpose(0, 1).contiguous();  // NTC -> TNC
+    const int T = x.size(0);
+    const int N = x.size(1);
+
+    at::Tensor hh = torch::empty({T + 1, N, C_});
+    hh[0] = 0;
+
+    at::Tensor c = torch::zeros({N, C_});
+
+    const auto sigmoid_hard = [](const at::Tensor &a) {
+        return a.mul_(0.2f).add_(0.5f).clamp_(0.f, 1.f);
+    };
+    const auto tanh_hard = [](const at::Tensor &a) { return a.clamp_(-1.f, 1.f); };
+
+    const auto ih =
+            torch::matmul(torch::matmul(x, dn_weight_ih_.t()), up_weight_ih_.t()).add_(up_bias_ih_);
+
+    for (int t = 0; t < T; ++t) {
+        auto gates = torch::matmul(torch::matmul(hh[t], dn_weight_hh_.t()), up_weight_hh_.t())
+                             .add_(up_bias_hh_)
+                             .add_(ih[t])
+                             .chunk(4, 1);
+        auto i = sigmoid_hard(gates[0]);
+        auto f = sigmoid_hard(gates[1]);
+        auto g = tanh_hard(gates[2]);
+        auto o = sigmoid_hard(gates[3]);
+        c = (f * c) + (i * g);
+        hh[t + 1] = o * torch::tanh(c);
+    }
+
+    using namespace torch::indexing;
+    hh = hh.index({Slice(1, None), Slice(), Slice()}).transpose(0, 1).contiguous();
+
+    return hh;
 }
 
 FLSTMStackImpl::FLSTMStackImpl(const int num_layers,
@@ -46,8 +78,15 @@ FLSTMStackImpl::FLSTMStackImpl(const int num_layers,
 }
 
 at::Tensor FLSTMStackImpl::forward(at::Tensor x) {
-    throw std::runtime_error("FLSTMStack::forward is not supported!");
-    x = x * 1;  // clang-tidy
+    bool is_reverse = !first_reverse_;
+    for (int i = 0; i < std::ssize(layers_); ++i) {
+        if ((i > 0) || first_reverse_) {
+            x = x.flip(1);
+            is_reverse ^= 1;
+        }
+        x = layers_[i]->forward(x);
+    }
+    return is_reverse ? x.flip(1) : x;
 }
 
 #if DORADO_CUDA_BUILD
