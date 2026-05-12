@@ -12,10 +12,10 @@ namespace dorado::cli {
 namespace {
 
 void update_alignment_counts(HtsReader& file, AlignmentCounts& alignment_counts) {
-    if (file.exact_format != htsExactFormat::sam && file.exact_format != htsExactFormat::bam &&
-        file.exact_format != htsExactFormat::cram) {
+    if (file.exact_format() != htsExactFormat::sam && file.exact_format() != htsExactFormat::bam &&
+        file.exact_format() != htsExactFormat::cram) {
         return;
-    } else if (!file.is_aligned) {
+    } else if (!file.is_aligned()) {
         return;
     }
 
@@ -59,7 +59,7 @@ std::tuple<hts_writer::SummaryFileWriter::FieldFlags, AlignmentCounts> make_summ
             HtsReader reader(input_file.string(), std::nullopt, num_threads);
             update_alignment_counts(reader, alignment_counts);
 
-            if (reader.is_aligned) {
+            if (reader.is_aligned()) {
                 flags |= SummaryFileWriter::ALIGNMENT_FIELDS;
             }
             auto command_line_cl =

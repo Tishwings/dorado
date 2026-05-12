@@ -21,45 +21,6 @@ namespace dorado {
 
 namespace {
 
-class HtsLibBamRecordGenerator {
-    HtsFilePtr m_file{};
-    SamHdrPtr m_header{};
-    std::string m_format{};
-
-public:
-    HtsLibBamRecordGenerator(const std::string& filename, std::size_t num_threads) {
-        m_file.reset(hts_open(filename.c_str(), "r"));
-        if (!m_file) {
-            return;
-        }
-
-        // Enable multithreaded loading if asked to do so.
-        if (num_threads > 0) {
-            hts_set_threads(m_file.get(), num_threads);
-        }
-
-        // If input format is FASTX, read tags from the query name line.
-        hts_set_opt(m_file.get(), FASTQ_OPT_AUX, "1");
-        auto format = hts_format_description(hts_get_format(m_file.get()));
-        if (format) {
-            m_format = format;
-            hts_free(format);
-        }
-
-        m_header.reset(sam_hdr_read(m_file.get()));
-    }
-
-    bool is_valid() const { return m_file != nullptr && m_header != nullptr; }
-
-    sam_hdr_t* header() const { return m_header.get(); }
-    const std::string& format() const { return m_format; }
-    htsExactFormat exact_format() const { return hts_get_format(m_file.get())->format; }
-
-    bool try_get_next_record(bam1_t& record) {
-        return sam_read1(m_file.get(), m_header.get(), &record) >= 0;
-    }
-};
-
 // This function allows us to map the reference id from input BAM records to what
 // they should be in the output file, based on the new ordering of references in
 // the merged header.
@@ -79,48 +40,34 @@ HtsReader::HtsReader(const std::string& filename,
                      std::optional<std::unordered_set<std::string>> read_list,
                      std::size_t num_threads)
         : m_filename(filename),
+          m_current_filename(std::filesystem::path(m_filename).filename().string()),
           m_client_info(std::make_shared<DefaultClientInfo>()),
           m_read_list(std::move(read_list)) {
-    if (!try_initialise_generator<HtsLibBamRecordGenerator>(m_filename, num_threads)) {
-        throw std::runtime_error("Could not open file: " + m_filename);
+    if (!open_file(filename, num_threads)) {
+        throw std::runtime_error("Could not open file: " + filename);
     }
-    is_aligned = m_header->n_targets > 0;
-
     record.reset(bam_init1());
 }
 
-template <typename T>
-bool HtsReader::try_initialise_generator(const std::string& filepath, std::size_t num_threads) {
-    auto generator = std::make_shared<T>(filepath, num_threads);  // shared to allow copy assignment
-    if (!generator->is_valid()) {
-        return false;
-    }
-    m_header = generator->header();
-    m_format = generator->format();
-    exact_format = generator->exact_format();
-    m_bam_record_generator = [generator_ = std::move(generator),
-                              filename = std::filesystem::path(filepath).filename().string(),
-                              this](bam1_t& bam_record) {
-        if (!generator_->try_get_next_record(bam_record)) {
-            return false;
-        }
-
-        // If the record doesn't have a filename set then say that it came from the currently processing file.
-        if (m_add_filename_tag && !bam_aux_get(&bam_record, "fn")) {
-            bam_aux_append(&bam_record, "fn", 'Z', static_cast<int>(filename.size() + 1),
-                           reinterpret_cast<const uint8_t*>(filename.c_str()));
-        }
-
-        return true;
-    };
-    return true;
-}
+HtsReader::~HtsReader() = default;
 
 void HtsReader::set_client_info(std::shared_ptr<ClientInfo> client_info) {
     m_client_info = std::move(client_info);
 }
 
-bool HtsReader::read() { return m_bam_record_generator(*record); }
+bool HtsReader::read() {
+    if (sam_read1(m_file.get(), m_header.get(), record.get()) < 0) {
+        return false;
+    }
+
+    // If the record doesn't have a filename set then say that it came from the currently processing file.
+    if (m_add_filename_tag && !bam_aux_get(record.get(), "fn")) {
+        bam_aux_append(record.get(), "fn", 'Z', static_cast<int>(m_current_filename.size() + 1),
+                       reinterpret_cast<const uint8_t*>(m_current_filename.c_str()));
+    }
+
+    return true;
+}
 
 bool HtsReader::has_tag(const char* tagname) {
     uint8_t* tag = bam_aux_get(record.get(), tagname);
@@ -191,11 +138,35 @@ std::size_t HtsReader::read(Pipeline& pipeline,
     return num_reads;
 }
 
-sam_hdr_t* HtsReader::header() { return m_header; }
+htsExactFormat HtsReader::exact_format() const { return hts_get_format(m_file.get())->format; }
 
-const sam_hdr_t* HtsReader::header() const { return m_header; }
+std::string HtsReader::format_str() const {
+    std::string format_str;
+    auto format = hts_format_description(hts_get_format(m_file.get()));
+    if (format) {
+        format_str = format;
+        hts_free(format);
+    }
+    return format_str;
+}
 
-const std::string& HtsReader::format() const { return m_format; }
+bool HtsReader::open_file(const std::string& filename, std::size_t num_threads) {
+    m_file.reset(hts_open(filename.c_str(), "r"));
+    if (!m_file) {
+        return false;
+    }
+
+    // Enable multithreaded loading if asked to do so.
+    if (num_threads > 0) {
+        hts_set_threads(m_file.get(), num_threads);
+    }
+
+    // If input format is FASTX, read tags from the query name line.
+    hts_set_opt(m_file.get(), FASTQ_OPT_AUX, "1");
+
+    m_header.reset(sam_hdr_read(m_file.get()));
+    return m_file && m_header;
+}
 
 ReadMap read_bam(const std::string& filename,
                  const std::unordered_set<std::string>& read_ids,

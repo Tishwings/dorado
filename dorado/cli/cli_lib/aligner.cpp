@@ -382,7 +382,7 @@ int aligner(int argc, char* argv[]) {
         }
         reader.set_client_info(client_info);
         spdlog::debug("> input:'{}' fmt:'{}' aligned:'{}'", file_info.filename().string(),
-                      reader.format(), reader.is_aligned);
+                      reader.format_str(), reader.is_aligned());
 
         if (header_mapper == nullptr) {
             SamHdrPtr hdr(sam_hdr_dup(reader.header()));

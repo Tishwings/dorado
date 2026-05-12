@@ -25,6 +25,7 @@ public:
     HtsReader(const std::string& filename,
               std::optional<std::unordered_set<std::string>> read_list,
               std::size_t num_threads);
+    ~HtsReader();
 
     // By default we'll add a filename tag to each record to match the current file
     // if one isn't included in the data, but that can be disabled with this method.
@@ -48,12 +49,12 @@ public:
     bool has_tag(const char* tagname);
 
     BamPtr record;
-    htsExactFormat exact_format{htsExactFormat::unknown_format};
-    bool is_aligned{false};
 
-    sam_hdr_t* header();
-    const sam_hdr_t* header() const;
-    const std::string& format() const;
+    sam_hdr_t* header() { return m_header.get(); }
+    const sam_hdr_t* header() const { return m_header.get(); }
+    bool is_aligned() const { return header()->n_targets > 0; }
+    htsExactFormat exact_format() const;
+    std::string format_str() const;
 
     using ReadInitialiserF = std::function<void(HtsData&)>;
     void add_read_initialiser(ReadInitialiserF func) {
@@ -62,18 +63,17 @@ public:
 
 private:
     const std::string m_filename;
-    sam_hdr_t* m_header{nullptr};  // non-owning
-    std::string m_format;
+    const std::string m_current_filename;
+    HtsFilePtr m_file;
+    SamHdrPtr m_header;
     std::shared_ptr<ClientInfo> m_client_info;
 
     std::optional<std::unordered_set<std::string>> m_read_list;
 
-    std::function<bool(bam1_t&)> m_bam_record_generator;
     std::vector<ReadInitialiserF> m_read_initialisers;
     bool m_add_filename_tag{true};
 
-    template <typename T>
-    bool try_initialise_generator(const std::string& filename, std::size_t num_threads);
+    bool open_file(const std::string& filename, std::size_t num_threads);
 };
 
 template <typename T>
