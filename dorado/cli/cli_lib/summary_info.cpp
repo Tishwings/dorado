@@ -5,6 +5,8 @@
 #include "hts_utils/hts_types.h"
 #include "read_pipeline/base/HtsReader.h"
 
+#include <spdlog/spdlog.h>
+
 namespace dorado::cli {
 
 namespace {
@@ -28,7 +30,12 @@ void update_alignment_counts(const std::filesystem::path& path,
     }
 
     BamPtr record(bam_init1());
+    std::size_t num_reads = 0;
     while (sam_read1(file.get(), header.get(), record.get()) >= 0) {
+        if (++num_reads % 50'000 == 0) {
+            spdlog::debug("Preprocessed {} reads", num_reads);
+        }
+
         if (record->core.flag & BAM_FUNMAP) {
             continue;
         }
@@ -47,11 +54,14 @@ void update_alignment_counts(const std::filesystem::path& path,
 
 std::tuple<hts_writer::SummaryFileWriter::FieldFlags, AlignmentCounts> make_summary_info(
         const std::vector<std::filesystem::path>& all_files) {
-    using namespace hts_writer;
+    using hts_writer::SummaryFileWriter;
+
     SummaryFileWriter::FieldFlags flags =
             SummaryFileWriter::BASECALLING_FIELDS | SummaryFileWriter::EXPERIMENT_FIELDS;
     AlignmentCounts alignment_counts;
     if (!(all_files.size() == 1 && all_files[0] == "-")) {
+        spdlog::info("Preprocessing records...");
+
         // We're the only thing running, so use all the threads.
         const std::size_t num_threads = std::thread::hardware_concurrency();
 
@@ -80,6 +90,8 @@ std::tuple<hts_writer::SummaryFileWriter::FieldFlags, AlignmentCounts> make_summ
                 }
             }
         }
+
+        spdlog::info("Preprocessing complete");
     }
 
     return {flags, std::move(alignment_counts)};

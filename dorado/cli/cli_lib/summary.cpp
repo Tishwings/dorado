@@ -91,7 +91,7 @@ int summary(int argc, char *argv[]) {
                 "Some columns will be unavailable.");
     }
 
-    using namespace hts_writer;
+    spdlog::info("Processing...");
     for (const auto &input_file : all_files) {
         // The pipeline is just a sink to a WriterNode, so use all the threads to read from the input.
         const std::size_t num_reader_threads = std::thread::hardware_concurrency();
@@ -101,13 +101,13 @@ int summary(int argc, char *argv[]) {
             read_initialiser.update_read_attributes(data);
         });
 
-        if (flags & SummaryFileWriter::ALIGNMENT_FIELDS) {
+        if (flags & hts_writer::SummaryFileWriter::ALIGNMENT_FIELDS) {
             reader.add_read_initialiser([&read_initialiser](HtsData &data) {
                 read_initialiser.update_alignment_fields(data);
             });
         }
 
-        if (flags & SummaryFileWriter::BARCODING_FIELDS) {
+        if (flags & hts_writer::SummaryFileWriter::BARCODING_FIELDS) {
             reader.add_read_initialiser([&read_initialiser](HtsData &data) {
                 read_initialiser.update_barcoding_fields(data);
             });
