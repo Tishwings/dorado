@@ -1302,10 +1302,6 @@ void run_variant_calling(const Options& opt,
 
 int small_variant_caller(int argc, char* argv[]) {
     try {
-        spdlog::warn(
-                "This is an alpha preview of Dorado SmallVar. Results should be considered "
-                "experimental.");
-
         // Initialize CLI options. The parse_args below requires a non-const reference.
         // Verbosity is passed into a callback, so we need it here.
         int verbosity = 0;
