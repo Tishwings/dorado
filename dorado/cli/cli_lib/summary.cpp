@@ -2,8 +2,6 @@
 #include "cli/utils/cli_utils.h"
 #include "dorado_version.h"
 #include "hts_utils/HeaderMapper.h"
-#include "hts_utils/KString.h"
-#include "hts_utils/bam_utils.h"
 #include "hts_utils/hts_types.h"
 #include "hts_writer/SummaryFileWriter.h"
 #include "read_pipeline/base/HtsReader.h"
@@ -17,16 +15,11 @@
 #include <argparse/argparse.hpp>
 #include <spdlog/spdlog.h>
 
-#include <array>
 #include <cctype>
-#include <csignal>
 #include <filesystem>
 #include <string>
-#include <unordered_map>
 
 namespace dorado {
-
-volatile sig_atomic_t interrupt = 0;
 
 int summary(int argc, char *argv[]) {
     argparse::ArgumentParser parser("dorado", DORADO_VERSION, argparse::default_arguments::help);
