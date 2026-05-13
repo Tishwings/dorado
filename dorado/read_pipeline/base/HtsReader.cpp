@@ -43,8 +43,8 @@ HtsReader::HtsReader(const std::string& filename,
           m_current_filename(std::filesystem::path(m_filename).filename().string()),
           m_client_info(std::make_shared<DefaultClientInfo>()),
           m_read_list(std::move(read_list)) {
-    if (!open_file(filename, num_threads)) {
-        throw std::runtime_error("Could not open file: " + filename);
+    if (!open_file(num_threads)) {
+        throw std::runtime_error("Could not open file: " + m_filename);
     }
     record.reset(bam_init1());
 }
@@ -150,8 +150,8 @@ std::string HtsReader::format_str() const {
     return format_str;
 }
 
-bool HtsReader::open_file(const std::string& filename, std::size_t num_threads) {
-    m_file.reset(hts_open(filename.c_str(), "r"));
+bool HtsReader::open_file(std::size_t num_threads) {
+    m_file.reset(hts_open(m_filename.c_str(), "r"));
     if (!m_file) {
         return false;
     }

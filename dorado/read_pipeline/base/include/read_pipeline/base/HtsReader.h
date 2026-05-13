@@ -73,7 +73,7 @@ private:
     std::vector<ReadInitialiserF> m_read_initialisers;
     bool m_add_filename_tag{true};
 
-    bool open_file(const std::string& filename, std::size_t num_threads);
+    bool open_file(std::size_t num_threads);
 };
 
 template <typename T>
