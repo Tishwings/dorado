@@ -127,32 +127,4 @@ void ReadInitialiser::update_alignment_fields(HtsData& data) const {
     }
 }
 
-void update_alignment_counts(const std::filesystem::path& path, AlignmentCounts& alignment_counts) {
-    const auto file = dorado::HtsFilePtr(hts_open(path.string().c_str(), "r"));
-    if (file->format.format != htsExactFormat::sam && file->format.format != htsExactFormat::bam &&
-        file->format.format != htsExactFormat::cram) {
-        return;
-    }
-
-    dorado::SamHdrPtr header(sam_hdr_read(file.get()));
-    if (header->n_targets == 0) {
-        return;
-    }
-
-    BamPtr record(bam_init1());
-    while (sam_read1(file.get(), header.get(), record.get()) >= 0) {
-        if (record->core.flag & BAM_FUNMAP) {
-            continue;
-        }
-        auto& read_counts = alignment_counts[bam_get_qname(record.get())];
-        if (record->core.flag & BAM_FSUPPLEMENTARY) {
-            ++read_counts[2];
-        }
-        if (record->core.flag & BAM_FSECONDARY) {
-            ++read_counts[1];
-        }
-        ++read_counts[0];
-    }
-}
-
 }  // namespace dorado

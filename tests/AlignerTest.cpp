@@ -157,7 +157,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     auto query = aligner_test_dir / "target.fq";
 
     auto options = dorado::alignment::create_dflt_options();
-    dorado::HtsReader reader(query.string(), std::nullopt);
+    dorado::TestHtsReader reader(query.string());
     auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 10);
     CATCH_REQUIRE(bam_records.size() == 1);
 
@@ -191,7 +191,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     auto bed = aligner_test_dir / "target.bed";
 
     auto options = dorado::alignment::create_dflt_options();
-    dorado::HtsReader reader(query.string(), std::nullopt);
+    dorado::TestHtsReader reader(query.string());
     auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), bed.string(), options, 10);
     CATCH_REQUIRE(bam_records.size() == 1);
 
@@ -229,7 +229,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     auto query = aligner_test_dir / "supplementary_aln_query.fa";
 
     auto options = dorado::alignment::create_dflt_options();
-    dorado::HtsReader reader(query.string(), std::nullopt);
+    dorado::TestHtsReader reader(query.string());
     auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 10);
     CATCH_REQUIRE(bam_records.size() == 2);
 
@@ -264,7 +264,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     const auto query = aligner_test_dir / "split_reference_query.fa";
 
     const auto options = dorado::alignment::create_options("-I 4K");
-    dorado::HtsReader reader(query.string(), std::nullopt);
+    dorado::TestHtsReader reader(query.string());
     auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 10);
     CATCH_REQUIRE(bam_records.size() == 5);
 
@@ -317,7 +317,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     auto query = aligner_test_dir / "rev_target.fq";
 
     auto options = dorado::alignment::create_dflt_options();
-    dorado::HtsReader reader(query.string(), std::nullopt);
+    dorado::TestHtsReader reader(query.string());
     auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 10);
     CATCH_REQUIRE(bam_records.size() == 1);
 
@@ -347,7 +347,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     auto query = aligner_test_dir / "basecall.sam";
 
     auto options = dorado::alignment::create_dflt_options();
-    dorado::HtsReader reader(query.string(), std::nullopt);
+    dorado::TestHtsReader reader(query.string());
     auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 10);
     CATCH_REQUIRE(bam_records.size() == 1);
 
@@ -377,7 +377,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
         options.mapping_options->get().flag |= MM_F_SOFTCLIP;
     }
 
-    dorado::HtsReader reader(query.string(), std::nullopt);
+    dorado::TestHtsReader reader(query.string());
     auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 10);
     CATCH_REQUIRE(bam_records.size() == 3);
 
@@ -419,7 +419,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     // Run alignment with one set of k/w.
     {
         auto options = dorado::alignment::mm2::parse_options("-k 28 -w 28");
-        dorado::HtsReader reader(query.string(), std::nullopt);
+        dorado::TestHtsReader reader(query.string());
         auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 2);
         CATCH_CHECK(bam_records.size() == 2);  // Generates 2 alignments.
     }
@@ -427,7 +427,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     // Run alignment with another set of k/w.
     {
         auto options = dorado::alignment::mm2::parse_options("-k 5 -w 5");
-        dorado::HtsReader reader(query.string(), std::nullopt);
+        dorado::TestHtsReader reader(query.string());
         auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 2);
         CATCH_CHECK(bam_records.size() == 1);  // Generates 1 alignment.
     }
@@ -508,7 +508,7 @@ CATCH_SCENARIO_METHOD(AlignerNodeTestFixture, "AlignerNode push SimplexRead", TE
             }
 
             CATCH_AND_GIVEN("read with alignment matches") {
-                dorado::HtsReader reader(ref.string(), std::nullopt);
+                dorado::TestHtsReader reader(ref.string());
                 reader.read();
                 auto sequence = dorado::utils::extract_sequence(reader.record.get());
 
@@ -590,7 +590,7 @@ CATCH_TEST_CASE_METHOD(AlignerNodeTestFixture,
     auto options = dorado::alignment::mm2::parse_options("-k 5 -w 5");
 
     // Get the sam line from BAM pipeline
-    dorado::HtsReader bam_reader(query, std::nullopt);
+    dorado::TestHtsReader bam_reader(query);
     bam_reader.set_add_filename_tag(false);
     auto bam_records = RunPipelineWithBamMessages(bam_reader, ref, "", options, 2);
     CATCH_CHECK(bam_records.size() == 1);
@@ -661,7 +661,7 @@ CATCH_TEST_CASE_METHOD(
     }
     auto options = dorado::alignment::mm2::parse_options(mm_options);
 
-    dorado::HtsReader reader(query.string(), std::nullopt);
+    dorado::TestHtsReader reader(query.string());
     auto bam_records = RunPipelineWithBamMessages(reader, ref.string(), "", options, 1);
     CATCH_REQUIRE(bam_records.size() == 3);
 

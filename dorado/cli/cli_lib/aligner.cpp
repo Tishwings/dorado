@@ -362,7 +362,8 @@ int aligner(int argc, char* argv[]) {
 
     for (const auto& file_info : all_files) {
         spdlog::info("processing '{}'", file_info.string());
-        HtsReader reader(file_info.string(), std::nullopt);
+        const std::size_t num_reader_threads = 1;
+        HtsReader reader(file_info.string(), std::nullopt, num_reader_threads);
         auto read_initialiser =
                 std::make_shared<ReadInitialiser>(reader.header(), alignment_counts, TrimFlags{});
         reader.add_read_initialiser([read_initialiser](HtsData& data) {
@@ -381,7 +382,7 @@ int aligner(int argc, char* argv[]) {
         }
         reader.set_client_info(client_info);
         spdlog::debug("> input:'{}' fmt:'{}' aligned:'{}'", file_info.filename().string(),
-                      reader.format(), reader.is_aligned);
+                      reader.format_str(), reader.is_aligned());
 
         if (header_mapper == nullptr) {
             SamHdrPtr hdr(sam_hdr_dup(reader.header()));

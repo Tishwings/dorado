@@ -23,7 +23,9 @@ class Pipeline;
 class HtsReader {
 public:
     HtsReader(const std::string& filename,
-              std::optional<std::unordered_set<std::string>> read_list);
+              std::optional<std::unordered_set<std::string>> read_list,
+              std::size_t num_threads);
+    ~HtsReader();
 
     // By default we'll add a filename tag to each record to match the current file
     // if one isn't included in the data, but that can be disabled with this method.
@@ -46,12 +48,13 @@ public:
 
     bool has_tag(const char* tagname);
 
-    bool is_aligned{false};
     BamPtr record;
 
-    sam_hdr_t* header();
-    const sam_hdr_t* header() const;
-    const std::string& format() const;
+    sam_hdr_t* header() { return m_header.get(); }
+    const sam_hdr_t* header() const { return m_header.get(); }
+    bool is_aligned() const { return header()->n_targets > 0; }
+    htsExactFormat exact_format() const;
+    std::string format_str() const;
 
     using ReadInitialiserF = std::function<void(HtsData&)>;
     void add_read_initialiser(ReadInitialiserF func) {
@@ -60,18 +63,17 @@ public:
 
 private:
     const std::string m_filename;
-    sam_hdr_t* m_header{nullptr};  // non-owning
-    std::string m_format;
+    const std::string m_current_filename;
+    HtsFilePtr m_file;
+    SamHdrPtr m_header;
     std::shared_ptr<ClientInfo> m_client_info;
 
     std::optional<std::unordered_set<std::string>> m_read_list;
 
-    std::function<bool(bam1_t&)> m_bam_record_generator;
     std::vector<ReadInitialiserF> m_read_initialisers;
     bool m_add_filename_tag{true};
 
-    template <typename T>
-    bool try_initialise_generator(const std::string& filename);
+    bool open_file(std::size_t num_threads);
 };
 
 template <typename T>
@@ -116,6 +118,14 @@ std::vector<T> HtsReader::get_array(const char* tagname) {
     return tag_value;
 }
 
+// Helper for tests that just need to load a file.
+class TestHtsReader : public HtsReader {
+    static constexpr std::size_t NUM_THREADS = 2;
+
+public:
+    TestHtsReader(const std::string& filename) : HtsReader(filename, std::nullopt, NUM_THREADS) {}
+};
+
 /**
  * @brief Reads a SAM/BAM/CRAM file and returns a map of read IDs to Read objects.
  *
@@ -126,23 +136,14 @@ std::vector<T> HtsReader::get_array(const char* tagname) {
  *
  * @param filename The input BAM file path as a string.
  * @param read_ids A set of read_ids to filter on.
+ * @param num_threads How many threads to use to load the file.
  * @return A map with read IDs as keys and shared pointers to Read objects as values.
  *
  * @note The caller is responsible for managing the memory of the returned map.
  * @note The input BAM file must be properly formatted and readable.
  */
-ReadMap read_bam(const std::string& filename, const std::unordered_set<std::string>& read_ids);
-
-/**
- * @brief Reads an HTS file format (SAM/BAM/FASTX/etc) and returns a set of read ids.
- *
- * This function opens the HTS file using the htslib APIs and iterates through
- * all records. When an unreadable record is encountered, the iteration is stopped
- * and all read ids seen so far are returned.
- *
- * @param filename The path to the input HTS file.
- * @return An unordered set with read ids.
- */
-std::unordered_set<std::string> fetch_read_ids(const std::string& filename);
+ReadMap read_bam(const std::string& filename,
+                 const std::unordered_set<std::string>& read_ids,
+                 std::size_t num_threads);
 
 }  // namespace dorado

@@ -125,7 +125,8 @@ int trim(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    HtsReader reader(reads[0], read_list);
+    const std::size_t num_reader_threads = 1;
+    HtsReader reader(reads[0], read_list, num_reader_threads);
     auto header = SamHdrPtr(sam_hdr_dup(reader.header()));
     cli::add_pg_hdr(header.get(), "trim", args, "cpu");
     // Always remove alignment information from input header

@@ -447,15 +447,14 @@ int duplex(int argc, char* argv[]) {
             }
 
             spdlog::info("> Loading reads");
-            auto read_map = read_bam(reads, read_list_from_pairs);
+            threads = threads == 0 ? std::thread::hardware_concurrency() : threads;
+            auto read_map = read_bam(reads, read_list_from_pairs, threads);
 
             for (auto& [key, read] : read_map) {
                 client_info_init_func(read->read_common);
             }
 
             spdlog::info("> Starting Basespace Duplex Pipeline");
-            threads = threads == 0 ? std::thread::hardware_concurrency() : threads;
-
             pipeline_desc.add_node<BaseSpaceDuplexCallerNode>({read_filter_node},
                                                               std::move(template_complement_map),
                                                               std::move(read_map), threads);

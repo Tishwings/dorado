@@ -310,7 +310,7 @@ CATCH_TEST_CASE("AdapterDetector: test adapter detection", TEST_GROUP) {
     const auto& adapters = detector.get_adapter_sequences(TEST_KIT1);
 
     auto test_file = data_dir / "SQK-RBK114-96_BC01.fastq";
-    HtsReader reader(test_file.string(), std::nullopt);
+    TestHtsReader reader(test_file.string());
     reader.read();
     std::string seq = utils::extract_sequence(reader.record.get());
     for (size_t i = 0; i < adapters.size(); ++i) {
@@ -359,7 +359,7 @@ CATCH_TEST_CASE("AdapterDetector: test primer detection", TEST_GROUP) {
     sort_queries(primers);
 
     auto test_file = data_dir / "SQK-RBK114-96_BC01.fastq";
-    HtsReader reader(test_file.string(), std::nullopt);
+    TestHtsReader reader(test_file.string());
     reader.read();
     std::string seq = utils::extract_sequence(reader.record.get());
     CATCH_CHECK(primers.size() == 2);
@@ -418,7 +418,7 @@ CATCH_TEST_CASE("AdapterDetector: test custom primer detection with kit", TEST_G
     CATCH_CHECK(primers[1].rear_sequence == expected_primer_rears[1]);
 
     auto test_file = data_dir / "SQK-RBK114-96_BC01.fastq";
-    HtsReader reader(test_file.string(), std::nullopt);
+    TestHtsReader reader(test_file.string());
     reader.read();
     std::string seq = utils::extract_sequence(reader.record.get());
     for (size_t i = 0; i < primers.size(); ++i) {
@@ -475,7 +475,7 @@ CATCH_TEST_CASE("AdapterDetector: test custom primer detection without kit", TES
         CATCH_CHECK(primers[i].rear_sequence == expected_primers_rear[i]);
     }
     auto test_file = data_dir / "SQK-RBK114-96_BC01.fastq";
-    HtsReader reader(test_file.string(), std::nullopt);
+    TestHtsReader reader(test_file.string());
     reader.read();
     std::string seq = utils::extract_sequence(reader.record.get());
     for (size_t i = 0; i < primers.size(); ++i) {

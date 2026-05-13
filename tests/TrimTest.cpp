@@ -192,7 +192,7 @@ CATCH_TEST_CASE("Test trim mod base info", TEST_GROUP) {
 CATCH_TEST_CASE("Test trim of reverse strand record in BAM", TEST_GROUP) {
     const auto data_dir = fs::path(get_data_dir("trimmer"));
     const auto bam_file = data_dir / "reverse_strand_record.bam";
-    HtsReader reader(bam_file.string(), std::nullopt);
+    TestHtsReader reader(bam_file.string());
     reader.read();
     auto& record = reader.record;
 
@@ -210,7 +210,7 @@ CATCH_TEST_CASE("Test trim of reverse strand record in BAM", TEST_GROUP) {
 CATCH_TEST_CASE("Test trim removes all alignment information", TEST_GROUP) {
     const auto data_dir = fs::path(get_data_dir("trimmer"));
     const auto bam_file = data_dir / "reverse_strand_record.bam";
-    HtsReader reader(bam_file.string(), std::nullopt);
+    TestHtsReader reader(bam_file.string());
     reader.read();
     auto& record = reader.record;
 

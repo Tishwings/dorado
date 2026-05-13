@@ -2,8 +2,6 @@
 #include "cli/utils/cli_utils.h"
 #include "dorado_version.h"
 #include "hts_utils/HeaderMapper.h"
-#include "hts_utils/KString.h"
-#include "hts_utils/bam_utils.h"
 #include "hts_utils/hts_types.h"
 #include "hts_writer/SummaryFileWriter.h"
 #include "read_pipeline/base/HtsReader.h"
@@ -17,16 +15,11 @@
 #include <argparse/argparse.hpp>
 #include <spdlog/spdlog.h>
 
-#include <array>
 #include <cctype>
-#include <csignal>
 #include <filesystem>
 #include <string>
-#include <unordered_map>
 
 namespace dorado {
-
-volatile sig_atomic_t interrupt = 0;
 
 int summary(int argc, char *argv[]) {
     argparse::ArgumentParser parser("dorado", DORADO_VERSION, argparse::default_arguments::help);
@@ -98,21 +91,23 @@ int summary(int argc, char *argv[]) {
                 "Some columns will be unavailable.");
     }
 
-    using namespace hts_writer;
+    spdlog::info("Processing...");
     for (const auto &input_file : all_files) {
-        HtsReader reader(input_file.string(), std::nullopt);
+        // The pipeline is just a sink to a WriterNode, so use all the threads to read from the input.
+        const std::size_t num_reader_threads = std::thread::hardware_concurrency();
+        HtsReader reader(input_file.string(), std::nullopt, num_reader_threads);
         ReadInitialiser read_initialiser(reader.header(), alignment_counts, TrimFlags{});
         reader.add_read_initialiser([&read_initialiser](HtsData &data) {
             read_initialiser.update_read_attributes(data);
         });
 
-        if (flags & SummaryFileWriter::ALIGNMENT_FIELDS) {
+        if (flags & hts_writer::SummaryFileWriter::ALIGNMENT_FIELDS) {
             reader.add_read_initialiser([&read_initialiser](HtsData &data) {
                 read_initialiser.update_alignment_fields(data);
             });
         }
 
-        if (flags & SummaryFileWriter::BARCODING_FIELDS) {
+        if (flags & hts_writer::SummaryFileWriter::BARCODING_FIELDS) {
             reader.add_read_initialiser([&read_initialiser](HtsData &data) {
                 read_initialiser.update_barcoding_fields(data);
             });
@@ -122,6 +117,7 @@ int summary(int argc, char *argv[]) {
     }
     pipeline->terminate({.fast = utils::AsyncQueueTerminateFast::No});
 
+    spdlog::info("Finished");
     return EXIT_SUCCESS;
 }
 

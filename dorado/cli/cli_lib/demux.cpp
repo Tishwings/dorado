@@ -7,6 +7,7 @@
 #include "demux/parse_custom_kit.h"
 #include "dorado_version.h"
 #include "hts_utils/HeaderMapper.h"
+#include "hts_utils/KString.h"
 #include "hts_utils/bam_utils.h"
 #include "hts_writer/HtsFileWriterBuilder.h"
 #include "hts_writer/SummaryFileWriter.h"
@@ -356,7 +357,8 @@ int demuxer(int argc, char* argv[]) {
 
     spdlog::info("> starting barcode demuxing");
     for (const auto& input : all_files) {
-        HtsReader reader(input.string(), read_list);
+        const std::size_t num_reader_threads = 1;
+        HtsReader reader(input.string(), read_list, num_reader_threads);
         auto read_initialiser =
                 std::make_shared<ReadInitialiser>(reader.header(), alignment_counts, trim_flags);
         // update read attributes so we pick up any minimum qscore and filter reads into the appropriate folder
