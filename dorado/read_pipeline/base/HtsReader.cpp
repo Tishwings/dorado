@@ -156,16 +156,22 @@ bool HtsReader::open_file(const std::string& filename, std::size_t num_threads) 
         return false;
     }
 
-    // Enable multithreaded loading if asked to do so.
-    if (num_threads > 0) {
-        hts_set_threads(m_file.get(), num_threads);
-    }
-
     // If input format is FASTX, read tags from the query name line.
     hts_set_opt(m_file.get(), FASTQ_OPT_AUX, "1");
 
+    // Read the header before enabling threading otherwise we can fail
+    // to load it if the file is corrupt. See DOR-1634.
     m_header.reset(sam_hdr_read(m_file.get()));
-    return m_file && m_header;
+    if (!m_header) {
+        return false;
+    }
+
+    // Enable multithreaded loading if asked to do so.
+    if (num_threads > 1) {
+        hts_set_threads(m_file.get(), num_threads);
+    }
+
+    return true;
 }
 
 ReadMap read_bam(const std::string& filename,
