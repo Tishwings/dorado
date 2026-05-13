@@ -994,18 +994,20 @@ double ModelVariantPerceiver::estimate_batch_memory(
     const int64_t coverage = batch_tensor_shape[2];
 
     // Limit the maximum batch size and maximum coverage to the bounds used for model estimation.
-    constexpr int64_t MAX_BATCH_SIZE = 100;
+    constexpr int64_t MAX_BATCH_SIZE = 200;
     constexpr int64_t MAX_COVERAGE = 100;
     if ((batch_size > MAX_BATCH_SIZE) || (coverage > MAX_COVERAGE)) {
         return MEMORY_ESTIMATE_UPPER_CAP;
     }
 
-    double ret = (6.028445 * 1) + (0.000013 * num_positions) +
-                 (0.000020 * batch_size * num_positions) +
-                 (0.000003 * batch_size * num_positions * coverage) +
-                 (0.000027 * batch_size * std::pow(coverage, 2));
+    const double estimate = (1.508058 * 1) + (0.002262 * batch_size) + (0.000324 * num_positions) +
+                            (0.000018 * std::pow(batch_size, 2)) +
+                            (0.000004 * batch_size * num_positions * coverage);
 
-    return ret;
+    // Leave a margin.
+    const double safe_estimate = 3.0 + estimate * 1.10;
+
+    return safe_estimate;
 }
 
 void ModelVariantPerceiver::validate_feature_tensor(const at::Tensor& x) const {
