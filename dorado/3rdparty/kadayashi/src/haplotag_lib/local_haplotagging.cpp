@@ -3466,7 +3466,7 @@ MedakaFeatureMatrix gen_medaka_feature_matrix(
                                                                // there's no known read that
                                                                // overlaps with the right edge.
         }
-        spdlog::debug("[kdys::{}] {}:{}-{} has {} lanes (subject to capping)", __func__, refname,
+        spdlog::trace("[kdys::{}] {}:{}-{} has {} lanes (subject to capping)", __func__, refname,
                       itvl_start, itvl_end, n_lanes);
     }
 
