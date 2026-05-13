@@ -152,7 +152,8 @@ struct phase_return_t {
 
 struct pileup_pars_t {
     bool allow_any_candidate{
-            false};  // don't use; only set this for experimenting with global phasing
+            false};           // don't use; only set this for experimenting with global phasing
+    std::string readgroup{};  // one readgroup tagname; will use all reads if set to empty string
     int min_base_quality{5};
     int min_varcall_coverage{5};
     float min_varcall_fraction{0.2f};

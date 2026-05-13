@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cassert>
+#include <cerrno>
 #include <cmath>
 #include <cstddef>
 #include <iostream>
@@ -466,6 +467,7 @@ ReadAlignmentData calculate_read_alignment(
                     if (tag == NULL) {  // tag isn't present
                         failed = true;
                     } else {
+                        errno = 0;
                         tag_val = bam_aux2Z(tag);
                         failed = errno == EINVAL;
                     }

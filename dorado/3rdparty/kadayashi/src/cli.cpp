@@ -21,7 +21,7 @@ static ko_longopt_t longopts[] = {
         {"slice-in-bed", ko_no_argument,   304},  // whether to do sliding window in regions provided by bed
         // 305 vacant
         {"readtags", ko_required_argument, 306},  // input for `modifytag`
-        // 307 vacant
+        {"readgroup", ko_required_argument, 307},
         {"region", ko_required_argument,   308},  // specify one region to work on, mostly a debug option. String considered 0-index.
         {"ref", ko_required_argument,      309},
         {"write-dbg-bam", ko_no_argument,  310},  // to be used with --region and automatically do `bin2bam`
@@ -138,6 +138,7 @@ void print_help_cliopt_t(cliopt_t &clio) {
     fprintf(stdout, "  --region STR   [opt] Phase a single region without sliding window.\n");
     fprintf(stdout, "                       0-index [).\n");
     fprintf(stdout, "                       String can be like: chr6:1,100,50-2M\n");
+    fprintf(stdout, "  --readgroup STR [opt] Specify a readgroup to include. Default is to include all.\n");
     fprintf(stdout, "  --write-dbg-bam[opt] Used with --region, automatically write haptagged bam w/ "
                     "index.\n");
     fprintf(stdout, "Hyperparameter options:\n");
@@ -201,6 +202,10 @@ cliopt_t parse_cli(int argc, char *argv[]) {
             spdlog::info("[kdys::{}] will use window & stride in bed regions.\n", __func__);
         } else if (c == 306) {
             clio.fn_tsv = std::filesystem::path(opt.arg);
+        } else if (c == 307) {
+            clio.pp.readgroup = opt.arg;
+            spdlog::info("[kdys::{}] will use reads only with readgroup name {} .\n", __func__,
+                         opt.arg);
         } else if (c == 308) {
             clio.one_region_str = opt.arg;
             spdlog::info("[kdys::{}] debug option - will only look at region {}\n", __func__,
@@ -489,6 +494,7 @@ static ko_longopt_t longopts_varcall[] = {
         {"max-clipping", ko_required_argument, 306},  // reads with larger clippings will not contribute to informative site pileup
         {"min-strand-cov", ko_required_argument, 307},
         {"min-strand-cov-frac", ko_required_argument, 308},
+        {"readgroup", ko_required_argument, 309},
         {"verbose", ko_no_argument, 998},
         {"version", ko_no_argument, 999},
         {0, 0, 0}};
@@ -652,6 +658,10 @@ cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]) {
             clio.pp.min_strand_cov = atoi(opt.arg);
         } else if (c == 308) {
             clio.pp.min_strand_cov_frac = static_cast<float>(atof(opt.arg));
+        } else if (c == 309) {
+            clio.pp.readgroup = opt.arg;
+            spdlog::info("[kdys::{}] will use reads only with readgroup name {} .\n", __func__,
+                         opt.arg);
         } else if (c == 998) {
             kadayashi::KDY_VERBOSE = true;
         } else if (c == 999) {

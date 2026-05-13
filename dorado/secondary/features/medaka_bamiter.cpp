@@ -56,6 +56,7 @@ int32_t mpileup_read_bam(void *data, bam1_t *b) {
                     continue;
                 }
             }
+            errno = 0;
             const int32_t tag_value = static_cast<int32_t>(bam_aux2i(tag));
             if (errno == EINVAL) {
                 continue;  // tag was not integer
@@ -71,10 +72,13 @@ int32_t mpileup_read_bam(void *data, bam1_t *b) {
             if (rg == nullptr) {
                 continue;  // Missing.
             }
+
+            errno = 0;
             const char *rg_val = bam_aux2Z(rg);
             if (errno == EINVAL) {
                 continue;  // Bad parse.
             }
+
             if (strcmp(aux->read_group, rg_val) != 0) {
                 continue;  // Not wanted.
             }

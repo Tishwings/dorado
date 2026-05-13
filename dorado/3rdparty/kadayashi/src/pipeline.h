@@ -58,6 +58,7 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
                                                     const std::filesystem::path &prefix_out_unsr,
                                                     const int window_size,
                                                     const std::vector<std::string> &query_regions,
+                                                    const std::string_view readgroup,
                                                     const int min_base_quality,
                                                     const int min_varcall_coverage,
                                                     const float min_varcall_fraction,

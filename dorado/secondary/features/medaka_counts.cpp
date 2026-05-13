@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include <cassert>
+#include <cerrno>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -253,6 +254,7 @@ PileupData calculate_pileup(secondary::BamFile &bam_file,
                 if (tag == NULL) {  // tag isn't present
                     failed = true;
                 } else {
+                    errno = 0;
                     tag_val = bam_aux2Z(tag);
                     failed = errno == EINVAL;
                 }
