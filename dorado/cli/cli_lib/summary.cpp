@@ -117,6 +117,7 @@ int summary(int argc, char *argv[]) {
     }
     pipeline->terminate({.fast = utils::AsyncQueueTerminateFast::No});
 
+    spdlog::info("Finished");
     return EXIT_SUCCESS;
 }
 
