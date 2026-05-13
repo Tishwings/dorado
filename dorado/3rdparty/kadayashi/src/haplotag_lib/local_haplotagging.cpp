@@ -1353,6 +1353,9 @@ void ck_absorb_variants_covered_by_deletion_run_on_other_hap(
     //                 ^ins(G)
     // We want to report this as one multi-allelic variant:
     //  chrom 2 AAAAAAAAA A,AAGGAAGAGA 1|2
+    // However, if any variant within a proposed range
+    //  is unconfident, we will not try to merge them. Instead,
+    //  all variants within the range are marked as unconfident.
     //
     // This should happen after we have produced genotype & phasing string,
     //  and will only treat confident & phased variants. (If there are
@@ -1367,7 +1370,6 @@ void ck_absorb_variants_covered_by_deletion_run_on_other_hap(
     // Access to the reference sequence is required because
     //  ref bases in between of variants were not saved in
     //  the chunk struct.
-    constexpr int MAX_RANGE_SIZE = 10;
     for (size_t i_var = 0; i_var < ck.varcalls.size(); i_var++) {
         ta_t &var = ck.varcalls[i_var];
 
@@ -1389,18 +1391,20 @@ void ck_absorb_variants_covered_by_deletion_run_on_other_hap(
         uint32_t range_end = var.pos + 1 + stat1.del_len;  // +1 because pos considered the refbase
         std::vector<uint32_t> var_indices;
         var_indices.push_back(i_var);
+        bool range_is_clean = true;
         for (size_t j_var = i_var + 1; j_var < ck.varcalls.size(); j_var++) {
             const ta_t &var2 = ck.varcalls[j_var];
-            if (var2.is_used != TA_STAT_ACCEPTED) {
-                continue;
-            }
-            if (!(var2.genotype[1] == '|' ||
-                  var2.genotype[0] == var.genotype[2])) {  // require hom or phased het
-                continue;
-            }
-
             if (var2.pos >= range_end) {
                 break;
+            }
+
+            if (var2.is_used != TA_STAT_ACCEPTED) {
+                range_is_clean = false;
+            }
+
+            if (!(var2.genotype[1] == '|' ||
+                  var2.genotype[0] == var.genotype[2])) {  // require hom or phased het
+                range_is_clean = false;
             }
 
             var_indices.push_back(j_var);
@@ -1418,53 +1422,51 @@ void ck_absorb_variants_covered_by_deletion_run_on_other_hap(
         }
 
         // (if there's phasing breakpoints in the range, don't do anything)
-        bool broke = false;
         for (uint32_t i = 0; i < var_indices.size() - 1; i++) {
             // [0,size-1) because breakpoint are set on a variant position
             // when phasing to the next variant is unknown.
             if (phasing_breakpoints.find(ck.varcalls[var_indices[i]].pos) !=
                 phasing_breakpoints.end()) {
-                broke = true;
+                range_is_clean = false;
                 break;
             }
         }
-        if (broke) {
-            continue;
-        }
 
-        // (if range is not trivial, don't do anything)
-        if (range_end - range_start > MAX_RANGE_SIZE) {
-            continue;
-        }
+        // (reconstruct haplotypes, or mark everything as unconfident)
+        if (range_is_clean) {
+            std::pair<std::string, std::string> hap_recon =
+                    ta_t_reconstruct_haplotypes_for_del_absorbtion(ck, range_start, range_end,
+                                                                   ref_seq_substring, var_indices);
 
-        // (reconstruct haplotypes)
-        std::pair<std::string, std::string> hap_recon =
-                ta_t_reconstruct_haplotypes_for_del_absorbtion(ck, range_start, range_end,
-                                                               ref_seq_substring, var_indices);
+            // (replace the original: now phased multi-allelic)
+            // (the haplotype reconstruction's phasing order was in
+            // concordance with the first variant)
+            // caveat: `allele2readIDs` is not updated.
+            //  We only consolidate variants when they are
+            //  coverved by deletion(s) on the other hap, this
+            //  should rarely exceed read boundary. And since genophase
+            //  is already collected, `allele2readIDs` will be used
+            //  by nobody.
+            if (var.type != TA_TYPE_HETMULTI) {
+                var.genotype[0] += 1;
+                var.genotype[2] += 1;
+            }
+            var.type = TA_TYPE_HETMULTI_CONSOLIDATED;
+            var.ref_len = range_end - range_start;
+            var.alleles[0] = seq2nt4seq(hap_recon.first);
+            var.alleles[0].push_back(VAR_OP_CONSOLIDATED_MULTIALLELE);
+            var.alleles[1] = seq2nt4seq(hap_recon.second);
+            var.alleles[1].push_back(VAR_OP_CONSOLIDATED_MULTIALLELE);
 
-        // (replace the original: now phased multi-allelic)
-        // (the haplotype reconstruction's phasing order was in
-        // concordance with the first variant)
-        // caveat: `allele2readIDs` is not updated.
-        //  We only consolidate variants when they are
-        //  coverved by deletion(s) on the other hap, this
-        //  should rarely exceed read boundary. And since genophase
-        //  is already collected, `allele2readIDs` will be used
-        //  by nobody.
-        if (var.type != TA_TYPE_HETMULTI) {
-            var.genotype[0] += 1;
-            var.genotype[2] += 1;
-        }
-        var.type = TA_TYPE_HETMULTI_CONSOLIDATED;
-        var.ref_len = range_end - range_start;
-        var.alleles[0] = seq2nt4seq(hap_recon.first);
-        var.alleles[0].push_back(VAR_OP_CONSOLIDATED_MULTIALLELE);
-        var.alleles[1] = seq2nt4seq(hap_recon.second);
-        var.alleles[1].push_back(VAR_OP_CONSOLIDATED_MULTIALLELE);
-
-        // (mark absorbed vars as not used)
-        for (uint32_t i = 1; i < var_indices.size(); i++) {
-            ck.varcalls[var_indices[i]].is_used = TA_STAT_UNCALLED;
+            // (mark absorbed vars as not used)
+            for (uint32_t i = 1; i < var_indices.size(); i++) {
+                ck.varcalls[var_indices[i]].is_used = TA_STAT_UNCALLED;
+            }
+        } else {  // range not clean, mark unconf
+            for (uint32_t i = 0; i < var_indices.size(); i++) {
+                ck.varcalls[var_indices[i]].is_used = TA_STAT_UNSURE;
+                ck.varcalls[var_indices[i]].genotype[1] = '/';
+            }
         }
     }  // iter through all called variants
 }
