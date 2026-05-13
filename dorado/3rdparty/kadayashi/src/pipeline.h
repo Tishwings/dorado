@@ -65,7 +65,7 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
                                                     const int min_strand_cov,
                                                     const float min_strand_cov_frac,
                                                     const float max_gapcompressed_seqdiv,
-                                                    const int vcf_out_allow_N,
+                                                    const bool ambig_ref,
                                                     const bool disable_interval_expansion,
                                                     const int use_dvr_for_phasing,
                                                     const int bed_flanking);

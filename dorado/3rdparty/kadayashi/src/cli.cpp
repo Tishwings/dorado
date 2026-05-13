@@ -36,7 +36,6 @@ static ko_longopt_t longopts[] = {
         {"use-simple", ko_no_argument, 405},
         {"varcall-use-dvr", ko_no_argument, 406}, // note: bad CLI but don't break older scripts at least for now;
                                           // added for varcall to use dvr; mutually exclusive with 405
-        {"suppress-refbase-n", ko_no_argument, 501}, // varcall, when writing vcf, omit entries where ref base is N
         {"verbose", ko_no_argument, 998},
         {"version", ko_no_argument, 999},
         {0, 0, 0}};
@@ -485,7 +484,7 @@ static ko_longopt_t longopts_varcall[] = {
         {"strict-intervals", ko_no_argument, 302},  // if set, do not allow expanding the requested interval(s)
         {"use-dvr", ko_no_argument, 303}, // note: bad CLI but don't break older scripts at least for now;
                                           // added for varcall to use dvr; mutually exclusive with 405
-        {"suppress-refbase-n", ko_no_argument, 304}, // varcall, when writing vcf, omit entries where ref base is N
+        {"ambig-ref", ko_no_argument, 304}, // varcall, include variants containing ambiguous reference bases
         {"max-gc-seqdiv", ko_required_argument, 305},  // varcall, max gap-compressed sequence divergence
         {"max-clipping", ko_required_argument, 306},  // reads with larger clippings will not contribute to informative site pileup
         {"min-strand-cov", ko_required_argument, 307},
@@ -523,9 +522,9 @@ void print_help_varcall_cli(cliopt_varcall_t &clio) {
             "  --min-strand-cov-frac   [opt] Minimum coverage fraction for both strands "
             "(inclusive). [%.3f]\n",
             clio.pp.min_strand_cov_frac);
-    fprintf(stdout, "  --allow-refbase-n  [opt] Set to allow the output vcf to contain\n");
-    fprintf(stdout, "                              entries where ref base has N or n. [%s]\n",
-            clio.vcf_write_allow_refbase_N ? "set" : "not set");
+    fprintf(stdout, "  --ambig-ref   [opt] Set to allow the output vcf to contain\n");
+    fprintf(stdout, "                variants at non-ACGTU reference bases. [%s]\n",
+            clio.ambig_ref ? "set" : "not set");
     fprintf(stdout, "  --strict-intervals [opt] Set to disable region expansion, i.e. \n");
     fprintf(stdout, "                      phase using strict the variants within \n");
     fprintf(stdout, "                      each chunk and don't look around. [%s]\n",
@@ -640,9 +639,10 @@ cliopt_varcall_t parse_cli_varcall(int argc, char *argv[]) {
             spdlog::info("[kdys::{}] will use deepvariant replica phasing for read phasing\n",
                          __func__);
         } else if (c == 304) {
-            clio.vcf_write_allow_refbase_N = false;
+            clio.ambig_ref = true;
             fprintf(stdout,
-                    "[M::%s] vcf output will omit entries where referene allele is or has N\n",
+                    "[M::%s] vcf output will include entries where reference allele contains "
+                    "ambiguous bases\n",
                     __func__);
         } else if (c == 305) {
             clio.pp.max_gapcompressed_seqdiv = static_cast<float>(atof(opt.arg));

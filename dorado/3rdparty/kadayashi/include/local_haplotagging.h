@@ -264,6 +264,8 @@ struct variant_fullinfo_t {
     char genotype1[3] = {'0', '/', '0'};
 };
 
+std::string variant_fullinfo_to_string(const variant_fullinfo_t &v);
+
 /** Variant information that can be directly used to compose
 * VCF line, except for `pos` which is in 0-index.
 */
@@ -282,8 +284,12 @@ struct variant_dorado_style_t {
     std::pair<char, char> genotype;
 };
 
+std::string variant_dorado_style_to_string(const variant_dorado_style_t &v);
+
 bool operator==(const variant_fullinfo_t &a, const variant_fullinfo_t &b);
 bool operator==(const variant_dorado_style_t &a, const variant_dorado_style_t &b);
+std::ostream &operator<<(std::ostream &os, const variant_dorado_style_t &a);
+
 struct varcall_result_internal_t {
     std::unordered_map<std::string, int> qname2hp{};  // 0-index
     std::vector<variant_fullinfo_t> variants{};
@@ -317,7 +323,8 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
                                                     const int min_strand_cov,
                                                     const float min_strand_cov_frac,
                                                     const float max_gapcompressed_seqdiv,
-                                                    const bool use_dvr_for_phasing);
+                                                    const bool use_dvr_for_phasing,
+                                                    const bool ambig_ref);
 
 /**
  * @brief Phase reads in a query region and perform phased variant calling.
@@ -352,6 +359,9 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
  * @param use_dvr_for_phasing If set, use deepvariant replica phasing method.
  *                            Otherwise, the simple phasing method (flip-flop)
  *                            will be used.
+ * @param ambig_ref  If set, include variants containing ambiguity bases.
+ *                   Otherwise, no variants containing ambiguity codes in the
+ *                   ref or alt alleles will be returned.
  */
 varcall_result_t kadayashi_phase_and_varcall_wrapper(samFile *fp_bam,
                                                      hts_idx_t *fp_bai,
@@ -368,7 +378,8 @@ varcall_result_t kadayashi_phase_and_varcall_wrapper(samFile *fp_bam,
                                                      const int min_strand_cov,
                                                      const float min_strand_cov_frac,
                                                      const float max_gapcompressed_seqdiv,
-                                                     const bool use_dvr_for_phasing);
+                                                     const bool use_dvr_for_phasing,
+                                                     const bool ambig_ref);
 
 typedef dorado::secondary::ReadAlignmentData MedakaFeatureMatrix;
 /*

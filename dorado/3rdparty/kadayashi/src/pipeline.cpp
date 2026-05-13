@@ -1510,8 +1510,7 @@ std::string make_vcf_line_given_variant_fullinfo_t(std::string_view ref_name,
                                                    const uint32_t ref_end,
                                                    const std::vector<uint32_t> &breakpoints_arr,
                                                    const variant_fullinfo_t &var,
-                                                   uint32_t &phaseblockID_fallback,
-                                                   const bool vcf_out_allow_N) {
+                                                   uint32_t &phaseblockID_fallback) {
     // note:
     //   - need to first calcualte phaseblockID, then format the line.
     //   - multi-allelic variant must either be one line whose genotype
@@ -1630,7 +1629,8 @@ std::vector<varcall_result_and_localphasinght_t> kadayashi_phase_and_varcall_mul
         const int min_strand_cov,
         const float min_strand_cov_frac,
         const float max_gapcompressed_seqdiv,
-        const bool use_dvr_for_phasing) {
+        const bool use_dvr_for_phasing,
+        const bool ambig_ref) {
     // Note: `n_workers` is the apprent # of workers; each worker's
     //       bam parsing will use n_bam_threads (>=1).
     //       Thus the total threads used is n_workers*n_bam_threads.
@@ -1665,7 +1665,8 @@ std::vector<varcall_result_and_localphasinght_t> kadayashi_phase_and_varcall_mul
                         hf.fp(), hf.idx(), hf.hdr(), fp_fai.get_raw_faidx_ptr(), ref_name,
                         ref_start, ref_end, disable_interval_expansion, min_base_quality,
                         min_varcall_coverage, min_varcall_fraction, max_clipping, min_strand_cov,
-                        min_strand_cov_frac, max_gapcompressed_seqdiv, use_dvr_for_phasing);
+                        min_strand_cov_frac, max_gapcompressed_seqdiv, use_dvr_for_phasing,
+                        ambig_ref);
                 ck_and_vrs[jobID] = std::move(tmp);
             }
         }
@@ -2124,7 +2125,7 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
                                                     const int min_strand_cov,
                                                     const float min_strand_cov_frac,
                                                     const float max_gapcompressed_seqdiv,
-                                                    const int vcf_out_allow_N,
+                                                    const bool ambig_ref,
                                                     const bool disable_interval_expansion,
                                                     const int use_dvr_for_phasing,
                                                     const int bed_flanking) {
@@ -2184,7 +2185,7 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
                         fn_ref, fn_bam, n_threads_job, n_threads_inner, chrom, query_intervals,
                         disable_interval_expansion, min_base_quality, min_varcall_coverage,
                         min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
-                        max_gapcompressed_seqdiv, use_dvr_for_phasing);
+                        max_gapcompressed_seqdiv, use_dvr_for_phasing, ambig_ref);
 
         // helper: convert phasing breakpoints into a sorted array
         // which will be queried for phaseblock IDs.
@@ -2213,7 +2214,7 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
                 // vcf
                 const std::string vcf_line = make_vcf_line_given_variant_fullinfo_t(
                         chrom, itvl.first, itvl.second, breakpoints_arr, fullvar,
-                        phaseblockID_fallback, vcf_out_allow_N);
+                        phaseblockID_fallback);
                 fp_out_vcf << fmt::format("{:s}", vcf_line);
 
                 // unsure list

@@ -78,8 +78,8 @@ struct cliopt_varcall_t {
     bool varcall_use_dvr{false};
     std::vector<std::string> varcall_regions{};
     int varcall_w{1'000'000};
-    bool vcf_write_allow_refbase_N{false};
     float max_gapcompressed_seqdiv{0.1f};
+    bool ambig_ref{false};
 
     // output
     int bed_flanking{5000};

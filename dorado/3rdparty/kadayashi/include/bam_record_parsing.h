@@ -11,6 +11,8 @@ struct bam1_t;
 
 namespace kadayashi {
 
+extern const unsigned char md_op_table[256];
+
 float get_tag_de_f(const bam1_t *aln);
 bool to_exclude_by_flags(const bam1_t *aln, uint16_t unwanted_flags);
 bool to_exclude_by_low_mapq(const bam1_t *aln, int min_mapq);
