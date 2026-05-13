@@ -586,6 +586,30 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
         CATCH_CHECK(result.variants == expected.variants);
     }
 
+    // Check that the first variant is returned correctly if the chunk starts on a variant
+    CATCH_SECTION("simple phasing varcall, variant at chunk start") {
+        const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
+                bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 93, 9999, pp.disable_region_expansion,
+                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
+                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
+                false /*ambig_ref*/);
+        CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
+        CATCH_CHECK(result.variants == expected.variants);
+    }
+
+    // Check that the last variant is returned correctly if the chunk ends on a variant
+    CATCH_SECTION("simple phasing varcall, variant at chunk end") {
+        const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
+                bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 8321 /*end-inclusive*/,
+                pp.disable_region_expansion, pp.min_base_quality, pp.min_varcall_coverage,
+                pp.min_varcall_fraction, pp.max_clipping, 1 /*min strand cov*/, 0.033f,
+                pp.max_gapcompressed_seqdiv, false, false /*ambig_ref*/);
+        CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
+        CATCH_CHECK(result.variants == expected.variants);
+    }
+
     const kadayashi::varcall_result_t expected_dvr{
             .qname2hp =
                     {

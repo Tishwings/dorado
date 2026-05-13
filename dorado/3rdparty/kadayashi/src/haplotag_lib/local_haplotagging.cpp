@@ -1618,13 +1618,6 @@ variant_fullinfo_t derive_variant_fullinfo_from_varcall(const ta_t &var,
             ret.is_valid = false;
             ret.is_confident = false;
             return ret;
-        } else if (var.pos == ref_start) {
-            if (!ambig_ref) {
-                ret.is_valid = false;
-                ret.is_confident = false;
-                return ret;
-            }
-            ref_s += refseq_substring[var.pos - ref_start];
         } else {
             const int tmppos = var.pos - ref_start;  // 0-index
             ref_s += refseq_substring[tmppos];
