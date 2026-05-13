@@ -10,7 +10,7 @@
 #include <memory>
 #include <vector>
 
-namespace dorado::variant {
+namespace dorado::smallvar {
 
 struct VariantResources {
     std::vector<std::unique_ptr<secondary::EncoderBase>> encoders;
@@ -20,4 +20,4 @@ struct VariantResources {
     std::vector<c10::optional<c10::Stream>> streams;
 };
 
-}  // namespace dorado::variant
+}  // namespace dorado::smallvar

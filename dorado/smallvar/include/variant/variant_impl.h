@@ -36,7 +36,7 @@
 #include <utility>
 #include <vector>
 
-namespace dorado::variant {
+namespace dorado::smallvar {
 
 // clang-format off
 struct ChromosomeReduceData {
@@ -297,4 +297,4 @@ std::vector<secondary::Variant> convert_variants(
         int32_t ploidy,
         float pass_min_qual);
 
-}  // namespace dorado::variant
+}  // namespace dorado::smallvar

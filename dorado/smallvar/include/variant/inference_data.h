@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace dorado::variant {
+namespace dorado::smallvar {
 
 /**
  * \brief Struct which holds samples prepared for inference.
@@ -14,4 +14,4 @@ struct InferenceData {
     std::vector<secondary::Sample> samples;
 };
 
-}  // namespace dorado::variant
+}  // namespace dorado::smallvar

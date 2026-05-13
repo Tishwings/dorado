@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace dorado::variant::tests {
+namespace dorado::smallvar::tests {
 
 #define TEST_GROUP "[VariantImpl]"
 
@@ -1429,4 +1429,4 @@ CATCH_TEST_CASE("worker_variant_calling_reduce tops up progress when no inferenc
     CATCH_CHECK(ready_seq_id == 0);
 }
 
-}  // namespace dorado::variant::tests
+}  // namespace dorado::smallvar::tests

@@ -6,7 +6,7 @@ Input BAM and Draft are empty.
   > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > touch ${in_bam}
   > touch ${in_ref}
-  > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} > out/out.vcf 2> out/stderr
+  > ${DORADO_BIN} smallvar --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/^.*error] //g'
   Exit code: 1
@@ -19,7 +19,7 @@ Input BAM is not empty, but Draft is empty.
   > in_ref=out/in.draft.fasta
   > model_var=${MODEL_ROOT_DIR:+--models-directory ${MODEL_ROOT_DIR}}
   > touch ${in_ref}
-  > ${DORADO_BIN} variant --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} > out/out.vcf 2> out/stderr
+  > ${DORADO_BIN} smallvar --device cpu ${in_bam} ${in_ref} -t 4 ${model_var} > out/out.vcf 2> out/stderr
   > echo "Exit code: $?"
   > grep "\[error\]" out/stderr | sed -E 's/^.*error] //g'
   Exit code: 1

@@ -6,7 +6,7 @@
 
 #include <vector>
 
-namespace dorado::variant {
+namespace dorado::smallvar {
 
 /**
  * \brief Struct which holds output of inference, passed into the decoding thread.
@@ -16,4 +16,4 @@ struct DecodeData {
     at::Tensor logits;
 };
 
-}  // namespace dorado::variant
+}  // namespace dorado::smallvar

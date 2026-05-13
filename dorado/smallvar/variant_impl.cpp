@@ -43,7 +43,7 @@
 #define LOG_TRACE(...) spdlog::trace(__VA_ARGS__)
 #endif
 
-namespace dorado::variant {
+namespace dorado::smallvar {
 
 namespace {
 
@@ -1702,4 +1702,4 @@ void worker_variant_writer(
     spdlog::debug("[variant_writer] Finished writing the variant output.");
 }
 
-}  // namespace dorado::variant
+}  // namespace dorado::smallvar

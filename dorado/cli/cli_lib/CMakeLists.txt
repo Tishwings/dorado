@@ -33,9 +33,9 @@ dorado_add_library(
         summary_info.h
         summary.cpp
         trim.cpp
-        variant_progress_tracker.cpp
-        variant_progress_tracker.h
-        variant.cpp
+        smallvar_progress_tracker.cpp
+        smallvar_progress_tracker.h
+        smallvar.cpp
     DEPENDS_PUBLIC
         dorado_torch_utils
         dorado_utils

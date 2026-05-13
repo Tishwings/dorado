@@ -1711,7 +1711,7 @@ const std::vector<ModelInfo> models = {
 
 }  // namespace polisher
 
-namespace variant_caller {
+namespace small_variant_caller {
 
 const std::vector<ModelInfo> models = {
         ModelInfo{
@@ -1724,7 +1724,7 @@ const std::vector<ModelInfo> models = {
         },
 };
 
-}  // namespace variant_caller
+}  // namespace small_variant_caller
 
 const std::vector<ModelInfo>& simplex_models() { return simplex::models; }
 const std::vector<ModelInfo>& simplex_deprecated_models() { return simplex::deprecated; }
@@ -1733,7 +1733,7 @@ const std::vector<ModelInfo>& modified_models() { return modified::models; }
 const std::vector<ModelInfo>& modified_deprecated_models() { return modified::deprecated; }
 const std::vector<ModelInfo>& correction_models() { return correction::models; }
 const std::vector<ModelInfo>& polish_models() { return polisher::models; }
-const std::vector<ModelInfo>& variant_models() { return variant_caller::models; }
+const std::vector<ModelInfo>& variant_models() { return small_variant_caller::models; }
 
 namespace {
 std::vector<std::string> unpack_names(const std::vector<ModelInfo>& infos) {
@@ -1778,8 +1778,9 @@ std::string_view to_string(ModelType model_type) {
 
 // Returns true if model_name matches any configured model
 bool is_valid_model(std::string_view model_name) {
-    for (const auto& collection : {simplex::models, stereo::models, modified::models,
-                                   correction::models, polisher::models, variant_caller::models}) {
+    for (const auto& collection :
+         {simplex::models, stereo::models, modified::models, correction::models, polisher::models,
+          small_variant_caller::models}) {
         for (const ModelInfo& model_info : collection) {
             if (model_info.name == model_name) {
                 return true;
