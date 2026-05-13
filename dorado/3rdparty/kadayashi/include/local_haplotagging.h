@@ -264,6 +264,8 @@ struct variant_fullinfo_t {
     char genotype1[3] = {'0', '/', '0'};
 };
 
+std::string variant_fullinfo_to_string(const variant_fullinfo_t &v);
+
 /** Variant information that can be directly used to compose
 * VCF line, except for `pos` which is in 0-index.
 */
@@ -282,8 +284,12 @@ struct variant_dorado_style_t {
     std::pair<char, char> genotype;
 };
 
+std::string variant_dorado_style_to_string(const variant_dorado_style_t &v);
+
 bool operator==(const variant_fullinfo_t &a, const variant_fullinfo_t &b);
 bool operator==(const variant_dorado_style_t &a, const variant_dorado_style_t &b);
+std::ostream &operator<<(std::ostream &os, const variant_dorado_style_t &a);
+
 struct varcall_result_internal_t {
     std::unordered_map<std::string, int> qname2hp{};  // 0-index
     std::vector<variant_fullinfo_t> variants{};

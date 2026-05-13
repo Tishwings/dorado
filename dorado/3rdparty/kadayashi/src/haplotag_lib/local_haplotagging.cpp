@@ -2415,6 +2415,22 @@ std::unordered_map<std::string, int> kadayashi_local_haptagging_gen_ht(chunk_t &
     return qname2hp;
 }
 
+std::string variant_fullinfo_to_string(const variant_fullinfo_t &v) {
+    return fmt::format(
+            "valid={} conf={} phased={},{} pos={},{} qual={},{} ref={},{} alt={},{} geno={},{}",
+            v.is_valid ? "true" : "false", v.is_confident ? "true" : "false",
+            v.is_phased0 ? "true" : "false", v.is_phased1 ? "true" : "false", v.pos0, v.pos1,
+            v.qual0, v.qual1, v.ref_allele_seq0, v.ref_allele_seq1, v.alt_allele_seq0,
+            v.alt_allele_seq1, std::string(v.genotype0, 3), std::string(v.genotype1, 3));
+}
+
+std::string variant_dorado_style_to_string(const variant_dorado_style_t &v) {
+    return fmt::format("conf={} phased={} pos={} qual={} ref={} alt={},{} geno={:c},{:c}",
+                       v.is_confident ? "true" : "false", v.is_phased ? "true" : "false", v.pos,
+                       v.qual, v.ref, v.alts[0], v.alts.size() > 1 ? v.alts[1] : "",
+                       v.genotype.first, v.genotype.second);
+}
+
 bool operator==(const variant_fullinfo_t &a, const variant_fullinfo_t &b) {
     return std::tie(a.is_confident, a.is_multi_allele, a.pos0, a.qual0, a.ref_allele_seq0,
                     a.alt_allele_seq0, a.is_phased0, a.genotype0[0], a.genotype0[1], a.genotype0[2],
@@ -2427,18 +2443,14 @@ bool operator==(const variant_fullinfo_t &a, const variant_fullinfo_t &b) {
 };
 
 bool operator==(const variant_dorado_style_t &a, const variant_dorado_style_t &b) {
-    constexpr bool DEBUG_PRINT = false;
-    if constexpr (DEBUG_PRINT) {
-        LOG_TRACE(
-                "[variant_dorado_style_t=] conf={} phased={} pos={} qual={} ref={} alt={},{} "
-                "geno={:c},{:c}",
-                a.is_confident ? "true" : "false", a.is_phased ? "true" : "false", a.pos, a.qual,
-                a.ref, a.alts[0], a.alts.size() > 1 ? a.alts[1] : "", a.genotype.first,
-                a.genotype.second);
-    }
     return std::tie(a.is_confident, a.is_phased, a.pos, a.qual, a.ref, a.alts, a.genotype) ==
            std::tie(b.is_confident, b.is_phased, b.pos, b.qual, b.ref, b.alts, b.genotype);
 };
+
+std::ostream &operator<<(std::ostream &os, const variant_dorado_style_t &v) {
+    os << variant_dorado_style_to_string(v);
+    return os;
+}
 
 phase_return_t kadayashi_local_haptagging_dvr_single_region(samFile *fp_bam,
                                                             hts_idx_t *fp_bai,

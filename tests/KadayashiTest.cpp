@@ -553,7 +553,6 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                     {true, false, 3734, 60, "G", {"C"}, {'1', '1'}},
                     {false, false, 3961, 0, "A", {"AC"}, {'0', '1'}},
                     {false, false, 4695, 0, "A", {"T"}, {'0', '1'}},
-                    //{false, false, 4999, 0, {"A","AAAAT"}, {"AAAAT","A"}, {'2','1'}},
                     {false, false, 4999, 0, "AAAAT", {"AAAATAAAT", "A"}, {'2', '1'}},
                     {false, false, 5125, 0, "CTTT", {"C"}, {'0', '1'}},
                     {true, true, 5386, 60, "C", {"G"}, {'0', '1'}},
@@ -563,7 +562,6 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                     {false, false, 7690, 0, "TCC", {"T"}, {'0', '1'}},
                     {false, false, 7912, 0, "C", {"CT"}, {'0', '1'}},
                     {false, false, 8319, 0, "GAA", {"G"}, {'0', '1'}},
-                    {false, false, 8973, 0, "C", {"CG"}, {'0', '1'}},
             }};
 
     // Open the input files.
@@ -585,8 +583,65 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                 pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
                 false /*ambig_ref*/);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
+        CATCH_CHECK(result.variants == expected.variants);
     }
 
+    const kadayashi::varcall_result_t expected_dvr{
+            .qname2hp =
+                    {
+                            {"1e70cda3-c41f-4d19-9c14-94d8d64e619c", 1},
+                            {"61ab09d6-072f-4ab2-b14b-b0a1e38a3419", 1},
+                            {"563ecca1-30dd-4dd9-991a-d417d827c803", 0},
+                            {"4fd81aa2-cb77-4994-a8a5-70e6228f255e", 0},
+                            {"a27cad27-2297-40d4-8666-40a4742eb2ed", 1},
+                            {"e0af6c87-8655-4603-97b7-0ad5ba860df2", 0},
+                            {"7d23577c-5c93-4d41-83bd-b652e687deee", 0},
+                            {"627ea9e1-5204-4a2c-ae54-1e1be8bbbbe6", 1},
+                            {"ac863a7d-932e-42fa-91c1-7814d7f810f9", 1},
+                            {"b4139858-e420-4780-94e6-375542c2d2e8", 0},
+                            {"dbe9785a-fa25-454c-9960-fd65fb99a040", 1},
+                            {"3fdc1b9b-7186-411e-af92-e93a1086754c", 1},
+                            {"7b2095d4-08f7-448d-aa9d-55c9568fb49d", 1},
+                            {"c488f4c5-1639-4be1-92f6-948f29b7d822", 1},
+                            {"02551418-20c9-4b4b-9d1b-9bee36342895", 1},
+                            {"de45db56-e704-4524-af88-06a2f98c270e", 1},
+                            {"49b05d0d-97ac-449e-804b-35b35e05ce28", 0},
+                            {"e7e27cb5-1144-49dd-8ec4-09a75937a091", 0},
+                            {"3d7a9813-67be-4b84-b66a-0269aa108340", 1},
+                            {"d5560893-59c8-417c-a929-d62b4d19a1ca", 1},
+                    },
+            .variants = {
+                    // 0-index
+                    {true, true, 93, 60, "C", {"T"}, {'0', '1'}},
+                    {true, true, 305, 60, "G", {"A"}, {'0', '1'}},
+                    {false, false, 775, 0, "TC", {"T"}, {'0', '1'}},
+                    {false, false, 809, 0, "AC", {"A"}, {'0', '1'}},
+                    {false, false, 1002, 0, "AC", {"A"}, {'0', '1'}},
+                    {true, true, 1471, 60, "T", {"G"}, {'1', '0'}},
+                    {false, false, 1613, 0, "TC", {"T"}, {'0', '1'}},
+                    {false, false, 1619, 0, "CG", {"C"}, {'0', '1'}},
+                    {false, false, 1829, 0, "CTTT", {"C"}, {'0', '1'}},
+                    {false, false, 1958, 0, "T", {"G"}, {'0', '1'}},
+                    {true, true, 2101, 60, "A", {"G"}, {'1', '0'}},
+                    {true, true, 2125, 60, "C", {"G"}, {'1', '0'}},
+                    {true, true, 2437, 60, "T", {"C"}, {'1', '0'}},
+                    {true, true, 2445, 60, "G", {"A"}, {'1', '0'}},
+                    {true, false, 2966, 60, "G", {"C"}, {'1', '1'}},
+                    {true, true, 3175, 60, "G", {"T"}, {'1', '0'}},
+                    {false, false, 3514, 0, "CT", {"C"}, {'0', '1'}},
+                    {true, false, 3734, 60, "G", {"C"}, {'1', '1'}},
+                    {false, false, 3961, 0, "A", {"AC"}, {'0', '1'}},
+                    {false, false, 4695, 0, "A", {"T"}, {'0', '1'}},
+                    {false, false, 4999, 0, "AAAAT", {"AAAATAAAT", "A"}, {'2', '1'}},
+                    {false, false, 5125, 0, "CTTT", {"C"}, {'0', '1'}},
+                    {true, true, 5386, 60, "C", {"G"}, {'1', '0'}},
+                    {false, false, 5985, 0, "CA", {"C"}, {'0', '1'}},
+                    {false, false, 6947, 0, "CGTGT", {"C"}, {'0', '1'}},
+                    {true, true, 7429, 60, "C", {"T"}, {'1', '0'}},
+                    {false, false, 7690, 0, "TCC", {"T"}, {'0', '1'}},
+                    {false, false, 7912, 0, "C", {"CT"}, {'0', '1'}},
+                    {false, false, 8319, 0, "GAA", {"G"}, {'0', '1'}},
+            }};
     CATCH_SECTION("dvr phasing") {
         // dvr and simple phasing share the same variant calling step
         const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
@@ -595,7 +650,8 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                 pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
                 pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, true,
                 false /*ambig_ref*/);
-        CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
+        CATCH_CHECK(compare_haptags(result.qname2hp, expected_dvr.qname2hp));
+        CATCH_CHECK(result.variants == expected_dvr.variants);
     }
 
     CATCH_SECTION("use wrong clipping threshold") {
@@ -606,6 +662,186 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
                 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
                 false /*ambig_ref*/);
         CATCH_CHECK(result3.variants.empty());
+    }
+}
+
+CATCH_TEST_CASE("kadayashi_varcall ambig-ref", TEST_GROUP) {
+    // Check that the ambig-ref argument correctly allows variants to be returned at
+    // positions with ambiguous reference bases, and that they are not returned if the
+    // argument is not set.
+
+    // Input data.
+    const std::filesystem::path test_data_dir =
+            get_data_dir("variant") / "test-05-kadayashi-varcall-ambig-ref";
+    const std::filesystem::path fn_bam = test_data_dir / "in.aln.bam";
+    const std::filesystem::path fn_ref = test_data_dir / "in.ref.fasta.gz";
+
+    // Expected output when ambig_ref is true.
+    const kadayashi::varcall_result_t expected_ambig_ref_true{
+            .qname2hp =
+                    {
+                            {"1e70cda3-c41f-4d19-9c14-94d8d64e619c", 1},
+                            {"61ab09d6-072f-4ab2-b14b-b0a1e38a3419", 1},
+                            {"563ecca1-30dd-4dd9-991a-d417d827c803", 0},
+                            {"4fd81aa2-cb77-4994-a8a5-70e6228f255e", 0},
+                            {"a27cad27-2297-40d4-8666-40a4742eb2ed", 1},
+                            {"e0af6c87-8655-4603-97b7-0ad5ba860df2", 0},
+                            {"7d23577c-5c93-4d41-83bd-b652e687deee", 0},
+                            {"627ea9e1-5204-4a2c-ae54-1e1be8bbbbe6", 1},
+                            {"ac863a7d-932e-42fa-91c1-7814d7f810f9", 1},
+                            {"b4139858-e420-4780-94e6-375542c2d2e8", 0},
+                            {"dbe9785a-fa25-454c-9960-fd65fb99a040", 1},
+                            {"3fdc1b9b-7186-411e-af92-e93a1086754c", 1},
+                            {"7b2095d4-08f7-448d-aa9d-55c9568fb49d", 1},
+                            {"c488f4c5-1639-4be1-92f6-948f29b7d822", 1},
+                            {"02551418-20c9-4b4b-9d1b-9bee36342895", 1},
+                            {"de45db56-e704-4524-af88-06a2f98c270e", 1},
+                            {"49b05d0d-97ac-449e-804b-35b35e05ce28", 0},
+                            {"e7e27cb5-1144-49dd-8ec4-09a75937a091", 0},
+                            {"3d7a9813-67be-4b84-b66a-0269aa108340", 1},
+                            {"d5560893-59c8-417c-a929-d62b4d19a1ca", 1},
+                    },
+            .variants = {
+                    // 0-index
+                    {true, true, 93, 60, "C", {"T"}, {'1', '0'}},
+                    {true, true, 305, 60, "Y", {"G", "A"}, {'1', '2'}},
+                    {false, false, 775, 0, "TC", {"T"}, {'0', '1'}},
+                    //unconfident variant is not consolidated
+                    {false, false, 809, 0, "AN", {"A"}, {'0', '1'}},
+                    {false, false, 810, 0, "S", {"C"}, {'0', '1'}},
+                    //
+                    {false, false, 1002, 0, "AC", {"A"}, {'0', '1'}},
+                    {true, true, 1471, 60, "T", {"G"}, {'0', '1'}},
+                    {false, false, 1613, 0, "TC", {"T"}, {'0', '1'}},
+                    {false, false, 1619, 0, "CG", {"C"}, {'0', '1'}},
+                    {false, false, 1829, 0, "CTTT", {"C"}, {'0', '1'}},
+                    {false, false, 1958, 0, "T", {"G"}, {'0', '1'}},
+                    {true, true, 2101, 60, "A", {"G"}, {'0', '1'}},
+                    {true, true, 2125, 60, "C", {"G"}, {'0', '1'}},
+                    {true, true, 2437, 60, "T", {"C"}, {'0', '1'}},
+                    {true, true, 2445, 60, "B", {"A", "G"}, {'1', '2'}},
+                    {true, false, 2966, 60, "G", {"C"}, {'1', '1'}},
+                    {true, true, 3175, 60, "G", {"T"}, {'0', '1'}},
+                    {false, false, 3514, 0, "CT", {"C"}, {'0', '1'}},
+                    {true, false, 3734, 60, "G", {"C"}, {'1', '1'}},
+                    {false, false, 3961, 0, "A", {"AC"}, {'0', '1'}},
+                    {false, false, 4695, 0, "A", {"T"}, {'0', '1'}},
+                    //unconfident variant is not consolidated
+                    {false, false, 4999, 0, "ANNNT", {"AAAATNNNT", "A"}, {'1', '2'}},
+                    {false, false, 5000, 0, "K", {"A"}, {'0', '1'}},
+                    {false, false, 5001, 0, "K", {"A"}, {'0', '1'}},
+                    {false, false, 5002, 0, "K", {"A"}, {'0', '1'}},
+                    //
+                    {false, false, 5125, 0, "CTTT", {"C"}, {'0', '1'}},
+                    {true, true, 5386, 60, "C", {"G"}, {'0', '1'}},
+                    {false, false, 5985, 0, "CA", {"C"}, {'0', '1'}},
+                    {false, false, 6947, 0, "CGTGT", {"C"}, {'0', '1'}},
+                    {true, true, 7429, 60, "C", {"T"}, {'0', '1'}},
+                    {false, false, 7690, 0, "TCC", {"T"}, {'0', '1'}},
+                    {false, false, 7912, 0, "C", {"CT"}, {'0', '1'}},
+                    {false, false, 8319, 0, "GAA", {"G"}, {'0', '1'}},
+            }};
+
+    // Expected output when ambig_ref is false.
+    const kadayashi::varcall_result_t expected_ambig_ref_false{
+            .qname2hp =
+                    {
+                            {"1e70cda3-c41f-4d19-9c14-94d8d64e619c", 1},
+                            {"61ab09d6-072f-4ab2-b14b-b0a1e38a3419", 1},
+                            {"563ecca1-30dd-4dd9-991a-d417d827c803", 0},
+                            {"4fd81aa2-cb77-4994-a8a5-70e6228f255e", 0},
+                            {"a27cad27-2297-40d4-8666-40a4742eb2ed", 1},
+                            {"e0af6c87-8655-4603-97b7-0ad5ba860df2", 0},
+                            {"7d23577c-5c93-4d41-83bd-b652e687deee", 0},
+                            {"627ea9e1-5204-4a2c-ae54-1e1be8bbbbe6", 1},
+                            {"ac863a7d-932e-42fa-91c1-7814d7f810f9", 1},
+                            {"b4139858-e420-4780-94e6-375542c2d2e8", 0},
+                            {"dbe9785a-fa25-454c-9960-fd65fb99a040", 0},  // flipped wrt above
+                            {"3fdc1b9b-7186-411e-af92-e93a1086754c", 1},
+                            {"7b2095d4-08f7-448d-aa9d-55c9568fb49d", 1},
+                            {"c488f4c5-1639-4be1-92f6-948f29b7d822", 1},
+                            {"02551418-20c9-4b4b-9d1b-9bee36342895", 1},
+                            {"de45db56-e704-4524-af88-06a2f98c270e", 1},
+                            {"49b05d0d-97ac-449e-804b-35b35e05ce28", 0},
+                            {"e7e27cb5-1144-49dd-8ec4-09a75937a091", 0},
+                            {"3d7a9813-67be-4b84-b66a-0269aa108340", 1},
+                            {"d5560893-59c8-417c-a929-d62b4d19a1ca", 1},
+                    },
+            .variants = {
+                    // 0-index
+                    // some genotypes are flipped wrt above
+                    {true, true, 93, 60, "C", {"T"}, {'0', '1'}},
+                    // {true, true, 305, 60, "Y", {"A", "G"}, {'1', '2'}},
+                    {false, false, 775, 0, "TC", {"T"}, {'0', '1'}},
+                    //unconfident variant is not consolidated
+                    // {false, false, 809, 0, "AN", {"A"}, {'0', '1'}},
+                    // {false, false, 810, 0, "S", {"C"}, {'0', '1'}},
+                    //
+                    {false, false, 1002, 0, "AC", {"A"}, {'0', '1'}},
+                    {true, true, 1471, 60, "T", {"G"}, {'1', '0'}},
+                    {false, false, 1613, 0, "TC", {"T"}, {'0', '1'}},
+                    {false, false, 1619, 0, "CG", {"C"}, {'0', '1'}},
+                    {false, false, 1829, 0, "CTTT", {"C"}, {'0', '1'}},
+                    {false, false, 1958, 0, "T", {"G"}, {'0', '1'}},
+                    //changed from confident to unconfident
+                    {false, false, 2101, 0, "A", {"G"}, {'0', '1'}},
+                    {true, true, 2125, 60, "C", {"G"}, {'1', '0'}},
+                    {true, true, 2437, 60, "T", {"C"}, {'1', '0'}},
+                    // {true, true, 2445, 60, "B", {"A", "G"}, {'1', '2'}},
+                    {true, false, 2966, 60, "G", {"C"}, {'1', '1'}},
+                    {true, true, 3175, 60, "G", {"T"}, {'1', '0'}},
+                    {false, false, 3514, 0, "CT", {"C"}, {'0', '1'}},
+                    {true, false, 3734, 60, "G", {"C"}, {'1', '1'}},
+                    {false, false, 3961, 0, "A", {"AC"}, {'0', '1'}},
+                    {false, false, 4695, 0, "A", {"T"}, {'0', '1'}},
+                    //unconfident variant is not consolidated
+                    // {false, false, 4999, 0, "ANNNT", {"AAAATNNNT", "A"}, {'1', '2'}},
+                    // {false, false, 5000, 0, "K", {"A"}, {'0', '1'}},
+                    // {false, false, 5001, 0, "K", {"A"}, {'0', '1'}},
+                    // {false, false, 5002, 0, "K", {"A"}, {'0', '1'}},
+                    //
+                    {false, false, 5125, 0, "CTTT", {"C"}, {'0', '1'}},
+                    {true, true, 5386, 60, "C", {"G"}, {'1', '0'}},
+                    {false, false, 5985, 0, "CA", {"C"}, {'0', '1'}},
+                    {false, false, 6947, 0, "CGTGT", {"C"}, {'0', '1'}},
+                    {true, true, 7429, 60, "C", {"T"}, {'1', '0'}},
+                    {false, false, 7690, 0, "TCC", {"T"}, {'0', '1'}},
+                    {false, false, 7912, 0, "C", {"CT"}, {'0', '1'}},
+                    {false, false, 8319, 0, "GAA", {"G"}, {'0', '1'}},
+            }};
+
+    // Open the input files.
+    dorado::secondary::BamFile bam_reader(fn_bam, 1);
+    dorado::hts_io::FastxRandomReader fastx_reader(fn_ref);
+
+    CATCH_REQUIRE(bam_reader.fp());
+    CATCH_REQUIRE(bam_reader.idx());
+    CATCH_REQUIRE(bam_reader.hdr());
+    CATCH_REQUIRE(fastx_reader.get_raw_faidx_ptr());
+
+    const kadayashi::pileup_pars_t pp{.max_clipping = 100000};
+
+    CATCH_SECTION("ambig-ref true") {
+        const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
+                bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
+                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
+                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
+                true);
+        CATCH_CHECK(compare_haptags(result.qname2hp, expected_ambig_ref_true.qname2hp));
+        CATCH_CHECK(result.variants == expected_ambig_ref_true.variants);
+    }
+
+    CATCH_SECTION("ambig-ref false") {
+        // dvr and simple phasing share the same variant calling step
+        const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
+                bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
+                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
+                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, true,
+                false);
+        CATCH_CHECK(compare_haptags(result.qname2hp, expected_ambig_ref_false.qname2hp));
+        CATCH_CHECK(result.variants == expected_ambig_ref_false.variants);
     }
 }
 
