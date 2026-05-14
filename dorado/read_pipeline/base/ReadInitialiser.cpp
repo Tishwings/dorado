@@ -127,4 +127,24 @@ void ReadInitialiser::update_alignment_fields(HtsData& data) const {
     }
 }
 
+void ReadInitialiser::undemux_read_group(HtsData& data) const {
+    std::string alias;
+    bam1_t* record = data.bam_ptr.get();
+    if (const auto al_tag = bam_aux_get(record, "al"); al_tag != nullptr) {
+        alias = bam_aux2Z(al_tag);
+        bam_aux_del(record, al_tag);
+    } else if (const auto bc_tag = bam_aux_get(record, "BC"); bc_tag != nullptr) {
+        alias = bam_aux2Z(bc_tag);
+        bam_aux_update_str(record, "BC", 13, "unclassified");
+    }
+
+    if (const auto rg_tag = bam_aux_get(record, "RG"); rg_tag != nullptr) {
+        std::string rg_tag_value = bam_aux2Z(rg_tag);
+        if (auto index = rg_tag_value.find(alias); index != rg_tag_value.npos && index != 0) {
+            rg_tag_value = rg_tag_value.substr(0, index - 1);
+            bam_aux_update_str(record, "RG", index, rg_tag_value.c_str());
+        }
+    }
+}
+
 }  // namespace dorado
