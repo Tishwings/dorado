@@ -634,13 +634,14 @@ CATCH_TEST_CASE("batch and inference workflow functions operate on synthetic sam
 CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when encode_region is empty",
                 TEST_GROUP) {
     /**
-     * \brief Verifies that worker_sample_producer still preserves simple PASS variants even when no
-     *          inference sample is emitted for the BAM window.
+     * \brief Verifies that worker_sample_producer still preserves simple PASS variants in the unique
+     *          window span even when no inference sample is emitted for the BAM window.
      *
-     *          The stub encoder returns a confident simple variant but an empty encoded region.
+     *          The stub encoder returns confident simple variants but an empty encoded region.
      *          The expected result is that nothing is pushed to the inference queue, the BAM
      *          window is still accounted for in the reduction state, and the converted simple
-     *          variant is accumulated in chrom_reduce_data[0].variants_simple.
+     *          variant in the window's unique span is accumulated in
+     *          chrom_reduce_data[0].variants_simple.
      */
 
     ////////////////////////////////////////
@@ -656,15 +657,20 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
             .source_region_id = 0,
     };
 
-    const kadayashi::variant_dorado_style_t simple_variant{
-            .is_confident = true,
-            .is_phased = true,
-            .pos = 4,
-            .qual = 60,
-            .ref = "A",
-            .alts = {"T"},
-            .genotype = {'1', '1'},
+    const auto make_simple_variant = [](const uint32_t pos) {
+        return kadayashi::variant_dorado_style_t{
+                .is_confident = true,
+                .is_phased = true,
+                .pos = pos,
+                .qual = 60,
+                .ref = "A",
+                .alts = {"T"},
+                .genotype = {'1', '1'},
+        };
     };
+    const kadayashi::variant_dorado_style_t left_overlap_variant = make_simple_variant(1);
+    const kadayashi::variant_dorado_style_t simple_variant = make_simple_variant(4);
+    const kadayashi::variant_dorado_style_t right_boundary_variant = make_simple_variant(8);
 
     const std::vector<secondary::Variant> expected_variants =
             convert_variants({simple_variant}, bam_window.seq_id, 2, 30.0f);
@@ -681,7 +687,7 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
             std::unordered_map<std::string, int32_t>{{"read-1", 1}},
             kadayashi::varcall_result_t{
                     .qname2hp = {{"read-1", 0}},
-                    .variants = {simple_variant},
+                    .variants = {left_overlap_variant, simple_variant, right_boundary_variant},
                     .phasing_breakpoints = {},
             }));
     auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
@@ -924,9 +930,9 @@ CATCH_TEST_CASE("worker_sample_producer handles migrated haplotagging with real 
 
     // Define input BAM regions for processing.
     const std::vector<secondary::Window> bam_windows{
-            secondary::Window{0, 10000, 0, 300, 0, 0, -1},
-            secondary::Window{0, 10000, 1000, 1800, 0, 0, -1},
-            secondary::Window{0, 10000, 7000, 7500, 0, 0, -1},
+            secondary::Window{0, 10000, 0, 300, 0, 300, -1},
+            secondary::Window{0, 10000, 1000, 1800, 1000, 1800, -1},
+            secondary::Window{0, 10000, 7000, 7500, 7000, 7500, -1},
     };
     const std::vector<std::vector<secondary::Window>> bam_regions{bam_windows};
 
