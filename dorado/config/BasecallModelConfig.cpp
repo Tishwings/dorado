@@ -545,7 +545,7 @@ std::string StandardisationScalingParams::to_string() const {
         << " standardise:" << standardise
         << " mean:"        << mean
         << " stdev:"       << stdev << "}";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -557,7 +557,7 @@ std::string QuantileScalingParams::to_string() const {
         << " quantile_b:"       << quantile_b
         << " shift_multiplier:" << shift_multiplier
         << " scale_multiplier:" << scale_multiplier << "}";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -571,7 +571,7 @@ std::string SignalNormalisationParams::to_string() const {
         oss << " " + standardisation.to_string();
     }
     oss << " }";
-    return oss.str();
+    return std::move(oss).str();
 }
 
 std::string ConvParams::to_string() const {
@@ -583,7 +583,7 @@ std::string ConvParams::to_string() const {
         << " winlen:"   << winlen
         << " stride:"   << stride
         << " activation:" << config::to_string(activation) << " }";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -599,7 +599,7 @@ std::string TxEncoderParams::to_string() const {
         << " max_seq_len:"      << max_seq_len
         << " attn_window: ["    << attn_window.first << ", " << attn_window.second << "]"
         << " deepnorm_alpha:"   << deepnorm_alpha    << " }";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -614,7 +614,7 @@ std::string CRFEncoderParams::to_string() const {
         << " blank_score:"   << blank_score
         << " expand_blanks:" << expand_blanks
         << " permute:"       << std::boolalpha << !permute.empty() << " }";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -662,7 +662,7 @@ std::string BasecallModelConfig::to_string() const {
         throw std::logic_error("Unknown model type");
     }
     oss << "}}";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
