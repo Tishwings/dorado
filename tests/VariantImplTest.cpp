@@ -86,6 +86,67 @@ private:
     kadayashi::varcall_result_t m_produce_haplotags_result;
 };
 
+class SequencedStubEncoder final : public secondary::EncoderBase {
+public:
+    struct RegionCall {
+        StubEncoder::ExpectedRegion expected_region;
+        std::unordered_map<std::string, int32_t> expected_haplotags;
+        kadayashi::varcall_result_t produce_haplotags_result;
+    };
+
+    explicit SequencedStubEncoder(std::vector<RegionCall> calls) : m_calls{std::move(calls)} {}
+
+    kadayashi::varcall_result_t produce_haplotags(const std::string& ref_name,
+                                                  const int64_t ref_start,
+                                                  const int64_t ref_end) override {
+        if (m_next_call >= std::ssize(m_calls)) {
+            throw std::runtime_error{"Unexpected extra produce_haplotags call."};
+        }
+        const RegionCall& call = m_calls[m_next_call];
+        const StubEncoder::ExpectedRegion& expected_region = call.expected_region;
+        if ((ref_name != expected_region.ref_name) || (ref_start != expected_region.ref_start) ||
+            (ref_end != expected_region.ref_end)) {
+            throw std::runtime_error{"Unexpected region passed to produce_haplotags."};
+        }
+        return call.produce_haplotags_result;
+    }
+
+    secondary::Sample encode_region(
+            const std::string& ref_name,
+            const int64_t ref_start,
+            const int64_t ref_end,
+            const int32_t seq_id,
+            const std::unordered_map<std::string, int32_t>& haplotags) override {
+        if (m_next_call >= std::ssize(m_calls)) {
+            throw std::runtime_error{"Unexpected extra encode_region call."};
+        }
+        const RegionCall& call = m_calls[m_next_call];
+        const StubEncoder::ExpectedRegion& expected_region = call.expected_region;
+        if ((ref_name != expected_region.ref_name) || (ref_start != expected_region.ref_start) ||
+            (ref_end != expected_region.ref_end) || (seq_id != expected_region.seq_id) ||
+            (haplotags != call.expected_haplotags)) {
+            throw std::runtime_error{"Unexpected arguments passed to encode_region."};
+        }
+        ++m_next_call;
+        return {};
+    }
+
+    at::Tensor collate(std::vector<at::Tensor> batch, const bool /*pinned_memory*/) const override {
+        return std::empty(batch) ? at::empty({0}) : std::move(batch.front());
+    }
+
+    std::vector<secondary::Sample> merge_adjacent_samples(
+            std::vector<secondary::Sample> samples) const override {
+        return samples;
+    }
+
+    secondary::FeatureColumnMap get_feature_column_map() const override { return {}; }
+
+private:
+    std::vector<RegionCall> m_calls;
+    int64_t m_next_call{0};
+};
+
 class CollatingStubEncoder final : public secondary::EncoderBase {
 public:
     kadayashi::varcall_result_t produce_haplotags(const std::string&,
@@ -738,6 +799,127 @@ CATCH_TEST_CASE("worker_sample_producer preserves simple pass variants when enco
     CATCH_CHECK(chrom_reduce_data[0].num_samples == 0);
     CATCH_CHECK(chrom_reduce_data[0].variants_simple == expected_variants);
     CATCH_CHECK(stats.get_stats().at("processed") == 6.0);
+}
+
+CATCH_TEST_CASE("worker_sample_producer ignores simple variants outside a window's unique span",
+                TEST_GROUP) {
+    /**
+     * \brief Reproduces duplicate Kadayashi PASS variant accumulation from overlapping BAM
+     *          windows.
+     *
+     *          The same simple variant is returned for two overlapping windows. The first window's
+     *          no-overlap span owns the variant coordinate; the second only sees it through its
+     *          overlap with the first. The producer should only accumulate the owner window's
+     *          record.
+     */
+    const secondary::Window first_window{
+            .seq_id = 0,
+            .seq_length = 200,
+            .start = 0,
+            .end = 100,
+            .start_no_overlap = 0,
+            .end_no_overlap = 100,
+            .source_region_id = 0,
+    };
+    const secondary::Window second_window{
+            .seq_id = 0,
+            .seq_length = 200,
+            .start = 60,
+            .end = 160,
+            .start_no_overlap = 100,
+            .end_no_overlap = 160,
+            .source_region_id = 0,
+    };
+
+    const kadayashi::variant_dorado_style_t overlapping_variant{
+            .is_confident = true,
+            .is_phased = true,
+            .pos = 90,
+            .qual = 60,
+            .ref = "A",
+            .alts = {"T"},
+            .genotype = {'0', '1'},
+    };
+
+    const std::vector<secondary::Variant> expected_variants =
+            convert_variants({overlapping_variant}, first_window.seq_id, 2, 30.0f);
+
+    const std::vector<std::vector<secondary::Window>> bam_regions{
+            {first_window, second_window},
+    };
+    const std::vector<std::pair<std::string, int64_t>> draft_lens{
+            {"chr1", first_window.seq_length},
+    };
+    const std::vector<std::string> draft_seqs(std::size(draft_lens));
+
+    VariantResources resources;
+    resources.encoders.emplace_back(
+            std::make_unique<SequencedStubEncoder>(std::vector<SequencedStubEncoder::RegionCall>{
+                    {
+                            .expected_region = {"chr1", first_window.start, first_window.end,
+                                                first_window.seq_id},
+                            .expected_haplotags = {{"read-1", 1}},
+                            .produce_haplotags_result =
+                                    kadayashi::varcall_result_t{
+                                            .qname2hp = {{"read-1", 0}},
+                                            .variants = {overlapping_variant},
+                                            .phasing_breakpoints = {},
+                                    },
+                    },
+                    {
+                            .expected_region = {"chr1", second_window.start, second_window.end,
+                                                second_window.seq_id},
+                            .expected_haplotags = {{"read-2", 1}},
+                            .produce_haplotags_result =
+                                    kadayashi::varcall_result_t{
+                                            .qname2hp = {{"read-2", 0}},
+                                            .variants = {overlapping_variant},
+                                            .phasing_breakpoints = {},
+                                    },
+                    },
+            }));
+    auto model = secondary::ModelTorchBase::make<StubModel>(1.0, 0.0f);
+    resources.models.emplace_back(model);
+
+    std::vector<ChromosomeReduceData> chrom_reduce_data(1);
+    chrom_reduce_data[0].seq_id = first_window.seq_id;
+    chrom_reduce_data[0].seq_name = "chr1";
+    chrom_reduce_data[0].seq_len = first_window.seq_length;
+    chrom_reduce_data[0].num_bam_regions = 2;
+    chrom_reduce_data[0].remaining_bam_regions = 2;
+
+    utils::AsyncQueue<secondary::Window> input_queue{4};
+    CATCH_REQUIRE(input_queue.try_push(secondary::Window{first_window}) ==
+                  utils::AsyncQueueStatus::Success);
+    CATCH_REQUIRE(input_queue.try_push(secondary::Window{second_window}) ==
+                  utils::AsyncQueueStatus::Success);
+    input_queue.terminate(utils::AsyncQueueTerminateFast::No);
+
+    utils::AsyncQueue<InferenceData> output_queue{2};
+
+    std::atomic<bool> worker_terminate{false};
+    secondary::WorkerReturnStatus ret_status;
+
+    secondary::Stats stats;
+    stats.set("processed", 0.0);
+
+    worker_sample_producer(input_queue, output_queue, chrom_reduce_data, resources, stats,
+                           worker_terminate, ret_status, bam_regions, draft_lens, draft_seqs,
+                           secondary::VariantCandidateSource::COMPUTE, std::nullopt, 1,
+                           /*window_len=*/100, /*window_overlap=*/40,
+                           /*variant_flanking_bases=*/10, /*continue_on_exception=*/false,
+                           /*ploidy=*/2, /*pass_min_qual=*/30.0f,
+                           /*tiled_regions=*/false, /*tiled_ext_flanks=*/false,
+                           /*tiled_ext_major=*/0, /*tiled_ext_min_cov=*/0,
+                           /*tiled_ext_cov_fract=*/0.0f, /*min_depth=*/0);
+
+    CATCH_REQUIRE(!ret_status.exception_thrown);
+    CATCH_REQUIRE(!worker_terminate.load());
+    CATCH_CHECK(output_queue.size() == 0);
+    CATCH_CHECK(chrom_reduce_data[0].ready);
+    CATCH_CHECK(chrom_reduce_data[0].remaining_bam_regions == 0);
+    CATCH_CHECK(chrom_reduce_data[0].num_samples == 0);
+    CATCH_CHECK(chrom_reduce_data[0].variants_simple == expected_variants);
 }
 
 CATCH_TEST_CASE("worker_sample_producer rejects bam windows with seq_id outside draft_lens",
