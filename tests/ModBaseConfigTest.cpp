@@ -36,17 +36,17 @@ const auto _6mA_v4 = get_data_dir("model_configs/dna_r10.4.1_e8.2_400bps_sup@v5.
 const ModulesParams modules_6mA_v4{
         // Sequence Convs
         {
-                ConvParams{36, 16, 5, 1, Activation::TANH},
-                ConvParams{16, 128, 16, 1, Activation::TANH},
+                ConvParams{36, 16, 5, 1, Activation::TANH, 0},
+                ConvParams{16, 128, 16, 1, Activation::TANH, 0},
         },
         // Signal Convs
         {
-                ConvParams{1, 4, 5, 1, Activation::TANH},
-                ConvParams{4, 16, 5, 1, Activation::TANH},
-                ConvParams{16, 128, 16, 6, Activation::TANH},
+                ConvParams{1, 4, 5, 1, Activation::TANH, 0},
+                ConvParams{4, 16, 5, 1, Activation::TANH, 0},
+                ConvParams{16, 128, 16, 6, Activation::TANH, 0},
         },
         // Merge
-        ConvParams{256, 384, 5, 1, Activation::TANH},
+        ConvParams{256, 384, 5, 1, Activation::TANH, 0},
         // LSTMS
         {
                 LSTMParams{384, 0},

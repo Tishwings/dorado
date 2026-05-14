@@ -15,7 +15,6 @@ struct FLSTMLayerImpl : torch::nn::Module {
 
 private:
     int C_;
-    int K_;
     at::Tensor dn_weight_ih_;
     at::Tensor dn_weight_hh_;
     at::Tensor up_weight_ih_;

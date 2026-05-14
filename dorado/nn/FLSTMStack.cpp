@@ -16,7 +16,7 @@ extern "C" {
 
 namespace dorado::nn {
 
-FLSTMLayerImpl::FLSTMLayerImpl(const int C, const int K) : C_(C), K_(K) {
+FLSTMLayerImpl::FLSTMLayerImpl(const int C, const int K) : C_(C) {
     dn_weight_ih_ = register_parameter("dn_weight_ih", torch::empty({K, C}));
     dn_weight_hh_ = register_parameter("dn_weight_hh", torch::empty({K, C}));
     up_weight_ih_ = register_parameter("up_weight_ih", torch::empty({4 * C, K}));

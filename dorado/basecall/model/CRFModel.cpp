@@ -43,9 +43,15 @@ CRFModelImpl::CRFModelImpl(const BasecallModelConfig &config) {
     }
 
     if (config.out_features.has_value()) {
+#if DORADO_CUDA_BUILD
+        const bool can_use_koi = koi_can_run_flstm();
+#else
+        const bool can_use_koi = false;
+#endif
+
         // The linear layer is decomposed into 2 matmuls.
         const int decomposition = config.out_features.value();
-        if (koi_can_run_flstm() && (lstm_size == 1024) && (decomposition == 128) && tanh_x5) {
+        if (can_use_koi && (lstm_size == 1024) && (decomposition == 128) && tanh_x5) {
             linear1 = std::static_pointer_cast<LinearLayerImpl>(register_module(
                     "factorised_linear",
                     FactorisedLinearLayer(lstm_size, decomposition, config.outsize)));
