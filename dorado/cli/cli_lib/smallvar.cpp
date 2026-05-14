@@ -575,22 +575,27 @@ void print_basecaller_models(std::ostream& os,
     os << utils::join(lines, delimiter);
 }
 
-std::string determine_model_name(const std::string& basecaller_model) {
-    const std::string model_prefix = basecaller_model + "_variant_mv@";
-
-    std::string ret;
-
-    for (const auto& info : models::variant_models()) {
-        // Variant models can have multiple versions for one basecaller. The list is ordered so
-        // that the last matching entry is the latest compatible model.
-        if (utils::starts_with(info.name, model_prefix)) {
-            ret = info.name;
+std::string determine_model_name(const std::string& basecaller_model, const bool use_dwells) {
+    auto find_model = [](const std::string& model_prefix) {
+        std::string ret;
+        for (const auto& info : models::variant_models()) {
+            // Variant models can have multiple versions for one basecaller. The list is ordered so
+            // that the last matching entry is the latest compatible model.
+            if (utils::starts_with(info.name, model_prefix)) {
+                ret = info.name;
+            }
         }
-    }
+        return ret;
+    };
+
+    const std::string smallvar_model_prefix =
+            basecaller_model + (use_dwells ? "_smallvar_mv@" : "_smallvar@");
+
+    const std::string ret = find_model(smallvar_model_prefix);
 
     if (std::empty(ret)) {
         throw std::runtime_error{
-                "Could not find any variant calling model compatible with the basecaller model '" +
+                "Could not find any smallvar model compatible with the basecaller model '" +
                 basecaller_model + "'."};
     }
 
@@ -627,13 +632,13 @@ const std::filesystem::path resolve_model(
         }
     }
 
-    // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0
+    // Example: dna_r10.4.1_e8.2_400bps_hac@v5.2.0
     const std::string& basecaller_model = *std::begin(bam_info.basecaller_models);
 
-    // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0
-    const std::string model_name = determine_model_name(basecaller_model);
+    // Example: dna_r10.4.1_e8.2_400bps_hac@v5.2.0_smallvar@v1.0
+    const std::string model_name = determine_model_name(basecaller_model, false);
 
-    // Sanity check that the model name exists in the variant calling models.
+    // Sanity check that the model name exists in the smallvar models.
     if (count_model_hits(models::variant_models(), model_name) == 0) {
         throw std::runtime_error{"Resolved model '" + model_name + "' not found!"};
     }
@@ -641,7 +646,7 @@ const std::filesystem::path resolve_model(
     spdlog::debug("Resolved model from input data: '{}'", model_name);
 
     model_downloader::ModelDownloader downloader(models_directory, false);
-    const std::filesystem::path model_dir = downloader.get(model_name, "variant calling");
+    const std::filesystem::path model_dir = downloader.get(model_name, "smallvar");
 
     return model_dir;
 }
@@ -698,21 +703,20 @@ std::filesystem::path resolve_model_advanced(
 
     } else if (count_model_hits(models::variant_models(), model_str) == 1) {
         const std::string& model_name = model_str;
-        spdlog::debug("Resolved model from user-specified variant calling model name: '{}'",
-                      model_name);
+        spdlog::debug("Resolved model from user-specified smallvar model name: '{}'", model_name);
         model_downloader::ModelDownloader downloader(models_directory, false);
-        model_dir = downloader.get(model_name, "variant calling");
+        model_dir = downloader.get(model_name, "smallvar");
 
     } else if (count_model_hits(models::simplex_models(), model_str) == 1) {
         // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0
         const std::string& basecaller_model = model_str;
 
-        // Example: dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0
-        const std::string model_name = determine_model_name(basecaller_model);
+        // Example: dna_r10.4.1_e8.2_400bps_hac@v5.2.0_smallvar@v1.0
+        const std::string model_name = determine_model_name(basecaller_model, false);
 
         spdlog::debug("Resolved model from user-specified basecaller model name: '{}'", model_name);
         model_downloader::ModelDownloader downloader(models_directory, false);
-        model_dir = downloader.get(model_name, "variant calling");
+        model_dir = downloader.get(model_name, "smallvar");
 
     } else {
         throw std::runtime_error{"Could not resolve model from string: '" + model_str + "'."};
@@ -769,11 +773,7 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
         }
 
         // Fail if the dwell information in the model and the data does not match.
-        if (bam_info.has_dwells && !model_uses_dwells) {
-            throw std::runtime_error{
-                    "Input data has move tables, but a model without move table support has been "
-                    "chosen."};
-        } else if (!bam_info.has_dwells && model_uses_dwells) {
+        if (!bam_info.has_dwells && model_uses_dwells) {
             throw std::runtime_error{
                     "Input data does not contain move tables, but a model which requires move "
                     "tables has been chosen."};
@@ -788,11 +788,7 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
         }
 
         // Allow to use a mismatched model, but emit a warning.
-        if (bam_info.has_dwells && !model_uses_dwells) {
-            spdlog::warn(
-                    "Input data has move tables, but a model without move table support has been "
-                    "chosen. This may produce inferior results.");
-        } else if (!bam_info.has_dwells && model_uses_dwells) {
+        if (!bam_info.has_dwells && model_uses_dwells) {
             spdlog::warn(
                     "Input data does not contain move tables, but a model which requires move "
                     "tables has been chosen. This may produce inferior results.");
