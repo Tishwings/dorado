@@ -196,7 +196,8 @@ Using `--model-override`.
   [warning] Skipping basecaller compatibility checks for user-specified model
   [warning] Variant calling model is not compatible with the input BAM. This may produce inferior results.
 
-Passing test with warnings: A Polishing model is provided instead of a Variant Calling model.
+A Polishing model is provided instead of a Variant Calling model.
+Incompatible label scheme should fail even with `--model-override`.
 Using `--model-override`.
   $ rm -rf out; mkdir -p out
   > model=${POLISH_MODEL_DIR}
@@ -209,9 +210,9 @@ Using `--model-override`.
   > echo "Exit code: $?"
   > grep "\[error\]" out/out.stderr | sed -E 's/.*\[/\[/g'
   > grep "\[warning\]" out/out.stderr | sed -E 's/.*\[/\[/g' | sed -E 's/model: .*/model/g'
-  Exit code: 0
+  Exit code: 1
+  [error] Incompatible model label scheme! Expected DiploidLabelScheme but got HaploidLabelScheme.
   [warning] Skipping basecaller compatibility checks for user-specified model
-  [warning] Incompatible model label scheme! Expected DiploidLabelScheme but got HaploidLabelScheme. This may produce unexpected results.
 
 ##############################################
 ### Negative tests.                        ###

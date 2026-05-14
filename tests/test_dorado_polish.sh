@@ -43,6 +43,13 @@ popd
 MODEL_ROOT_DIR=${output_dir}
 
 # Download the model once.
+VARIANT_MODEL_NAME="dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0"
+VARIANT_MODEL_DIR=${output_dir}/${VARIANT_MODEL_NAME}
+if [[ ! -d "${MODEL_DIR}" ]]; then
+    ${DORADO_BIN} download --model "${VARIANT_MODEL_NAME}" --models-directory ${output_dir}
+fi
+
+# Download the model once.
 MODEL_NAME="dna_r10.4.1_e8.2_400bps_hac@v4.3.0_polish"
 MODEL_DIR=${MODEL_ROOT_DIR}/${MODEL_NAME}
 if [[ ! -d "${MODEL_DIR}" ]]; then
@@ -68,6 +75,8 @@ export TEST_DATA_DIR
 export MODEL_NAME
 export MODEL_DIR
 export MODEL_ROOT_DIR
+export VARIANT_MODEL_NAME
+export VARIANT_MODEL_DIR
 export OUTPUT_DIR=${output_dir}
 python3 \
     ${CRAM} \

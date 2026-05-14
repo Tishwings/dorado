@@ -250,6 +250,22 @@ Negative test: Cannot resolve the model, it does not match a Polishing model nor
   Exit code: 1
   [error] Model override file path 'unknown' is specified, but the file does not exist.
 
+A Variant Calling model is provided instead of a Polishing model.
+Incompatible label scheme should fail even with `--model-override`.
+Using `--model-override`.
+  $ rm -rf out; mkdir -p out
+  > in_dir=${TEST_DATA_DIR}/polish/test-01-supertiny
+  > model="${VARIANT_MODEL_DIR}"
+  > ### Run the unit under test.
+  > ${DORADO_BIN} polish --device cpu data/in.micro.bam ${in_dir}/draft.fasta.gz -t 4 --regions "contig_1:1-100" --infer-threads 1 -vv --model-override "${model}" > out/out.fasta 2> out/out.fasta.stderr
+  > ### Eval.
+  > echo "Exit code: $?"
+  > grep "\[error\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g'
+  > grep "\[warning\]" out/out.fasta.stderr | sed -E 's/.*\[/\[/g' | sed -E 's/model: .*/model/g'
+  Exit code: 1
+  [error] Incompatible model label scheme! Expected HaploidLabelScheme but got DiploidLabelScheme.
+  [warning] Skipping basecaller compatibility checks for user-specified model
+
 #############################################
 ## Resolve move tables                    ###
 #############################################

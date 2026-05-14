@@ -738,9 +738,6 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
                                            ? (it_dwells->second == "true")
                                            : false;
 
-    const std::string expected_label_scheme_name =
-            (expected_label_scheme == secondary::LabelSchemeType::DIPLOID) ? "DiploidLabelScheme"
-                                                                           : "HaploidLabelScheme";
     const bool label_scheme_is_compatible =
             secondary::parse_label_scheme_type(model_config.label_scheme_type) ==
             expected_label_scheme;
@@ -757,6 +754,13 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
                 return true;
             };
 
+    // Stop if the label scheme is not compatible.
+    if (!label_scheme_is_compatible) {
+        throw std::runtime_error{"Incompatible model label scheme! Expected " +
+                                 secondary::label_scheme_type_to_string(expected_label_scheme) +
+                                 " but got " + model_config.label_scheme_type + "."};
+    }
+
     if (!any_model) {
         // Verify that the basecaller model of the loaded config is compatible with the BAM.
         if (!check_models_supported(bam_info.basecaller_models)) {
@@ -772,12 +776,6 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
             throw std::runtime_error{
                     "Input data does not contain move tables, but a model which requires move "
                     "tables has been chosen."};
-        }
-
-        if (!label_scheme_is_compatible) {
-            throw std::runtime_error{"Incompatible model label scheme! Expected " +
-                                     expected_label_scheme_name + " but got " +
-                                     model_config.label_scheme_type + "."};
         }
 
     } else {
@@ -797,12 +795,6 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
             spdlog::warn(
                     "Input data does not contain move tables, but a model which requires move "
                     "tables has been chosen. This may produce inferior results.");
-        }
-
-        if (!label_scheme_is_compatible) {
-            spdlog::warn("Incompatible model label scheme! Expected " + expected_label_scheme_name +
-                         " but got " + model_config.label_scheme_type +
-                         ". This may produce unexpected results.");
         }
     }
 }

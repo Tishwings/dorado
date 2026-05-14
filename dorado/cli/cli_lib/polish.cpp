@@ -812,6 +812,13 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
                 return true;
             };
 
+    // Stop if the label scheme is not compatible.
+    if (!label_scheme_is_compatible) {
+        throw std::runtime_error{"Incompatible model label scheme! Expected " +
+                                 secondary::label_scheme_type_to_string(expected_label_scheme) +
+                                 " but got " + model_config.label_scheme_type + "."};
+    }
+
     if (!any_model) {
         // Verify that the basecaller model of the loaded config is compatible with the BAM.
         if (!check_models_supported(bam_info.basecaller_models)) {
@@ -827,12 +834,6 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
             throw std::runtime_error{
                     "Input data does not contain move tables, but a model which requires move "
                     "tables has been chosen."};
-        }
-
-        if (!label_scheme_is_compatible) {
-            throw std::runtime_error{
-                    "Incompatible model label scheme! Expected HaploidLabelScheme but got " +
-                    model_config.label_scheme_type + "."};
         }
 
     } else {
@@ -852,11 +853,6 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
             spdlog::warn(
                     "Input data does not contain move tables, but a model which requires move "
                     "tables has been chosen. This may produce inferior results.");
-        }
-
-        if (!label_scheme_is_compatible) {
-            spdlog::warn("Incompatible model label scheme! Expected HaploidLabelScheme but got " +
-                         model_config.label_scheme_type + ". This may produce unexpected results.");
         }
     }
 }
