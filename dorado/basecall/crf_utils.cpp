@@ -6,15 +6,16 @@
 #include "torch_utils/tensor_utils.h"
 #include "utils/memory_utils.h"
 
-#if DORADO_CUDA_BUILD
-#include <c10/cuda/CUDAGuard.h>
-#endif
-
 #include <algorithm>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <vector>
+
+#if DORADO_CUDA_BUILD
+#include <c10/cuda/CUDAGuard.h>
+#endif
 
 namespace dorado::basecall {
 
@@ -210,25 +211,32 @@ size_t auto_calculate_num_runners(const BasecallModelConfig &model_config, float
 
     // very hand-wavy determination
     // these numbers were determined empirically by running 1, 2, 4 and 8 runners for each model
-    auto required_ram_per_runner_GB = 0.f;
-    if (model_name.find("_fast@v") != std::string::npos) {
-        required_ram_per_runner_GB = 1.5;
-    } else if (model_name.find("_hac@v") != std::string::npos) {
-        required_ram_per_runner_GB = 4.5;
-    } else if (model_name.find("_sup@v") != std::string::npos) {
-        required_ram_per_runner_GB = 12.5;
-    } else {
+    std::optional<double> required_ram_per_runner_GB;
+    if (model_config.is_lstm_model()) {
+        if (model_name.find("_fast@v") != std::string::npos) {
+            required_ram_per_runner_GB = 1.5;
+        } else if (model_name.find("_hac@v") != std::string::npos) {
+            required_ram_per_runner_GB = 4.5;
+        } else if (model_name.find("_sup@v") != std::string::npos) {
+            required_ram_per_runner_GB = 12.5;
+        }
+    } else if (model_config.is_flstm_model()) {
+        if (model_name.find("_hac@v") != std::string::npos) {
+            required_ram_per_runner_GB = 10;
+        }
+    }
+    if (!required_ram_per_runner_GB.has_value()) {
         return 1;
     }
 
     // Should have set batch_size to non-zero value if device == cpu
     assert(model_config.basecaller.batch_size() > 0);
     // numbers were determined with a batch_size of 128, assume this just scales
-    required_ram_per_runner_GB *= model_config.basecaller.batch_size() / 128.f;
+    required_ram_per_runner_GB.value() *= model_config.basecaller.batch_size() / 128.f;
 
     const auto free_ram_GB =
             static_cast<size_t>(utils::available_host_memory_GB()) * memory_fraction;
-    const auto num_runners = static_cast<size_t>(free_ram_GB / required_ram_per_runner_GB);
+    const auto num_runners = static_cast<size_t>(free_ram_GB / required_ram_per_runner_GB.value());
     return std::clamp(num_runners, size_t(1), std::size_t(std::thread::hardware_concurrency()));
 }
 
