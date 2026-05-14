@@ -845,4 +845,20 @@ if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
     test_barcoding_read_groups patient_id_1 4 unclassified 3 $data_dir/barcode_demux/sample_sheet.csv
 fi
 
+title dorado demux previously demuxed files
+$dorado_bin basecaller ${models_directory_arg} --kit-name SQK-RBK114-96 --sample-sheet $data_dir/barcode_demux/sample_sheet.csv ${model_5k} $data_dir/barcode_demux/read_group_test --no-trim -o ${output_dir}/redemux
+for f in $(find ${output_dir}/redemux -name "*.bam"); do
+    $dorado_bin demux \
+        --no-trim \
+        --kit-name SQK-RBK114-96 \
+        ${f} \
+        -o ${output_dir}/redemuxed-${f%.*}
+done
+
+$dorado_bin demux \
+    --no-trim \
+    --kit-name SQK-RBK114-96 \
+    -r ${output_dir}/redemux \
+    -o ${output_dir}/redemuxed-all
+
 rm -rf $output_dir
