@@ -18,6 +18,11 @@ struct bam1_t;
 
 namespace kadayashi {
 
+// For read downsampling of phasing & varcall pileups, and
+// the pileup of kadayashi feature matrix generator.
+constexpr int DOWNSAMPLE_WINDOW = 1000;  // store read depths every 1kb
+constexpr int DOWNSAMPLE_READCAP = 200;  // target 200x
+
 /**
  * @brief  Make a hashtable that maps read names to read haptags
  *         given the chunk.

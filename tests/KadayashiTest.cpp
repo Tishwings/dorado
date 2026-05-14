@@ -307,6 +307,65 @@ CATCH_TEST_CASE("kadayashi max of u32 arr", TEST_GROUP) {
     CATCH_CHECK(m == 3);
 }
 
+CATCH_TEST_CASE("kadayashi variant pileup downsampling", TEST_GROUP) {
+    const TempDir temp_dir = make_temp_dir("kadayashi_short_read_downsample");
+    const std::filesystem::path temp_in_bam_fn = temp_dir.m_path / "in.aln.bam";
+
+    const std::string refseq(100, 'A');
+    const std::vector<std::pair<std::string, std::string>> targets{{"ref", refseq}};
+
+    const std::string read_seq = [] {
+        std::string seq(50, 'A');
+        seq[10] = 'T';
+        return seq;
+    }();
+
+    constexpr int32_t NUM_READS_TARGET = kadayashi::DOWNSAMPLE_READCAP;  // target read depth
+    constexpr int32_t NUM_READS_REDUNDANT = 50;
+    constexpr int32_t NUM_READS = NUM_READS_TARGET + NUM_READS_REDUNDANT;  // add some extra depth
+    std::vector<std::string> qnames;
+    std::vector<SyntheticBamRecord> records;
+    qnames.reserve(NUM_READS);
+    records.reserve(NUM_READS);
+
+    for (int32_t i = 0; i < NUM_READS; ++i) {
+        qnames.emplace_back("read_" + std::to_string(i));
+        records.push_back({
+                .qname = qnames.back(),
+                .pos = 0,
+                .flag = static_cast<uint16_t>((i % 2) == 0 ? 0 : BAM_FREVERSE),
+                .mapq = 60,
+                .cigar = "50M",
+                .seq = read_seq,
+                .md = "10A39",
+                .nm = 1,
+        });
+    }
+
+    write_synthetic_bam(temp_in_bam_fn, targets, records);
+    dorado::secondary::BamFile bam_file(temp_in_bam_fn, 1);
+    dorado::secondary::BamFileView bam_view = bam_file.get_view();
+
+    kadayashi::pileup_pars_t pp{};
+    pp.min_base_quality = 0;
+    pp.min_mapq = 1;
+    pp.min_varcall_coverage = 1;
+    pp.min_varcall_fraction = 0.0f;
+    pp.max_clipping = 100000;
+    pp.min_strand_cov = 1;
+    pp.min_strand_cov_frac = 0.0f;
+    pp.retain_het_only = false;
+    pp.disable_low_complexity_masking = true;
+    pp.disable_region_expansion = true;
+
+    const kadayashi::chunk_t result =
+            kadayashi::variant_pileup_ht(bam_view, {}, nullptr, nullptr, "ref", 0, 100, pp);
+
+    CATCH_CHECK(result.is_valid);
+    CATCH_CHECK(result.qnames.size() <= NUM_READS_TARGET);
+    CATCH_CHECK(result.reads.size() <= NUM_READS_TARGET);
+}
+
 CATCH_TEST_CASE("kadayashi dvr and simple, normal case", TEST_GROUP) {
     // Input data.
     const std::filesystem::path test_data_dir = get_data_dir("variant") / "test-02-supertiny";
@@ -996,6 +1055,83 @@ CATCH_TEST_CASE("kadayashi_featmatgen matches calculate_read_alignment on real d
     CATCH_CHECK(has_non_zero_feature_value(result, 6));  // SNP QV
 
     compare_feature_matrix_logical_data(result, expected);
+}
+
+CATCH_TEST_CASE("kadayashi_featmatgen downsampling", TEST_GROUP) {
+    const TempDir temp_dir = make_temp_dir("kadayashi_featmatgen_short_read_downsample");
+    const std::filesystem::path temp_in_bam_fn = temp_dir.m_path / "in.aln.bam";
+
+    constexpr int32_t NUM_READS_TARGET = kadayashi::DOWNSAMPLE_READCAP;  // target read depth
+    constexpr int32_t NUM_READS_REDUNDANT = 50;
+    constexpr int32_t NUM_READS = NUM_READS_TARGET + NUM_READS_REDUNDANT;  // add some extra depth
+    const std::string refseq(50, 'A');
+    const std::string read_seq(50, 'A');
+    const std::vector<std::pair<std::string, std::string>> targets{{"ref", refseq}};
+
+    std::vector<std::string> qnames;
+    std::vector<SyntheticBamRecord> records;
+    qnames.reserve(NUM_READS);
+    records.reserve(NUM_READS);
+
+    for (int32_t i = 0; i < NUM_READS; ++i) {
+        qnames.emplace_back("read_" + std::to_string(i));
+        records.push_back({
+                .qname = qnames.back(),
+                .pos = 0,
+                .flag = static_cast<uint16_t>((i % 2) == 0 ? 0 : BAM_FREVERSE),
+                .mapq = 60,
+                .cigar = "50M",
+                .seq = read_seq,
+                .md = "50",
+                .nm = 0,
+        });
+    }
+
+    write_synthetic_bam(temp_in_bam_fn, targets, records);
+
+    dorado::secondary::BamFile bam_file(temp_in_bam_fn, 1);
+    CATCH_REQUIRE(bam_file.fp());
+    CATCH_REQUIRE(bam_file.idx());
+    CATCH_REQUIRE(bam_file.hdr());
+
+    const std::unordered_map<std::string, int32_t> qname2hp{};
+    constexpr uint32_t REF_START = 0;
+    constexpr uint32_t REF_END = 50;
+    constexpr int64_t NUM_DTYPES = 1;
+    constexpr int32_t TAG_VALUE = 0;
+    constexpr bool TAG_KEEP_MISSING = false;
+    constexpr int32_t MIN_MAPQ = 1;
+    constexpr bool ROW_PER_READ = false;
+    constexpr bool INCLUDE_DWELLS = false;
+    constexpr bool INCLUDE_HAPLOTYPE_COLUMN = false;
+    constexpr bool INCLUDE_SNP_QV = false;
+    constexpr int32_t MAX_READS = 100;
+    constexpr bool RIGHT_ALIGN_INSERTIONS = true;
+    constexpr double MIN_SNP_ACCURACY = 0.0;
+
+    const dorado::secondary::ReadAlignmentData expected =
+            dorado::secondary::calculate_read_alignment(
+                    bam_file, "ref", REF_START, REF_END, qname2hp, NUM_DTYPES, EMPTY_DTYPES,
+                    EMPTY_STRING, TAG_VALUE, TAG_KEEP_MISSING, EMPTY_STRING, MIN_MAPQ, ROW_PER_READ,
+                    INCLUDE_DWELLS, INCLUDE_HAPLOTYPE_COLUMN, INCLUDE_SNP_QV,
+                    dorado::secondary::HaplotagSource::UNPHASED, MAX_READS, RIGHT_ALIGN_INSERTIONS,
+                    MIN_SNP_ACCURACY);
+
+    const kadayashi::MedakaFeatureMatrixOptions options = make_medaka_feature_matrix_options(
+            INCLUDE_DWELLS, MIN_SNP_ACCURACY, MAX_READS, ROW_PER_READ);
+    const dorado::secondary::ReadAlignmentData result =
+            kadayashi::gen_medaka_feature_matrix_wrapper(bam_file, "ref", REF_START, REF_END,
+                                                         qname2hp, options);
+
+    CATCH_REQUIRE(expected.n_pos == static_cast<int32_t>(std::size(refseq)));
+    CATCH_REQUIRE(expected.n_reads <= NUM_READS_TARGET);
+    CATCH_REQUIRE(expected.n_reads <= MAX_READS);
+    CATCH_CHECK(result.n_pos == expected.n_pos);
+    CATCH_CHECK(result.n_reads == expected.n_reads);
+    CATCH_CHECK(result.read_ids_left.size() <= static_cast<size_t>(NUM_READS_TARGET));
+    CATCH_CHECK(result.read_ids_left.size() <= static_cast<size_t>(MAX_READS));
+    CATCH_CHECK(result.read_ids_right.size() <= static_cast<size_t>(NUM_READS_TARGET));
+    CATCH_CHECK(result.read_ids_right.size() <= static_cast<size_t>(MAX_READS));
 }
 
 CATCH_TEST_CASE("kadayashi_featmatgen no input", TEST_GROUP) {
