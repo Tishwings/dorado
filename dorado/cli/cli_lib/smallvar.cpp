@@ -161,7 +161,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
         parser.add_argument("--models-directory")
                 .help("Optional directory to search for existing models or download new models "
                       "into.");
-        parser.add_argument("--gvcf").help("Output a gVCF instead of a VCF.").flag();
         parser.add_argument("--ambig-ref")
                 .help("Decode variants at ambiguous reference positions.")
                 .flag();
@@ -396,8 +395,7 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.models_directory = model_resolution::get_models_directory(
             cli::get_optional_argument<std::string>("--models-directory", parser));
     opt.model_str = parser.get<std::string>("model-override");
-    opt.out_format = parser.get<bool>("gvcf") ? VariantCallingFormatEnum::GVCF
-                                              : VariantCallingFormatEnum::VCF;
+    opt.out_format = VariantCallingFormatEnum::VCF;
     opt.threads = parser.get<int>("threads");
     opt.threads = (opt.threads == 0) ? std::thread::hardware_concurrency() : (opt.threads);
     opt.infer_threads = parser.get<int>("infer-threads");
