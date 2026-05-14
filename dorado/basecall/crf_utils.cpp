@@ -5,6 +5,9 @@
 #include "model/TxModel.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/memory_utils.h"
+#include "utils/string_utils.h"
+
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -208,6 +211,18 @@ ModuleHolder<AnyModule> load_crf_model(const BasecallModelConfig &model_config,
 
 size_t auto_calculate_num_runners(const BasecallModelConfig &model_config, float memory_fraction) {
     auto model_name = model_config.model_name();
+
+    // Allow force-overriding the number of CPU runners.
+    if (const char *num_runners_str = getenv("DORADO_CPU_RUNNERS"); num_runners_str != nullptr) {
+        auto num_runners = utils::from_chars<size_t>(num_runners_str);
+        if (num_runners) {
+            spdlog::info("Overriding CPU runners to {}", num_runners.value());
+            return num_runners.value();
+        } else {
+            throw std::runtime_error(
+                    fmt::format("Invalid DORADO_CPU_RUNNERS: '{}'", num_runners_str));
+        }
+    }
 
     // very hand-wavy determination
     // these numbers were determined empirically by running 1, 2, 4 and 8 runners for each model
