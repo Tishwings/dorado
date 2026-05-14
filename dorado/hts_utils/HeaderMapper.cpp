@@ -123,7 +123,7 @@ HeaderMapper::HeaderMapper(std::optional<std::string> kit_name,
           m_strip_alignment(strip_alignment),
           m_merged_headers_map(std::make_shared<HeaderMapper::HeaderMap>()) {
     if (m_kit_name) {
-        m_fallback_read_attrs.barcode_id = "unclassified";
+        m_fallback_read_attrs.barcode_id = UNCLASSIFIED_STR;
         m_read_group_to_attributes[""] = m_fallback_read_attrs;
     }
     m_merged_headers_map->emplace(m_fallback_read_attrs,
@@ -143,8 +143,8 @@ void HeaderMapper::process(const std::unordered_map<std::string, ReadGroup>& rea
         attrs.trim_flags = read_group.trim_flags;
 
         if (m_kit_name) {
-            read_group.barcode_id = "unclassified";
-            attrs.barcode_id = "unclassified";
+            read_group.barcode_id = UNCLASSIFIED_STR;
+            attrs.barcode_id = UNCLASSIFIED_STR;
             read_group.barcode_alias = "";
             attrs.barcode_alias = "";
         }
@@ -214,12 +214,12 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
             std::string_view alias = rg_data.data.barcode_alias.empty()
                                              ? rg_data.data.barcode_id
                                              : rg_data.data.barcode_alias;
-            if (!alias.empty() && alias != "unclassified") {
+            if (!alias.empty() && alias != UNCLASSIFIED_STR) {
                 if (auto index = rg_data.id.find(alias); index != rg_data.id.npos && index != 0) {
                     rg_data.id = rg_data.id.substr(0, index - 1);
                 }
             }
-            rg_data.data.barcode_id = "unclassified";
+            rg_data.data.barcode_id = UNCLASSIFIED_STR;
             rg_data.data.barcode_alias.clear();
         }
 
@@ -242,7 +242,7 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
         assign_not_empty(attrs.barcode_alias, rg_data.data.barcode_alias);
         attrs.trim_flags = rg_data.data.trim_flags;
 
-        if (attrs.barcode_alias == attrs.barcode_id || attrs.barcode_alias == "unclassified") {
+        if (attrs.barcode_alias == attrs.barcode_id || attrs.barcode_alias == UNCLASSIFIED_STR) {
             // File headers may have both the barcode and alias set to the same value
             // But when we classify we leave the alias blank if it is unused, so clear it here to match
             attrs.barcode_alias.clear();
@@ -259,7 +259,7 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
         }
 
         std::map<std::string, std::string> kv_pairs;
-        if (!(attrs.barcode_id.empty() || attrs.barcode_id == "unclassified")) {
+        if (!(attrs.barcode_id.empty() || attrs.barcode_id == UNCLASSIFIED_STR)) {
             kv_pairs = {
                     {"SM", attrs.barcode_id},
                     {"al", attrs.barcode_alias.empty() ? attrs.barcode_id : attrs.barcode_alias},
@@ -320,13 +320,13 @@ void HeaderMapper::process_bam(const std::filesystem::path& path) {
             // convert to unclassified - we'll use this to create all the barcoded headers later
             std::string_view alias = read_attrs.barcode_alias.empty() ? read_attrs.barcode_id
                                                                       : read_attrs.barcode_alias;
-            if (!alias.empty() && alias != "unclassified") {
+            if (!alias.empty() && alias != UNCLASSIFIED_STR) {
                 if (auto index = read_group_id.find(alias);
                     index != read_group_id.npos && index != 0) {
                     read_group_id = read_group_id.substr(0, index - 1);
                 }
             }
-            read_attrs.barcode_id = "unclassified";
+            read_attrs.barcode_id = UNCLASSIFIED_STR;
             read_attrs.barcode_alias.clear();
         }
         m_has_barcodes |= !read_attrs.barcode_id.empty();
@@ -354,13 +354,13 @@ void HeaderMapper::add_barcodes() {
     for (auto [id, attrs] : m_read_group_to_attributes) {
         const auto& base_header = merged_headers[attrs];
         std::string rg_id = id;
-        if (attrs.barcode_id != "unclassified") {
+        if (attrs.barcode_id != UNCLASSIFIED_STR) {
             std::string_view alias =
                     attrs.barcode_alias.empty() ? attrs.barcode_id : attrs.barcode_alias;
             if (auto index = rg_id.find(alias); index != rg_id.npos && index != 0) {
                 rg_id = rg_id.substr(0, index - 1);
             }
-            attrs.barcode_id = "unclassified";
+            attrs.barcode_id = UNCLASSIFIED_STR;
             attrs.barcode_alias = "";
         }
 
@@ -505,7 +505,7 @@ std::unordered_map<std::string, HtsData::ReadAttributes> HeaderMapper::get_read_
         assign_not_empty(attrs.sample_id, get_tag("LB", tags));
         assign_not_empty(attrs.barcode_id, get_tag("SM", tags));
         assign_not_empty(attrs.barcode_alias, get_tag("al", tags));
-        if (attrs.barcode_alias == attrs.barcode_id || attrs.barcode_alias == "unclassified") {
+        if (attrs.barcode_alias == attrs.barcode_id || attrs.barcode_alias == UNCLASSIFIED_STR) {
             // File headers may have both the barcode and alias set to the same value
             // But when we classify we leave the alias blank if it is unused, so clear it here to match
             attrs.barcode_alias.clear();

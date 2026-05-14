@@ -12,6 +12,7 @@
 namespace dorado {
 
 namespace {
+
 void assign_not_empty(std::string& attr_target, const std::string_view maybe_value) {
     if (!maybe_value.empty()) {
         attr_target = maybe_value;
@@ -135,7 +136,7 @@ void ReadInitialiser::undemux_read_group(HtsData& data) const {
         bam_aux_del(record, al_tag);
     } else if (const auto bc_tag = bam_aux_get(record, "BC"); bc_tag != nullptr) {
         alias = bam_aux2Z(bc_tag);
-        bam_aux_update_str(record, "BC", 13, "unclassified");
+        bam_aux_update_str(record, "BC", UNCLASSIFIED_STR.length() + 1, UNCLASSIFIED_STR.c_str());
     }
 
     if (const auto rg_tag = bam_aux_get(record, "RG"); rg_tag != nullptr) {
