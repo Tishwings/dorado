@@ -43,6 +43,8 @@ private:
 
 LabelSchemeType parse_label_scheme_type(const std::string& type);
 
+std::string label_scheme_type_to_string(const LabelSchemeType type);
+
 /**
  * \brief Decodes consensus bases for an input tensor of forms [B x N x C] or [B x N x H x C].
  *          Here:

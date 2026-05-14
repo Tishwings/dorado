@@ -29,6 +29,17 @@ LabelSchemeType parse_label_scheme_type(const std::string& type) {
     throw std::runtime_error{"Unknown label scheme type: '" + type + "'!"};
 }
 
+std::string label_scheme_type_to_string(const LabelSchemeType label_scheme_type) {
+    switch (label_scheme_type) {
+    case LabelSchemeType::HAPLOID:
+        return "HaploidLabelScheme";
+    case LabelSchemeType::DIPLOID:
+        return "DiploidLabelScheme";
+    default:
+        throw std::runtime_error{"Unknown LabelSchemeType!"};
+    }
+}
+
 int32_t label_scheme_type_to_ploidy(const LabelSchemeType label_scheme_type) {
     switch (label_scheme_type) {
     case LabelSchemeType::HAPLOID:
