@@ -309,7 +309,7 @@ kadayashi::varcall_result_t EncoderReadAlignment::produce_haplotags(
             fmt::format("produce_haplotags-{}-{}-{}", ref_name, ref_start, ref_end);
     utils::ScopedProfileRange spr1(spr_label.c_str(), 5);
 
-    spdlog::debug("Haplotagging region: {}:{}-{}, source = {}", ref_name, (ref_start + 1), ref_end,
+    spdlog::trace("Haplotagging region: {}:{}-{}, source = {}", ref_name, (ref_start + 1), ref_end,
                   secondary::haplotag_source_to_string(m_hap_source));
 
     if (m_hap_source == secondary::HaplotagSource::BIN_FILE) {

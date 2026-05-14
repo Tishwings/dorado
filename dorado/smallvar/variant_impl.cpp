@@ -338,7 +338,7 @@ process_single_bam_window(
     secondary::Sample sample = encoder.encode_region(ref_name, bam_window.start, bam_window.end,
                                                      bam_window.seq_id, kadayashi_result.qname2hp);
 
-    spdlog::trace(
+    spdlog::debug(
             "[process_single_bam_window tid = {}] Generated sample for region: {}:{}-{}, sample: "
             "[{}]",
             tid, ref_name, (bam_window.start + 1), bam_window.end,
@@ -890,18 +890,18 @@ void worker_infer_samples_in_parallel(
             spdlog::trace("Post-move, batch has refs: {}", batched_data.refseqs ? true : false);
         }
 
-        const std::string input_batch_tensor_shape =
+        const std::string input_batch_tensor_shape_str =
                 utils::tensor_shape_as_string(batched_data.features);
 
         // Debug output.
         {
-            spdlog::trace(
-                    "[consumer {}] About to call forward(): batched_data.features.size() = [{}], "
-                    "approx "
-                    "size: {} MB.",
-                    tid, input_batch_tensor_shape,
-                    batched_data.features.numel() * batched_data.features.element_size() /
-                            (1024.0 * 1024.0));
+            const std::vector<int64_t> input_batch_tensor_shape =
+                    batched_data.features.sizes().vec();
+            const double estimated_memory = model.estimate_batch_memory(input_batch_tensor_shape);
+            spdlog::debug(
+                    "[consumer {}] Running inference: batch tensor shape = [{}], estimated memory "
+                    "= {:.2f} GB",
+                    tid, input_batch_tensor_shape_str, estimated_memory);
         }
 
         // Inference.
@@ -983,7 +983,7 @@ void worker_infer_samples_in_parallel(
                     "move_to_device: {} ms, forward: {} ms, move_to_host: {} ms, "
                     "total = {}, batched_data.features.shape = [{}]",
                     tid, time_collate, time_move_to_device, time_forward, time_move_to_host,
-                    time_total, input_batch_tensor_shape);
+                    time_total, input_batch_tensor_shape_str);
         }
 
         return output;
