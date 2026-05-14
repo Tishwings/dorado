@@ -651,12 +651,15 @@ std::string BasecallModelConfig::to_string() const {
 
     if (is_lstm_model()) {
         oss << " model_type: lstm {";
-    }
-    if (is_tx_model()) {
+    } else if (is_flstm_model()) {
+        oss << " model_type: flstm {";
+    } else if (is_tx_model()) {
         oss << " model_type: tx {" 
             << " crf_encoder: " << tx->crf.to_string()
             << " transformer: " << tx->tx.to_string()
             << " upsample: " << tx->upsample.to_string();
+    } else {
+        throw std::logic_error("Unknown model type");
     }
     oss << "}}";
     return oss.str();
