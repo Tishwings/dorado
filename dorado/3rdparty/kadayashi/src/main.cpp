@@ -90,7 +90,7 @@ int main_featmatgen(const std::filesystem::path &fn_ref,
                                   mfm_options.min_snp_accuracy)
                         : kadayashi::gen_medaka_feature_matrix(hf_view, ref_name, ref_start,
                                                                ref_end, qname2hp, mfm_options);
-        fprintf(stderr, "[time] feature matrix generation used %.2fs\n",
+        fprintf(stdout, "[time::%s] feature matrix generation used %.2fs\n", __func__,
                 kadayashi::get_timestamp() - timestamp);
 
         kadayashi::print_medaka_feature_matrix(fn_out, mfm);
@@ -113,7 +113,7 @@ int main_featmatgen(const std::filesystem::path &fn_ref,
         }
 
         for (const std::string &chrom : ref_names) {
-            fprintf(stderr, "[dbg] ---- at %s ----\n", chrom.c_str());
+            fprintf(stdout, "[dbg::%s] ---- at %s ----\n", __func__, chrom.c_str());
 
             const std::string refseq = kadayashi::hts_utils::fetch_seq(fai, chrom);
 
@@ -154,8 +154,8 @@ int main_featmatgen(const std::filesystem::path &fn_ref,
                                         : kadayashi::gen_medaka_feature_matrix(
                                                   hf_view, chrom, ref_start, ref_end, qname2hp,
                                                   mfm_options);
-                        fprintf(stderr, "[dbg] %s %d-%d done; junk %d\n", chrom.c_str(),
-                                (int)ref_start, (int)ref_end,
+                        fprintf(stdout, "[dbg::%s] %s %d-%d done; junk %d\n", chrom.c_str(),
+                                __func__, (int)ref_start, (int)ref_end,
                                 mfm.matrix.size() > 0 ? (int)mfm.matrix[0] : -1);
                     }
                 }
@@ -170,7 +170,8 @@ int main_featmatgen(const std::filesystem::path &fn_ref,
                 th.join();
             }
         }
-        fprintf(stderr, "[time] total: %.2fs\n", kadayashi::get_timestamp() - timestamp);
+        fprintf(stdout, "[time::%s] total: %.2fs\n", __func__,
+                kadayashi::get_timestamp() - timestamp);
     }
 
     return 0;
@@ -279,7 +280,7 @@ int main(int argc, char *argv[]) {
         std::string fn_out_vcf = clio.output_prefix.string() + ".vcf";
         kadayashi::str2int_t qname2hp = kadayashi::kadayashi_phased_variant_calling_threaded(
                 clio.fn_ref, clio.fn_bam, clio.n_threads, fn_out_vcf, clio.output_prefix,
-                clio.varcall_w, clio.varcall_regions, clio.pp.min_base_quality,
+                clio.varcall_w, clio.varcall_regions, clio.pp.readgroup, clio.pp.min_base_quality,
                 clio.pp.min_varcall_coverage, clio.pp.min_varcall_fraction, clio.pp.max_clipping,
                 clio.pp.min_strand_cov, clio.pp.min_strand_cov_frac,
                 clio.pp.max_gapcompressed_seqdiv, clio.ambig_ref, clio.pp.disable_region_expansion,

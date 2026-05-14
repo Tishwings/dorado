@@ -28,6 +28,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #define TEST_GROUP "[KadayashiInterfaceTest]"
@@ -65,6 +66,7 @@ struct SyntheticBamRecord {
     std::string_view md{};
     std::optional<int32_t> nm{0};
     std::optional<int32_t> hp_tag{};
+    std::string readgroup{"rg0"};
 };
 
 const std::vector<std::string> EMPTY_DTYPES;
@@ -81,10 +83,19 @@ std::vector<uint32_t> parse_cigar_from_string_hts(const std::string_view cigar) 
 }
 
 dorado::SamHdrPtr make_synthetic_bam_header(
-        const std::span<const std::pair<std::string, std::string>> targets) {
+        const std::span<const std::pair<std::string, std::string>> targets,
+        const std::span<const SyntheticBamRecord> records) {
     std::string text = "@HD\tVN:1.6\tSO:unknown\n";
     for (const auto &[name, seq] : targets) {
         text += "@SQ\tSN:" + name + "\tLN:" + std::to_string(std::size(seq)) + "\n";
+    }
+
+    std::unordered_set<std::string> readgroups;
+    for (const SyntheticBamRecord &record : records) {
+        readgroups.insert(record.readgroup);
+    }
+    for (const std::string &rg : readgroups) {
+        text += "@RG\tID:" + rg + "\n";
     }
 
     return dorado::SamHdrPtr{sam_hdr_parse(std::size(text), text.c_str())};
@@ -134,6 +145,12 @@ dorado::BamPtr make_synthetic_bam_record(const SyntheticBamRecord &record) {
                        reinterpret_cast<const uint8_t *>(&(*record.hp_tag)));
     }
 
+    if (!record.readgroup.empty()) {
+        bam_aux_append(
+                ret.get(), "RG", 'Z', record.readgroup.size() + 1,
+                reinterpret_cast<const uint8_t *>(const_cast<char *>(record.readgroup.c_str())));
+    }
+
     return ret;
 }
 
@@ -142,7 +159,7 @@ void write_synthetic_bam(const std::filesystem::path &out_fn,
                          const std::span<const SyntheticBamRecord> records) {
     dorado::utils::HtsFile hts_file(out_fn.string(), dorado::utils::HtsFile::OutputMode::BAM, 1,
                                     true);
-    dorado::SamHdrPtr header = make_synthetic_bam_header(targets);
+    dorado::SamHdrPtr header = make_synthetic_bam_header(targets, records);
     hts_file.set_header(header.get());
     for (const SyntheticBamRecord &record : records) {
         dorado::BamPtr bam_record = make_synthetic_bam_record(record);
@@ -366,6 +383,71 @@ CATCH_TEST_CASE("kadayashi variant pileup downsampling", TEST_GROUP) {
     CATCH_CHECK(result.reads.size() <= NUM_READS_TARGET);
 }
 
+CATCH_TEST_CASE("kadayashi phasing and varcall pileup readgroup filtering", TEST_GROUP) {
+    const TempDir temp_dir = make_temp_dir("kadayashi_readgroup_filter");
+    const std::filesystem::path temp_in_bam_fn = temp_dir.m_path / "in.aln.bam";
+
+    const std::string refseq(100, 'A');
+    const std::vector<std::pair<std::string, std::string>> targets{{"ref", refseq}};
+
+    const std::string read_seq = [] {
+        std::string seq(50, 'A');
+        seq[10] = 'T';
+        return seq;
+    }();
+
+    constexpr int32_t NUM_READS = 10;
+    std::vector<std::string> qnames;
+    std::vector<SyntheticBamRecord> records;
+    qnames.reserve(NUM_READS * 2);   // we will generate two read groups
+    records.reserve(NUM_READS * 2);  // (same as above)
+
+    for (int rg = 0; rg < 2; rg++) {
+        for (int32_t i = 0; i < NUM_READS; ++i) {
+            qnames.emplace_back("read_" + std::to_string(i + NUM_READS * rg));
+            records.push_back({.qname = qnames.back(),
+                               .pos = 0,
+                               .flag = static_cast<uint16_t>((i % 2) == 0 ? 0 : BAM_FREVERSE),
+                               .mapq = 60,
+                               .cigar = "50M",
+                               .seq = read_seq,
+                               .md = "10A39",
+                               .nm = 1,
+                               .readgroup = "rg" + std::to_string(rg)});
+        }
+    }
+
+    write_synthetic_bam(temp_in_bam_fn, targets, records);
+    dorado::secondary::BamFile bam_file(temp_in_bam_fn, 1);
+    dorado::secondary::BamFileView bam_view = bam_file.get_view();
+
+    kadayashi::pileup_pars_t pp{};
+    pp.min_base_quality = 0;
+    pp.min_mapq = 1;
+    pp.min_varcall_coverage = 1;
+    pp.min_varcall_fraction = 0.0f;
+    pp.max_clipping = 100000;
+    pp.min_strand_cov = 1;
+    pp.min_strand_cov_frac = 0.0f;
+    pp.retain_het_only = false;
+    pp.disable_low_complexity_masking = true;
+    pp.disable_region_expansion = true;
+    pp.readgroup = "rg0";
+
+    const kadayashi::chunk_t result =
+            kadayashi::variant_pileup_ht(bam_view, {}, nullptr, nullptr, "ref", 0, 100, pp);
+    CATCH_CHECK(result.is_valid);
+    CATCH_CHECK(result.qnames.size() == NUM_READS);  // should select only one readgroup
+    CATCH_CHECK(result.reads.size() == NUM_READS);
+
+    pp.readgroup = "";
+    const kadayashi::chunk_t result_both =
+            kadayashi::variant_pileup_ht(bam_view, {}, nullptr, nullptr, "ref", 0, 100, pp);
+    CATCH_CHECK(result_both.is_valid);
+    CATCH_CHECK(result_both.qnames.size() == NUM_READS * 2);  // should select both readgroups
+    CATCH_CHECK(result_both.reads.size() == NUM_READS * 2);
+}
+
 CATCH_TEST_CASE("kadayashi dvr and simple, normal case", TEST_GROUP) {
     // Input data.
     const std::filesystem::path test_data_dir = get_data_dir("variant") / "test-02-supertiny";
@@ -417,7 +499,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple, normal case", TEST_GROUP) {
         const std::unordered_map<std::string, int32_t> result =
                 kadayashi::kadayashi_dvr_single_region_wrapper(
                         bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                        fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999,
+                        fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, "" /*readgroup*/,
                         DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY, MIN_VARCALL_COVERAGE,
                         MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV, MIN_STRAND_COV_FRAC,
                         MAX_GAPCOMPRESSED_SEQDIV);
@@ -428,7 +510,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple, normal case", TEST_GROUP) {
         const std::unordered_map<std::string, int32_t> result =
                 kadayashi::kadayashi_simple_single_region_wrapper(
                         bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                        fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999,
+                        fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, "" /*readgroup*/,
                         DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY, MIN_VARCALL_COVERAGE,
                         MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV, MIN_STRAND_COV_FRAC,
                         MAX_GAPCOMPRESSED_SEQDIV);
@@ -467,7 +549,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple, empty region", TEST_GROUP) {
         const std::unordered_map<std::string, int32_t> result =
                 kadayashi::kadayashi_dvr_single_region_wrapper(
                         bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                        fastx_reader.get_raw_faidx_ptr(), "chr20", 200000, 200001,
+                        fastx_reader.get_raw_faidx_ptr(), "chr20", 200000, 200001, "" /*readgroup*/,
                         DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY, MIN_VARCALL_COVERAGE,
                         MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV, MIN_STRAND_COV_FRAC,
                         MAX_GAPCOMPRESSED_SEQDIV);
@@ -479,7 +561,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple, empty region", TEST_GROUP) {
         const std::unordered_map<std::string, int32_t> result =
                 kadayashi::kadayashi_dvr_single_region_wrapper(
                         bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                        fastx_reader.get_raw_faidx_ptr(), "chr20", 200000, 199999,
+                        fastx_reader.get_raw_faidx_ptr(), "chr20", 200000, 199999, "" /*readgroup*/,
                         DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY, MIN_VARCALL_COVERAGE,
                         MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV, MIN_STRAND_COV_FRAC,
                         MAX_GAPCOMPRESSED_SEQDIV);
@@ -491,7 +573,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple, empty region", TEST_GROUP) {
         const std::unordered_map<std::string, int32_t> result =
                 kadayashi::kadayashi_simple_single_region_wrapper(
                         bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                        fastx_reader.get_raw_faidx_ptr(), "chr20", 200000, 200001,
+                        fastx_reader.get_raw_faidx_ptr(), "chr20", 200000, 200001, "" /*readgroup*/,
                         DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY, MIN_VARCALL_COVERAGE,
                         MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV, MIN_STRAND_COV_FRAC,
                         MAX_GAPCOMPRESSED_SEQDIV);
@@ -503,7 +585,7 @@ CATCH_TEST_CASE("kadayashi dvr and simple, empty region", TEST_GROUP) {
         const std::unordered_map<std::string, int32_t> result =
                 kadayashi::kadayashi_simple_single_region_wrapper(
                         bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                        fastx_reader.get_raw_faidx_ptr(), "chr20", 200000, 199999,
+                        fastx_reader.get_raw_faidx_ptr(), "chr20", 200000, 199999, "" /*readgroup*/,
                         DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY, MIN_VARCALL_COVERAGE,
                         MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV, MIN_STRAND_COV_FRAC,
                         MAX_GAPCOMPRESSED_SEQDIV);
@@ -542,9 +624,9 @@ CATCH_TEST_CASE("kadayashi dvr and simple nonexistent chromosome", TEST_GROUP) {
                 kadayashi::kadayashi_dvr_single_region_wrapper(
                         bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
                         fastx_reader.get_raw_faidx_ptr(), "Nonexistent", 200000, 200001,
-                        DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY, MIN_VARCALL_COVERAGE,
-                        MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV, MIN_STRAND_COV_FRAC,
-                        MAX_GAPCOMPRESSED_SEQDIV);
+                        "" /*readgroup*/, DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY,
+                        MIN_VARCALL_COVERAGE, MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV,
+                        MIN_STRAND_COV_FRAC, MAX_GAPCOMPRESSED_SEQDIV);
         CATCH_CHECK(compare_haptags(result, expected));
     }
 
@@ -553,9 +635,9 @@ CATCH_TEST_CASE("kadayashi dvr and simple nonexistent chromosome", TEST_GROUP) {
                 kadayashi::kadayashi_simple_single_region_wrapper(
                         bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
                         fastx_reader.get_raw_faidx_ptr(), "Nonexistent", 200000, 200001,
-                        DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY, MIN_VARCALL_COVERAGE,
-                        MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV, MIN_STRAND_COV_FRAC,
-                        MAX_GAPCOMPRESSED_SEQDIV);
+                        "" /*readgroup*/, DISABLE_INTERVAL_EXPANSION, MIN_BASE_QUALITY,
+                        MIN_VARCALL_COVERAGE, MIN_VARCALL_FRACTION, MAX_CLIPPING, MIN_STRAND_COV,
+                        MIN_STRAND_COV_FRAC, MAX_GAPCOMPRESSED_SEQDIV);
         CATCH_CHECK(compare_haptags(result, expected));
     }
 }
@@ -637,10 +719,10 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
     CATCH_SECTION("simple phasing varcall") {
         const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
-                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
-                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
-                false /*ambig_ref*/);
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, "" /*readgroup*/,
+                pp.disable_region_expansion, pp.min_base_quality, pp.min_varcall_coverage,
+                pp.min_varcall_fraction, pp.max_clipping, 1 /*min strand cov*/, 0.033f,
+                pp.max_gapcompressed_seqdiv, false, false /*ambig_ref*/);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
         CATCH_CHECK(result.variants == expected.variants);
     }
@@ -649,10 +731,10 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
     CATCH_SECTION("simple phasing varcall, variant at chunk start") {
         const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                fastx_reader.get_raw_faidx_ptr(), "chr20", 93, 9999, pp.disable_region_expansion,
-                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
-                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
-                false /*ambig_ref*/);
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 93, 9999, "" /*readgroup*/,
+                pp.disable_region_expansion, pp.min_base_quality, pp.min_varcall_coverage,
+                pp.min_varcall_fraction, pp.max_clipping, 1 /*min strand cov*/, 0.033f,
+                pp.max_gapcompressed_seqdiv, false, false /*ambig_ref*/);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
         CATCH_CHECK(result.variants == expected.variants);
     }
@@ -662,9 +744,10 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
         const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
                 fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 8321 /*end-inclusive*/,
-                pp.disable_region_expansion, pp.min_base_quality, pp.min_varcall_coverage,
-                pp.min_varcall_fraction, pp.max_clipping, 1 /*min strand cov*/, 0.033f,
-                pp.max_gapcompressed_seqdiv, false, false /*ambig_ref*/);
+                "" /*readgroup*/, pp.disable_region_expansion, pp.min_base_quality,
+                pp.min_varcall_coverage, pp.min_varcall_fraction, pp.max_clipping,
+                1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
+                false /*ambig_ref*/);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected.qname2hp));
         CATCH_CHECK(result.variants == expected.variants);
     }
@@ -729,10 +812,10 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
         // dvr and simple phasing share the same variant calling step
         const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
-                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
-                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, true,
-                false /*ambig_ref*/);
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, "" /*readgroup*/,
+                pp.disable_region_expansion, pp.min_base_quality, pp.min_varcall_coverage,
+                pp.min_varcall_fraction, pp.max_clipping, 1 /*min strand cov*/, 0.033f,
+                pp.max_gapcompressed_seqdiv, true, false /*ambig_ref*/);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected_dvr.qname2hp));
         CATCH_CHECK(result.variants == expected_dvr.variants);
     }
@@ -740,10 +823,10 @@ CATCH_TEST_CASE("kadayashi_varcall normal case", TEST_GROUP) {
     CATCH_SECTION("use wrong clipping threshold") {
         const kadayashi::varcall_result_t result3 = kadayashi::kadayashi_phase_and_varcall_wrapper(
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
-                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction, 100,
-                1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
-                false /*ambig_ref*/);
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, "" /*readgroup*/,
+                pp.disable_region_expansion, pp.min_base_quality, pp.min_varcall_coverage,
+                pp.min_varcall_fraction, 100, 1 /*min strand cov*/, 0.033f,
+                pp.max_gapcompressed_seqdiv, false, false /*ambig_ref*/);
         CATCH_CHECK(result3.variants.empty());
     }
 }
@@ -907,10 +990,10 @@ CATCH_TEST_CASE("kadayashi_varcall ambig-ref", TEST_GROUP) {
     CATCH_SECTION("ambig-ref true") {
         const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
-                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
-                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, false,
-                true);
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, "" /*readgroup*/,
+                pp.disable_region_expansion, pp.min_base_quality, pp.min_varcall_coverage,
+                pp.min_varcall_fraction, pp.max_clipping, 1 /*min strand cov*/, 0.033f,
+                pp.max_gapcompressed_seqdiv, false, true);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected_ambig_ref_true.qname2hp));
         CATCH_CHECK(result.variants == expected_ambig_ref_true.variants);
     }
@@ -919,10 +1002,10 @@ CATCH_TEST_CASE("kadayashi_varcall ambig-ref", TEST_GROUP) {
         // dvr and simple phasing share the same variant calling step
         const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
                 bam_reader.fp(), bam_reader.idx(), bam_reader.hdr(),
-                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, pp.disable_region_expansion,
-                pp.min_base_quality, pp.min_varcall_coverage, pp.min_varcall_fraction,
-                pp.max_clipping, 1 /*min strand cov*/, 0.033f, pp.max_gapcompressed_seqdiv, true,
-                false);
+                fastx_reader.get_raw_faidx_ptr(), "chr20", 0, 9999, "" /*readgroup*/,
+                pp.disable_region_expansion, pp.min_base_quality, pp.min_varcall_coverage,
+                pp.min_varcall_fraction, pp.max_clipping, 1 /*min strand cov*/, 0.033f,
+                pp.max_gapcompressed_seqdiv, true, false);
         CATCH_CHECK(compare_haptags(result.qname2hp, expected_ambig_ref_false.qname2hp));
         CATCH_CHECK(result.variants == expected_ambig_ref_false.variants);
     }

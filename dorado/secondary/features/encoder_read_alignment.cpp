@@ -329,10 +329,10 @@ kadayashi::varcall_result_t EncoderReadAlignment::produce_haplotags(
         const kadayashi::varcall_result_t result = kadayashi::kadayashi_phase_and_varcall_wrapper(
                 m_bam_file.fp(), m_bam_file.idx(), m_bam_file.hdr(),
                 m_fastx_reader.get_raw_faidx_ptr(), ref_name.c_str(), ref_start, ref_end,
-                opt.disable_interval_expansion, opt.min_base_quality, opt.min_varcall_coverage,
-                opt.min_varcall_fraction, opt.max_clipping, opt.min_strand_cov,
-                opt.min_strand_cov_frac, opt.max_gapcompressed_seqdiv, opt.use_dvr_for_phasing,
-                opt.ambig_ref);
+                m_read_group, opt.disable_interval_expansion, opt.min_base_quality,
+                opt.min_varcall_coverage, opt.min_varcall_fraction, opt.max_clipping,
+                opt.min_strand_cov, opt.min_strand_cov_frac, opt.max_gapcompressed_seqdiv,
+                opt.use_dvr_for_phasing, opt.ambig_ref);
 
         LOG_TRACE("Kadayashi done on region: {}:{}-{}", ref_name, (ref_start + 1), ref_end);
 

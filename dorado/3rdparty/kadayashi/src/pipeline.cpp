@@ -1621,6 +1621,7 @@ std::vector<varcall_result_and_localphasinght_t> kadayashi_phase_and_varcall_mul
         const int n_bam_threads,
         const std::string_view ref_name,
         const std::vector<std::pair<uint32_t, uint32_t>> &query_intervals,
+        const std::string_view readgroup,
         const bool disable_interval_expansion,
         const int min_base_quality,
         const int min_varcall_coverage,
@@ -1663,7 +1664,7 @@ std::vector<varcall_result_and_localphasinght_t> kadayashi_phase_and_varcall_mul
                 const uint32_t ref_end = query_intervals[jobID].second;
                 ck_and_varcall_result_t tmp = kadayashi_phase_and_varcall(
                         hf.fp(), hf.idx(), hf.hdr(), fp_fai.get_raw_faidx_ptr(), ref_name,
-                        ref_start, ref_end, disable_interval_expansion, min_base_quality,
+                        ref_start, ref_end, readgroup, disable_interval_expansion, min_base_quality,
                         min_varcall_coverage, min_varcall_fraction, max_clipping, min_strand_cov,
                         min_strand_cov_frac, max_gapcompressed_seqdiv, use_dvr_for_phasing,
                         ambig_ref);
@@ -2118,6 +2119,7 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
                                                     const std::filesystem::path &prefix_out_unsr,
                                                     const int window_size,
                                                     const std::vector<std::string> &query_regions,
+                                                    const std::string_view readgroup,
                                                     const int min_base_quality,
                                                     const int min_varcall_coverage,
                                                     const float min_varcall_fraction,
@@ -2183,9 +2185,10 @@ str2int_t kadayashi_phased_variant_calling_threaded(const std::filesystem::path 
         std::vector<varcall_result_and_localphasinght_t> varcall_results =
                 kadayashi_phase_and_varcall_multiregionthreaded(
                         fn_ref, fn_bam, n_threads_job, n_threads_inner, chrom, query_intervals,
-                        disable_interval_expansion, min_base_quality, min_varcall_coverage,
-                        min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
-                        max_gapcompressed_seqdiv, use_dvr_for_phasing, ambig_ref);
+                        readgroup, disable_interval_expansion, min_base_quality,
+                        min_varcall_coverage, min_varcall_fraction, max_clipping, min_strand_cov,
+                        min_strand_cov_frac, max_gapcompressed_seqdiv, use_dvr_for_phasing,
+                        ambig_ref);
 
         // helper: convert phasing breakpoints into a sorted array
         // which will be queried for phaseblock IDs.

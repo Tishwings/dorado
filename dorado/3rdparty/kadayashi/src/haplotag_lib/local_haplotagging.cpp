@@ -1175,6 +1175,7 @@ phase_return_t kadayashi_dvr_single_region_wrapper1(samFile *fp_bam,
                                                     const std::string_view ref_name,
                                                     const uint32_t ref_start,
                                                     const uint32_t ref_end,
+                                                    const std::string_view readgroup,
                                                     const bool disable_interval_expansion,
                                                     const int min_base_quality,
                                                     const int min_varcall_coverage,
@@ -1184,6 +1185,7 @@ phase_return_t kadayashi_dvr_single_region_wrapper1(samFile *fp_bam,
                                                     const float min_strand_cov_frac,
                                                     const float max_gapcompressed_seqdiv) {
     const pileup_pars_t pp = {
+            .readgroup = std::string(readgroup),
             .min_base_quality = min_base_quality,
             .min_varcall_coverage = min_varcall_coverage,
             .min_varcall_fraction = min_varcall_fraction,
@@ -1207,6 +1209,7 @@ phase_return_t kadayashi_simple_single_region_wrapper1(samFile *fp_bam,
                                                        const std::string_view ref_name,
                                                        const uint32_t ref_start,
                                                        const uint32_t ref_end,
+                                                       const std::string_view readgroup,
                                                        const bool disable_interval_expansion,
                                                        const int min_base_quality,
                                                        const int min_varcall_coverage,
@@ -1216,6 +1219,7 @@ phase_return_t kadayashi_simple_single_region_wrapper1(samFile *fp_bam,
                                                        const float min_strand_cov_frac,
                                                        const float max_gapcompressed_seqdiv) {
     const pileup_pars_t pp = {
+            .readgroup = std::string(readgroup),
             .min_base_quality = min_base_quality,
             .min_varcall_coverage = min_varcall_coverage,
             .min_varcall_fraction = min_varcall_fraction,
@@ -1894,6 +1898,20 @@ chunk_t variant_pileup_ht(dorado::secondary::BamFileView &hf,
         if (to_exlucde_by_high_de_tag(aln.get(), pp.max_gapcompressed_seqdiv)) {
             continue;
         }
+        // filter by readgroup (adapted from medaka_bamiter.cpp)
+        if (!pp.readgroup.empty()) {
+            const uint8_t *rg = bam_aux_get(aln.get(), "RG");
+            if (rg) {
+                errno = 0;  // reset
+                const char *rg_val = bam_aux2Z(rg);
+                if (errno == EINVAL) {
+                    continue;
+                }
+                if (pp.readgroup != rg_val) {
+                    continue;
+                }
+            }
+        }
 
         uint8_t hp = HAPTAG_UNPHASED;
         if (qname2hp) {
@@ -2550,6 +2568,7 @@ std::unordered_map<std::string, int> kadayashi_dvr_single_region_wrapper(
         const std::string_view ref_name,
         const uint32_t ref_start,
         const uint32_t ref_end,
+        const std::string_view readgroup,
         const bool disable_interval_expansion,
         const int min_base_quality,
         const int min_varcall_coverage,
@@ -2559,7 +2578,7 @@ std::unordered_map<std::string, int> kadayashi_dvr_single_region_wrapper(
         const float min_strand_cov_frac,
         const float max_gapcompressed_seqdiv) {
     phase_return_t result = kadayashi_dvr_single_region_wrapper1(
-            fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end,
+            fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end, readgroup,
             disable_interval_expansion, min_base_quality, min_varcall_coverage,
             min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
             max_gapcompressed_seqdiv);
@@ -2575,6 +2594,7 @@ std::unordered_map<std::string, int> kadayashi_simple_single_region_wrapper(
         const std::string_view ref_name,
         const uint32_t ref_start,
         const uint32_t ref_end,
+        const std::string_view readgroup,
         const bool disable_interval_expansion,
         const int min_base_quality,
         const int min_varcall_coverage,
@@ -2584,7 +2604,7 @@ std::unordered_map<std::string, int> kadayashi_simple_single_region_wrapper(
         const float min_strand_cov_frac,
         const float max_gapcompressed_seqdiv) {
     auto result = kadayashi_simple_single_region_wrapper1(
-            fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end,
+            fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end, readgroup,
             disable_interval_expansion, min_base_quality, min_varcall_coverage,
             min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
             max_gapcompressed_seqdiv);
@@ -2599,6 +2619,7 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
                                                     const std::string_view ref_name,
                                                     const uint32_t ref_start,
                                                     const uint32_t ref_end,
+                                                    const std::string_view readgroup,
                                                     const bool disable_interval_expansion,
                                                     const int min_base_quality,
                                                     const int min_varcall_coverage,
@@ -2614,19 +2635,20 @@ ck_and_varcall_result_t kadayashi_phase_and_varcall(samFile *fp_bam,
     phase_return_t phasing_result;
     if (use_dvr_for_phasing) {
         phasing_result = kadayashi_dvr_single_region_wrapper1(
-                fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end,
+                fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end, readgroup,
                 disable_interval_expansion, min_base_quality, min_varcall_coverage,
                 min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
                 max_gapcompressed_seqdiv);
     } else {
         phasing_result = kadayashi_simple_single_region_wrapper1(
-                fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end,
+                fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end, readgroup,
                 disable_interval_expansion, min_base_quality, min_varcall_coverage,
                 min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
                 max_gapcompressed_seqdiv);
     }
 
-    const pileup_pars_t pp_phased_round{.min_base_quality = min_base_quality,
+    const pileup_pars_t pp_phased_round{.readgroup = std::string(readgroup),
+                                        .min_base_quality = min_base_quality,
                                         .min_varcall_coverage = min_varcall_coverage,
                                         .min_varcall_fraction = min_varcall_fraction,
                                         .max_clipping = max_clipping,
@@ -2678,6 +2700,7 @@ varcall_result_t kadayashi_phase_and_varcall_wrapper(samFile *fp_bam,
                                                      const std::string_view ref_name,
                                                      const uint32_t ref_start,
                                                      const uint32_t ref_end,
+                                                     const std::string_view readgroup,
                                                      const bool disable_interval_expansion,
                                                      const int min_base_quality,
                                                      const int min_varcall_coverage,
@@ -2689,7 +2712,7 @@ varcall_result_t kadayashi_phase_and_varcall_wrapper(samFile *fp_bam,
                                                      const bool use_dvr_for_phasing,
                                                      const bool ambig_ref) {
     ck_and_varcall_result_t ck_and_vr = kadayashi_phase_and_varcall(
-            fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end,
+            fp_bam, fp_bai, fp_header, fai, ref_name, ref_start, ref_end, readgroup,
             disable_interval_expansion, min_base_quality, min_varcall_coverage,
             min_varcall_fraction, max_clipping, min_strand_cov, min_strand_cov_frac,
             max_gapcompressed_seqdiv, use_dvr_for_phasing, ambig_ref);
@@ -2894,11 +2917,12 @@ static void gen_medaka_feature_matrix_store_reads_from_bam(dorado::secondary::Ba
         if (!gck.options.readgroup.empty()) {
             const uint8_t *rg = bam_aux_get(aln.get(), "RG");
             if (rg) {
+                errno = 0;  // reset
                 const char *rg_val = bam_aux2Z(rg);
                 if (errno == EINVAL) {
                     continue;
                 }
-                if (strcmp(gck.options.readgroup.c_str(), rg_val) != 0) {
+                if (gck.options.readgroup != rg_val) {
                     continue;
                 }
             }
