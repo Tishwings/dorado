@@ -171,12 +171,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Batch size for inference. Default: 0 for auto batch size detection.")
                 .default_value(0)
                 .scan<'i', int>();
-        parser.add_argument("--window-len")
-                .help("Overrides the model-defined window (chunk) size for inference.")
-                .scan<'i', int>();
-        parser.add_argument("--window-overlap")
-                .help("Overrides the model-defined window (chunk) overlap length for inference.")
-                .scan<'i', int>();
         parser.add_argument("--bam-chunk")
                 .help("Size of reference chunks to parse from the input BAM at a time.")
                 .default_value(1000000)
@@ -232,6 +226,14 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
 
     // Hidden advanced arguments.
     {
+        parser.add_argument("--window-len")
+                .hidden()
+                .help("Overrides the model-defined window (chunk) size for inference.")
+                .scan<'i', int>();
+        parser.add_argument("--window-overlap")
+                .hidden()
+                .help("Overrides the model-defined window (chunk) overlap length for inference.")
+                .scan<'i', int>();
         parser.add_argument("--full-precision")
                 .hidden()
                 .help("Always use full precision for inference.")
@@ -411,10 +413,6 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
 
     opt.batch_size = parser.get<int>("batchsize");
 
-    opt.window_len = parser.present<int32_t>("window-len");
-    opt.window_overlap = parser.present<int32_t>("window-overlap");
-    opt.variant_flanking_bases = parser.present<int32_t>("variant-flanking-bases");
-
     opt.bam_chunk = parser.get<int>("bam-chunk");
     opt.verbosity = verbosity;
     opt.regions_str = parser.present<std::string>("regions");
@@ -423,6 +421,9 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     }
     opt.min_depth = parser.get<int>("min-depth");
 
+    opt.window_len = parser.present<int32_t>("window-len");
+    opt.window_overlap = parser.present<int32_t>("window-overlap");
+    opt.variant_flanking_bases = parser.present<int32_t>("variant-flanking-bases");
     opt.full_precision = parser.get<bool>("full-precision");
     opt.load_scripted_model = parser.get<bool>("scripted");
     opt.queue_size = parser.get<int>("queue-size");
