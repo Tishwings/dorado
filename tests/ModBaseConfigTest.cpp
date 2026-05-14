@@ -34,23 +34,27 @@ const auto _6mA_v3 = get_data_dir("model_configs/dna_r10.4.1_e8.2_400bps_sup@v5.
 const auto _6mA_v4 = get_data_dir("model_configs/dna_r10.4.1_e8.2_400bps_sup@v5.0.0_6mA@v4");
 
 const ModulesParams modules_6mA_v4{
-        // clang-format off
-    {   // Sequence Convs
-        ConvParams{36, 16, 5, 1, Activation::TANH}, 
-        ConvParams{16, 128, 16, 1, Activation::TANH}},
-    {   // Signal Convs
-        ConvParams{1, 4, 5, 1, Activation::TANH}, 
-        ConvParams{4, 16, 5, 1, Activation::TANH},
-        ConvParams{16, 128, 16, 6, Activation::TANH}},
-    // Merge
-    ConvParams{256, 384, 5, 1, Activation::TANH}, 
-    {   // LSTMS
-        LSTMParams{384, 0}, 
-        LSTMParams{384, 1}
-    },
-    LinearParams{384, 2},  
-    LinearUpsampleParams{2, 2}};
-// clang-format on
+        // Sequence Convs
+        {
+                ConvParams{36, 16, 5, 1, Activation::TANH},
+                ConvParams{16, 128, 16, 1, Activation::TANH},
+        },
+        // Signal Convs
+        {
+                ConvParams{1, 4, 5, 1, Activation::TANH},
+                ConvParams{4, 16, 5, 1, Activation::TANH},
+                ConvParams{16, 128, 16, 6, Activation::TANH},
+        },
+        // Merge
+        ConvParams{256, 384, 5, 1, Activation::TANH},
+        // LSTMS
+        {
+                LSTMParams{384, 0},
+                LSTMParams{384, 1},
+        },
+        LinearParams{384, 2},
+        LinearUpsampleParams{2, 2},
+};
 
 CATCH_TEST_CASE(TEST_GROUP ": modbase model parser", TEST_GROUP) {
     using Gen = ModelGeneralParams;
