@@ -209,6 +209,20 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
             continue;
         }
 
+        if (m_kit_name) {
+            // convert to unclassified - we'll use this to create all the barcoded headers later
+            std::string_view alias = rg_data.data.barcode_alias.empty()
+                                             ? rg_data.data.barcode_id
+                                             : rg_data.data.barcode_alias;
+            if (!alias.empty() && alias != "unclassified") {
+                if (auto index = rg_data.id.find(alias); index != rg_data.id.npos && index != 0) {
+                    rg_data.id = rg_data.id.substr(0, index - 1);
+                }
+            }
+            rg_data.data.barcode_id = "unclassified";
+            rg_data.data.barcode_alias.clear();
+        }
+
         auto [it, inserted] = rg_to_attrs_lut.try_emplace(rg_data.id);
         if (!inserted) {
             continue;
@@ -239,16 +253,6 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
                     utils::get_unix_time_ms_from_string_timestamp(rg_data.data.exp_start_time);
         }
 
-        if (m_kit_name) {
-            if (attrs.barcode_id.empty()) {
-                rg_data.data.barcode_id = "unclassified";
-                attrs.barcode_id = "unclassified";
-            } else {
-                // If we are demuxing, add all barcodes later on where we have all the requisite information available
-                continue;
-            }
-        }
-
         auto& merged_header_ptr = merged_headers[attrs];
         if (!merged_header_ptr) {
             merged_header_ptr = std::make_unique<MergeHeaders>(m_strip_alignment);
@@ -275,7 +279,8 @@ void HeaderMapper::process_fastx(const std::filesystem::path& path) {
     for (const auto& [read_group_id, read_attrs] : rg_to_attrs_lut) {
         const auto output_read_group_id = get_output_read_group_id(path_string, read_group_id);
         m_read_group_to_attributes[output_read_group_id] = read_attrs;
-        merged_headers[read_attrs]->add_header(hdr.get(), path_string, output_read_group_id);
+        auto& merge_header = merged_headers[read_attrs];
+        merge_header->add_header(hdr.get(), path_string, output_read_group_id);
     }
 }
 
@@ -309,11 +314,20 @@ void HeaderMapper::process_bam(const std::filesystem::path& path) {
 
     // Add the new read attrs and merge the headers for each output
     // file only including the read groups that will be used.
-    for (auto [read_group_id, read_attrs] : rg_to_attrs_lut) {
+    for (auto [id, read_attrs] : rg_to_attrs_lut) {
+        std::string read_group_id = id;
         if (m_kit_name) {
-            if (read_attrs.barcode_id.empty()) {
-                read_attrs.barcode_id = "unclassified";
+            // convert to unclassified - we'll use this to create all the barcoded headers later
+            std::string_view alias = read_attrs.barcode_alias.empty() ? read_attrs.barcode_id
+                                                                      : read_attrs.barcode_alias;
+            if (!alias.empty() && alias != "unclassified") {
+                if (auto index = read_group_id.find(alias);
+                    index != read_group_id.npos && index != 0) {
+                    read_group_id = read_group_id.substr(0, index - 1);
+                }
             }
+            read_attrs.barcode_id = "unclassified";
+            read_attrs.barcode_alias.clear();
         }
         m_has_barcodes |= !read_attrs.barcode_id.empty();
         m_has_barcodes |= !read_attrs.barcode_alias.empty();
@@ -333,15 +347,41 @@ void HeaderMapper::process_bam(const std::filesystem::path& path) {
 
 void HeaderMapper::add_barcodes() {
     m_has_barcodes = true;
-    std::unordered_map<std::string, HtsData::ReadAttributes> rg_to_attrs_lut;
     auto& merged_headers = *m_merged_headers_map;
-    auto unclassified_rg_it =
-            std::find_if(std::begin(m_read_group_to_attributes),
-                         std::end(m_read_group_to_attributes), [](const auto& rg_attr_pair) {
-                             return rg_attr_pair.second.barcode_id == "unclassified";
-                         });
-    while (unclassified_rg_it != std::end(m_read_group_to_attributes)) {
-        auto [read_group_id, read_attrs] = *unclassified_rg_it;
+
+    // ensure we have an unclassified base entry for each barcoded entry
+    AttributeMap unclassified_entries;
+    for (auto [id, attrs] : m_read_group_to_attributes) {
+        const auto& base_header = merged_headers[attrs];
+        std::string rg_id = id;
+        if (attrs.barcode_id != "unclassified") {
+            std::string_view alias =
+                    attrs.barcode_alias.empty() ? attrs.barcode_id : attrs.barcode_alias;
+            if (auto index = rg_id.find(alias); index != rg_id.npos && index != 0) {
+                rg_id = rg_id.substr(0, index - 1);
+            }
+            attrs.barcode_id = "unclassified";
+            attrs.barcode_alias = "";
+        }
+
+        auto& merge_header = merged_headers[attrs];
+        if (!merge_header) {
+            SamHdrPtr header(sam_hdr_dup(base_header->get_merged_header()));
+            sam_hdr_update_line(header.get(), "RG", "ID", id.c_str(), "ID", rg_id.c_str(), nullptr);
+            sam_hdr_remove_tag_id(header.get(), "RG", "ID", rg_id.c_str(), "SM");
+            sam_hdr_remove_tag_id(header.get(), "RG", "ID", rg_id.c_str(), "al");
+            sam_hdr_remove_tag_id(header.get(), "RG", "ID", rg_id.c_str(), "bk");
+            sam_hdr_remove_tag_id(header.get(), "RG", "ID", rg_id.c_str(), "BC");
+            merge_header = std::make_unique<MergeHeaders>(m_strip_alignment);
+            merge_header->add_header(header.get(), "", rg_id);
+            merge_header->finalize_merge();
+        }
+
+        unclassified_entries[rg_id] = std::move(attrs);
+    }
+
+    std::unordered_map<std::string, HtsData::ReadAttributes> rg_to_attrs_lut;
+    for (auto [read_group_id, read_attrs] : unclassified_entries) {
         const auto& base_header = merged_headers[read_attrs];
         const auto& kit_info_map = barcode_kits::get_kit_infos();
         const auto& kit_info = kit_info_map.at(*m_kit_name);
@@ -408,13 +448,8 @@ void HeaderMapper::add_barcodes() {
                 }
             }
         }
-
-        unclassified_rg_it =
-                std::find_if(std::next(unclassified_rg_it), std::end(m_read_group_to_attributes),
-                             [](const auto& rg_attr_pair) {
-                                 return rg_attr_pair.second.barcode_id == "unclassified";
-                             });
     }
+    m_read_group_to_attributes.merge(unclassified_entries);
     m_read_group_to_attributes.merge(rg_to_attrs_lut);
 }
 
@@ -513,9 +548,26 @@ std::string HeaderMapper::get_output_read_group_id(const std::string& filename,
 
 const HtsData::ReadAttributes& HeaderMapper::get_read_attributes(const bam1_t* record) const {
     // Get the read group ID from the record
-    const std::string read_group = utils::get_read_group_tag(record);
+    std::string read_group = utils::get_read_group_tag(record);
     if (read_group.empty()) {
         return m_fallback_read_attrs;
+    }
+
+    if (m_kit_name) {
+        // lookup by the unclassified read group if we're going to be barcoding
+        std::string alias;
+        if (const auto al_tag = bam_aux_get(record, "al"); al_tag != nullptr) {
+            alias = bam_aux2Z(al_tag);
+        } else if (const auto bc_tag = bam_aux_get(record, "BC"); bc_tag != nullptr) {
+            alias = bam_aux2Z(bc_tag);
+        }
+
+        if (const auto rg_tag = bam_aux_get(record, "RG"); rg_tag != nullptr) {
+            std::string rg_tag_value = bam_aux2Z(rg_tag);
+            if (auto index = rg_tag_value.find(alias); index != rg_tag_value.npos && index != 0) {
+                read_group = rg_tag_value.substr(0, index - 1);
+            }
+        }
     }
 
     // Lookup the ReadAttributes for this read_group
