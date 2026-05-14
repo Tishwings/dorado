@@ -19,6 +19,7 @@ public:
     void update_read_attributes(HtsData& data) const;
     void update_barcoding_fields(HtsData& data) const;
     void update_alignment_fields(HtsData& data) const;
+    void undemux_read_group(HtsData& data) const;
 
 private:
     sam_hdr_t* m_header;

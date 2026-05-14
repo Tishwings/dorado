@@ -22,7 +22,7 @@ version=${7:-"v5.0.0"}
 model_complex="${model_speed}@${version}"
 
 data_dir=${test_dir}/data
-output_dir_name=test_simple_basecaller_output_${RANDOM}
+output_dir_name=test_simple_${RANDOM}
 output_dir=${test_dir}/${output_dir_name}
 mkdir -p ${output_dir}
 
@@ -844,5 +844,26 @@ if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
     title dorado basecaller barcoding read groups with sample sheet
     test_barcoding_read_groups patient_id_1 4 unclassified 3 $data_dir/barcode_demux/sample_sheet.csv
 fi
+
+title dorado demux previously demuxed files
+$dorado_bin basecaller ${models_directory_arg} --kit-name SQK-RBK114-96 --sample-sheet $data_dir/barcode_demux/sample_sheet.csv ${model_5k} $data_dir/barcode_demux/read_group_test --no-trim -o ${output_dir}/redemux
+i=0
+mkdir ${output_dir}/red-in
+for f in $(find ${output_dir}/redemux -name "*.bam"); do
+    cp ${f} ${output_dir}/red-in/ # move to a shorter path so we're sure it's readable by htslib
+    basef=$(basename ${f})
+    i=$(( i+1 ))
+    $dorado_bin demux \
+        --no-trim \
+        --kit-name SQK-RBK114-96 \
+        ${output_dir}/red-in/${basef} \
+        -o ${output_dir}/red-${i}
+done
+
+$dorado_bin demux \
+    --no-trim \
+    --kit-name SQK-RBK114-96 \
+    -r ${output_dir}/red-in \
+    -o ${output_dir}/red-all
 
 rm -rf $output_dir

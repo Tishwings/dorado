@@ -15,20 +15,20 @@ cmake-build*
 cmake.lock
 CMakeSettings.json
 _CPack_Packages
-tests/test_output
 .temp_dorado_model-*
 temp
 venv
-tests/test_output*
-regression_test/output
 *.t.err
 Makefile
 /models
 /dorado-dependencies
 
 # Ignore test output directories
-/tests/test_simple_basecaller_output_[0-9]*/
-/tests/data/aligner_test/*.fai
+tests/test_output*/
+tests/test_simple*/
+tests/test_nested*/
+tests/data/aligner_test/*.fai
+regression_test/output/tests/data/aligner_test/*.fai
 
 # If running regression tests, the regression_test_data project is downloaded into
 # the dorado folder. We don't want it to be accidentally committed.

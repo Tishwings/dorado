@@ -12,6 +12,7 @@
 namespace dorado {
 
 namespace {
+
 void assign_not_empty(std::string& attr_target, const std::string_view maybe_value) {
     if (!maybe_value.empty()) {
         attr_target = maybe_value;
@@ -124,6 +125,26 @@ void ReadInitialiser::update_alignment_fields(HtsData& data) const {
         data.read_attrs.num_alignments = counts[0];
         data.read_attrs.num_secondary_alignments = counts[1];
         data.read_attrs.num_supplementary_alignments = counts[2];
+    }
+}
+
+void ReadInitialiser::undemux_read_group(HtsData& data) const {
+    std::string alias;
+    bam1_t* record = data.bam_ptr.get();
+    if (const auto al_tag = bam_aux_get(record, "al"); al_tag != nullptr) {
+        alias = bam_aux2Z(al_tag);
+        bam_aux_del(record, al_tag);
+    } else if (const auto bc_tag = bam_aux_get(record, "BC"); bc_tag != nullptr) {
+        alias = bam_aux2Z(bc_tag);
+        bam_aux_update_str(record, "BC", UNCLASSIFIED_STR.length() + 1, UNCLASSIFIED_STR.c_str());
+    }
+
+    if (const auto rg_tag = bam_aux_get(record, "RG"); rg_tag != nullptr) {
+        std::string rg_tag_value = bam_aux2Z(rg_tag);
+        if (auto index = rg_tag_value.find(alias); index != rg_tag_value.npos && index != 0) {
+            rg_tag_value = rg_tag_value.substr(0, index - 1);
+            bam_aux_update_str(record, "RG", index, rg_tag_value.c_str());
+        }
     }
 }
 

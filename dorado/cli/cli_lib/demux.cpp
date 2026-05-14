@@ -375,6 +375,11 @@ int demuxer(int argc, char* argv[]) {
                 });
             }
         }
+        if (barcoding_info) {
+            reader.add_read_initialiser([read_initialiser](HtsData& data) {
+                read_initialiser->undemux_read_group(data);
+            });
+        }
         reader.set_client_info(client_info);
 
         const auto num_reads_in_file =
