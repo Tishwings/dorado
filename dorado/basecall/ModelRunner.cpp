@@ -6,11 +6,10 @@
 
 namespace dorado::basecall {
 
-ModelRunner::ModelRunner(const config::BasecallModelConfig &model_config, const std::string &device)
+ModelRunner::ModelRunner(const config::BasecallModelConfig &model_config)
         : m_config(model_config),
-          m_decoder(decode::create_decoder(device, model_config)),
-          // TODO: m_options.dtype() depends on the device as TxModel uses kHalf in cuda which is not supported on CPU
-          m_options(at::TensorOptions().dtype(m_decoder->dtype()).device(device)),
+          m_decoder(decode::create_decoder(c10::DeviceType::CPU, model_config)),
+          m_options(at::TensorOptions().dtype(m_decoder->dtype()).device(c10::DeviceType::CPU)),
           m_module(load_crf_model(model_config, m_options)) {
     assert(model_config.has_normalised_basecaller_params());
 
@@ -23,8 +22,7 @@ ModelRunner::ModelRunner(const config::BasecallModelConfig &model_config, const 
     const auto C = model_config.num_features;
     const auto T = model_config.basecaller.chunk_size();
 
-    m_input_NCT =
-            at::zeros({N, C, T}, at::TensorOptions().dtype(m_decoder->dtype()).device(at::kCPU));
+    m_input_NCT = at::zeros({N, C, T}, m_options);
 }
 
 ModelRunner::~ModelRunner() = default;

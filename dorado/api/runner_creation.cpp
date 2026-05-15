@@ -66,8 +66,7 @@ std::pair<std::vector<basecall::RunnerPtr>, size_t> create_basecall_runners(
         }
         spdlog::debug("- CPU calling: set num_cpu_runners to {}", num_cpu_runners);
         for (size_t i = 0; i < num_cpu_runners; i++) {
-            runners.push_back(
-                    std::make_unique<basecall::ModelRunner>(params.model_config, params.device));
+            runners.push_back(std::make_unique<basecall::ModelRunner>(params.model_config));
         }
         if (runners.back()->batch_size() != (size_t)params.model_config.basecaller.batch_size()) {
             spdlog::debug("- CPU calling: set batch_size to {}", runners.back()->batch_size());
