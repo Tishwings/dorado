@@ -87,6 +87,12 @@ bool sample_has_inference_features(const secondary::Sample& sample) {
            (sample.features.numel() > 0);
 }
 
+bool variant_is_in_unique_bam_window_span(const secondary::Variant& variant,
+                                          const secondary::Window& bam_window) {
+    return (variant.pos >= bam_window.start_no_overlap) &&
+           (variant.pos < bam_window.end_no_overlap);
+}
+
 }  // namespace
 
 void signal_worker_terminate(std::atomic<bool>& worker_terminate) {
@@ -317,6 +323,10 @@ process_single_bam_window(
 
         // Extract the set of candidate variant sites (low-qual variants) and PASS variants.
         for (secondary::Variant& var : all_variants) {
+            if (!variant_is_in_unique_bam_window_span(var, bam_window)) {
+                continue;
+            }
+
             if (var.qual < pass_min_qual) {
                 candidate_sites.emplace_back(var.pos);
             } else {
