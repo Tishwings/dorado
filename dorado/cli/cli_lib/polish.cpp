@@ -90,8 +90,8 @@ struct Options {
     int32_t batch_size = 16;
     int64_t draft_batch_size = 200'000'000;
     int32_t encoding_batch_size = 0;
-    int32_t window_len = 10000;
-    int32_t window_overlap = 1000;
+    std::optional<int32_t> window_len{};
+    std::optional<int32_t> window_overlap{};
     int32_t bam_chunk = 1'000'000;
     int32_t bam_subchunk = 100'000;
     std::optional<std::string> regions_str;
@@ -196,14 +196,6 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .help("Approximate batch size of windows for encoding. (0=number of threads)")
                 .default_value(0)
                 .scan<'i', int>();
-        parser.add_argument("--window-len")
-                .help("Window size for calling consensus.")
-                .default_value(10000)
-                .scan<'i', int>();
-        parser.add_argument("--window-overlap")
-                .help("Overlap length between windows.")
-                .default_value(1000)
-                .scan<'i', int>();
         parser.add_argument("--bam-chunk")
                 .help("Size of draft chunks to parse from the input BAM at a time.")
                 .default_value(1000000)
@@ -256,6 +248,14 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
 
     // Hidden advanced arguments.
     {
+        parser.add_argument("--window-len")
+                .hidden()
+                .help("Overrides the model-defined window size for calling consensus.")
+                .scan<'i', int>();
+        parser.add_argument("--window-overlap")
+                .hidden()
+                .help("Overrides the model-defined window overlap length.")
+                .scan<'i', int>();
         parser.add_argument("--full-precision")
                 .hidden()
                 .help("Always use full precision for inference.")
@@ -328,8 +328,6 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.draft_batch_size =
             std::max<int64_t>(0, utils::arg_parse::parse_string_to_size<int64_t>(
                                          parser.get<std::string>("draft-batchsize")));
-    opt.window_len = parser.get<int>("window-len");
-    opt.window_overlap = parser.get<int>("window-overlap");
     opt.bam_chunk = parser.get<int>("bam-chunk");
     opt.bam_subchunk = parser.get<int>("bam-subchunk");
 
@@ -343,6 +341,8 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     }
     opt.min_depth = parser.get<int>("min-depth");
 
+    opt.window_len = parser.present<int32_t>("window-len");
+    opt.window_overlap = parser.present<int32_t>("window-overlap");
     opt.full_precision = parser.get<bool>("full-precision");
     opt.load_scripted_model = parser.get<bool>("scripted");
     opt.queue_size = parser.get<int>("queue-size");
@@ -419,23 +419,12 @@ void validate_options(const Options& opt) {
         spdlog::error("Draft batch size should be > 0. Given: {}.", opt.draft_batch_size);
         std::exit(EXIT_FAILURE);
     }
-    if (opt.window_len <= 0) {
-        spdlog::error("Window size should be > 0. Given: {}.", opt.window_len);
-        std::exit(EXIT_FAILURE);
-    }
     if (opt.bam_chunk <= 0) {
         spdlog::error("BAM chunk size should be > 0. Given: {}.", opt.bam_chunk);
         std::exit(EXIT_FAILURE);
     }
     if (opt.bam_subchunk <= 0) {
         spdlog::error("BAM sub-chunk size should be > 0. Given: {}.", opt.bam_chunk);
-        std::exit(EXIT_FAILURE);
-    }
-    if ((opt.window_overlap < 0) || (opt.window_overlap >= opt.window_len)) {
-        spdlog::error(
-                "Window overlap should be >= 0 and < window_len. Given: window_overlap = {}, "
-                "window_len = {}.",
-                opt.window_overlap, opt.window_len);
         std::exit(EXIT_FAILURE);
     }
 
@@ -858,6 +847,7 @@ void validate_bam_model(const secondary::BamInfo& bam_info,
 }
 
 void run_polishing(const Options& opt,
+                   const secondary::ModelConfig& model_config,
                    const secondary::BamInfo& bam_info,
                    polisher::PolisherResources& resources,
                    polisher::PolishProgressTracker& tracker,
@@ -990,6 +980,10 @@ void run_polishing(const Options& opt,
     int64_t total_batch_bases = 0;
     std::atomic<bool> worker_terminate{false};
 
+    // Resolve window length and window overlap length.
+    const int32_t window_len = opt.window_len.value_or(model_config.chunk_size);
+    const int32_t window_overlap = opt.window_overlap.value_or(model_config.chunk_overlap);
+
     // Process the draft sequences in batches of user-specified size.
     for (const auto& batch_interval : region_batches) {
         // Get the regions for this interval.
@@ -1027,7 +1021,7 @@ void run_polishing(const Options& opt,
                 spdlog::debug("Creating BAM windows.");
                 const std::vector<secondary::Window> bam_regions =
                         secondary::create_windows_from_regions(region_batch, draft_lookup,
-                                                               opt.bam_chunk, opt.window_overlap);
+                                                               opt.bam_chunk, window_overlap);
 
                 spdlog::debug(
                         "[run_polishing] Starting to produce consensus for regions: {}-{}/{} "
@@ -1050,16 +1044,16 @@ void run_polishing(const Options& opt,
 
                 // Create a thread for the sample producer.
                 secondary::WorkerReturnStatus wrs_sample_producer;
-                auto thread_sample_producer =
-                        utils::jthread([&resources, &bam_regions, &draft_lens, &opt, &usable_mem,
-                                        &batch_queue, &worker_terminate, &wrs_sample_producer] {
+                auto thread_sample_producer = utils::jthread(
+                        [&resources, &bam_regions, &draft_lens, &opt, &usable_mem, &batch_queue,
+                         &worker_terminate, &wrs_sample_producer, &window_len, &window_overlap] {
                             utils::set_thread_name("polish_produce");
                             polisher::sample_producer(
                                     resources, bam_regions, draft_lens, {}, std::nullopt,
                                     opt.threads, opt.batch_size, opt.encoding_batch_size,
-                                    opt.window_len, opt.window_overlap, 0, opt.bam_subchunk,
-                                    usable_mem, opt.continue_on_error, false, false, 0, 0, 0.25,
-                                    batch_queue, worker_terminate, wrs_sample_producer);
+                                    window_len, window_overlap, 0, opt.bam_subchunk, usable_mem,
+                                    opt.continue_on_error, false, false, 0, 0, 0.25, batch_queue,
+                                    worker_terminate, wrs_sample_producer);
                         });
 
                 // Create a thread for the sample decoder.
@@ -1308,7 +1302,7 @@ int polish(int argc, char* argv[]) {
         auto stats_sampler = std::make_unique<dorado::stats::StatsSampler>(
                 kStatsPeriod, stats_reporters, stats_callables, static_cast<size_t>(0));
 
-        run_polishing(opt, bam_info, resources, tracker, stats);
+        run_polishing(opt, model_config, bam_info, resources, tracker, stats);
 
         tracker.finalize();
         stats_sampler->terminate();
