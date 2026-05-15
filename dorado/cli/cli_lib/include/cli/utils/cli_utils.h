@@ -142,9 +142,15 @@ inline std::optional<T> get_optional_argument(const std::string& arg_name,
 }
 
 constexpr inline std::string_view DEVICE_HELP{
-        "Specify CPU or GPU device: 'auto', 'cpu', 'cuda:all' or "
-        "'cuda:<device_id>[,<device_id>...]'. Specifying 'auto' will choose either 'cpu', 'metal' "
-        "or 'cuda:all' depending on the presence of a GPU device."};
+        "Specify CPU or GPU device: 'auto', 'cpu'"
+#if DORADO_METAL_BUILD
+        ", 'metal'"
+#endif
+#if DORADO_CUDA_BUILD
+        ", 'cuda:all', 'cuda:<device_id>[,<device_id>...]'"
+#endif
+        ". Specifying 'auto' will prioritise GPU devices, falling back to CPU if none are "
+        "available."};
 constexpr inline std::string_view AUTO_DETECT_DEVICE{"auto"};
 
 inline void add_device_arg(argparse::ArgumentParser& parser) {
