@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -113,6 +114,22 @@ struct Options {
     bool dump_variants = false;
     bool legacy_feature_gen = false;
 };
+
+bool parse_bool_arg(const std::string& raw_value) {
+    std::string value = raw_value;
+    std::transform(std::begin(raw_value), std::end(raw_value), std::begin(value),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if ((value == "true") || (value == "1") || (value == "yes") || (value == "on")) {
+        return true;
+    }
+    if ((value == "false") || (value == "0") || (value == "no") || (value == "off")) {
+        return false;
+    }
+
+    throw std::runtime_error{"Invalid value for --candidate-filtering: '" + raw_value +
+                             "'. Expected true/false, 1/0, yes/no, or on/off."};
+}
 
 /// \brief Define the CLI options.
 void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
@@ -264,11 +281,11 @@ void add_arguments(argparse::ArgumentParser& parser, int& verbosity) {
                 .scan<'g', float>();
         // Candidate region selection options.
         parser.add_argument("--candidate-filtering")
-                .help("Overrides the model-defined candidate region filtering feature and turns on "
-                      "region pruning before inference to improve runtime"
-                      "If --candidates file is not provided, candidate regions are computed "
-                      "internally.")
-                .flag();
+                .help("Overrides the model-defined candidate region filtering feature. Set to true "
+                      "to limit inference to regions containing uncertain variant candidates, or "
+                      "false to run dense inference.")
+                .metavar("BOOL")
+                .action(parse_bool_arg);
         parser.add_argument("--candidates")
                 .hidden()
                 .help("Path to a tab-separated file containing coordinates of variant candidate "
@@ -443,7 +460,9 @@ Options set_options(const argparse::ArgumentParser& parser, const int verbosity)
     opt.pass_min_qual = parser.get<float>("pass-qual-filter");
 
     opt.candidate_variants_path = parser.present<std::string>("candidates");
-    opt.candidate_filtering = cli::get_optional_argument<bool>("--candidate-filtering", parser);
+
+    // Override the candidate filtering option.
+    opt.candidate_filtering = parser.present<bool>("candidate-filtering");
 
     opt.phasing_bin_path = parser.present<std::string>("phasing-bin");
     opt.hp_tag_from_bam = parser.get<bool>("hp-tag");
