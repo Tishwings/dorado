@@ -693,11 +693,13 @@ std::filesystem::path resolve_model_advanced(
 
     std::filesystem::path model_dir;
 
-    if (!std::empty(model_str) && std::filesystem::exists(model_str)) {
+    if (!std::empty(model_str)) {
         spdlog::warn(
-                "Skipping basecaller compatibility checks for user-specified model: '{}'. The "
-                "accuracy of the results is not guaranteed.",
-                model_str);
+                "Skipping basecaller compatibility checks for user-specified model override. The "
+                "accuracy of the results is not guaranteed.");
+    }
+
+    if (!std::empty(model_str) && std::filesystem::exists(model_str)) {
         spdlog::debug("Resolved model from user-specified path: '{}'", model_str);
         model_dir = model_str;
 
