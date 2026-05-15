@@ -262,17 +262,35 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
             wm.next_TC(T_out, C_out, output_layout);
             out_ntc = wm.get_current_NTC_view();
         }
-        auto res = host_linear(stream, KOI_F16, get_koi_activation(params.activation), out_type,
-                               aux ? 1 : wm.N, T_out, C_in * params.winlen, C_out,
-                               int(in.stride(0)), params.stride * C_in, int(out_ntc.stride(0)),
-                               int(out_ntc.stride(1)), in.data_ptr(), w_device.data_ptr(),
-                               out_ntc.data_ptr(), out_layout, nullptr, b_device.data_ptr());
+        const bool try_fast_conv = utils::get_dev_opt<bool>("koi_conv", true);
+        int res = -1;
+        if (try_fast_conv) {
+            utils::ScopedProfileRange spr3("host_convolution", 4);
+            const bool use_f32_accum = utils::get_dev_opt<bool>("koi_conv_f32", false);
+            const int N = aux ? 1 : wm.N;
+            res = host_convolution(stream, N, T_in, C_in, C_out, params.winlen, params.stride,
+                                   padding, int(in.stride(0)), int(out_ntc.stride(0)),
+                                   int(out_ntc.stride(1)),
+                                   in.slice(1, padding, torch::indexing::None).data_ptr(),
+                                   out_ntc.data_ptr(), out_layout, w_device.data_ptr(),
+                                   b_device.data_ptr(), get_koi_activation(params.activation),
+                                   KOI_F16, out_type, use_f32_accum ? KOI_F32 : KOI_F16);
+        }
+        if (res != KOI_SUCCESS) {
+            utils::ScopedProfileRange spr3("host_linear", 4);
+            res = host_linear(stream, KOI_F16, get_koi_activation(params.activation), out_type,
+                              aux ? 1 : wm.N, T_out, C_in * params.winlen, C_out, int(in.stride(0)),
+                              params.stride * C_in, int(out_ntc.stride(0)), int(out_ntc.stride(1)),
+                              in.data_ptr(), w_device.data_ptr(), out_ntc.data_ptr(), out_layout,
+                              nullptr, b_device.data_ptr());
+        }
         if (res != KOI_SUCCESS) {
             throw std::runtime_error(
                     std::string("Koi convolution (host_linear) failed with in size ") +
                     std::to_string(params.insize));
         }
         if (aux) {
+            utils::ScopedProfileRange spr3("host_convolution_postprocess", 4);
             res = host_convolution_postprocess(
                     stream, get_koi_activation(params.activation), out_type,
                     aux->chunk_sizes().size(), C_in, C_out, aux->device_chunk_intervals.data_ptr(),
