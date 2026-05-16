@@ -254,7 +254,7 @@ BasecallModelConfig load_lstm_model_config(const std::filesystem::path &path) {
                 config.scale = toml::find_or<float>(segment, "scale", 1.f);
             } else if (type == SublayerType::LSTM) {
                 config.lstm_layers++;
-            } else if (type == SublayerType::FLSTM) {
+            } else if (type == SublayerType::FLSTM_SOFTOUT) {
                 ++flstm_layers;
                 const int inner_dim = toml::find<int>(segment, "inner_dim");
                 if (config.lstm_inner_dim.has_value()) {
@@ -268,6 +268,9 @@ BasecallModelConfig load_lstm_model_config(const std::filesystem::path &path) {
                 }
             }
         }
+        if ((config.lstm_layers == 0) && (flstm_layers == 0)) {
+            throw std::runtime_error("Invalid CRF model configuration - found 0 (F)LSTM layers");
+        }
         if (flstm_layers > 0) {
             if (config.lstm_layers > 0) {
                 throw std::runtime_error("Cannot mix LSTM and FLSTM layers, found " +
@@ -275,7 +278,7 @@ BasecallModelConfig load_lstm_model_config(const std::filesystem::path &path) {
                                          std::to_string(flstm_layers));
             }
             config.lstm_layers = flstm_layers;
-            config.convs.back().flstm = true;
+            config.convs.back().inner_dim = config.lstm_inner_dim.value();
         }
     } else {
         // pre-v4 model
@@ -289,10 +292,10 @@ BasecallModelConfig load_lstm_model_config(const std::filesystem::path &path) {
                                        : 4;
 
         config.convs.push_back(
-                ConvParams{config.num_features, first_conv, 5, 1, Activation::SWISH});
-        config.convs.push_back(ConvParams{first_conv, 16, 5, 1, Activation::SWISH});
+                ConvParams{config.num_features, first_conv, 5, 1, Activation::SWISH, 0});
+        config.convs.push_back(ConvParams{first_conv, 16, 5, 1, Activation::SWISH, 0});
         config.convs.push_back(
-                ConvParams{16, config.lstm_size, 19, config.stride, Activation::SWISH});
+                ConvParams{16, config.lstm_size, 19, config.stride, Activation::SWISH, 0});
     }
 
     const auto &global_norm = toml::find(config_toml, keys::GLOBAL_NORM);
@@ -542,7 +545,7 @@ std::string StandardisationScalingParams::to_string() const {
         << " standardise:" << standardise
         << " mean:"        << mean
         << " stdev:"       << stdev << "}";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -554,7 +557,7 @@ std::string QuantileScalingParams::to_string() const {
         << " quantile_b:"       << quantile_b
         << " shift_multiplier:" << shift_multiplier
         << " scale_multiplier:" << scale_multiplier << "}";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -568,7 +571,7 @@ std::string SignalNormalisationParams::to_string() const {
         oss << " " + standardisation.to_string();
     }
     oss << " }";
-    return oss.str();
+    return std::move(oss).str();
 }
 
 std::string ConvParams::to_string() const {
@@ -580,7 +583,7 @@ std::string ConvParams::to_string() const {
         << " winlen:"   << winlen
         << " stride:"   << stride
         << " activation:" << config::to_string(activation) << " }";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -596,7 +599,7 @@ std::string TxEncoderParams::to_string() const {
         << " max_seq_len:"      << max_seq_len
         << " attn_window: ["    << attn_window.first << ", " << attn_window.second << "]"
         << " deepnorm_alpha:"   << deepnorm_alpha    << " }";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -611,7 +614,7 @@ std::string CRFEncoderParams::to_string() const {
         << " blank_score:"   << blank_score
         << " expand_blanks:" << expand_blanks
         << " permute:"       << std::boolalpha << !permute.empty() << " }";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 
@@ -648,15 +651,18 @@ std::string BasecallModelConfig::to_string() const {
 
     if (is_lstm_model()) {
         oss << " model_type: lstm {";
-    }
-    if (is_tx_model()) {
+    } else if (is_flstm_model()) {
+        oss << " model_type: flstm {";
+    } else if (is_tx_model()) {
         oss << " model_type: tx {" 
             << " crf_encoder: " << tx->crf.to_string()
             << " transformer: " << tx->tx.to_string()
             << " upsample: " << tx->upsample.to_string();
+    } else {
+        throw std::logic_error("Unknown model type");
     }
     oss << "}}";
-    return oss.str();
+    return std::move(oss).str();
     // clang-format on
 }
 

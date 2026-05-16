@@ -7,9 +7,11 @@ dorado_add_library(
         AuxiliaryData.h
         ConvStack.h
         CRFModules.h
+        FactorisedLinearLayer.h
         FLSTMStack.h
         KoiThreads.h
         KoiUtils.h
+        LinearLayer.h
         LinearUpsample.h
         LSTMStack.h
         MetalModules.h
@@ -21,6 +23,7 @@ dorado_add_library(
         AuxiliaryData.cpp
         ConvStack.cpp
         CRFModules.cpp
+        FactorisedLinearLayer.cpp
         FLSTMStack.cpp
         LinearUpsample.cpp
         LSTMStack.cpp

@@ -14,6 +14,7 @@ struct FLSTMLayerImpl : torch::nn::Module {
     at::Tensor forward(at::Tensor x);
 
 private:
+    int C_;
     at::Tensor dn_weight_ih_;
     at::Tensor dn_weight_hh_;
     at::Tensor up_weight_ih_;
@@ -34,11 +35,15 @@ struct FLSTMStackImpl : RNNStackImpl {
     void run_koi(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */) override;
 
 private:
+    void forward_koi(WorkingMemory &wm, const AuxiliaryData *aux /* = nullptr */);
     void forward_cublas(WorkingMemory &wm);
 
     std::vector<at::Tensor> device_dn_weights_ih_;
+    std::vector<at::Tensor> device_dn_weights_scale_ih_;
     std::vector<at::Tensor> device_dn_weights_hh_;
+    std::vector<at::Tensor> device_dn_weights_scale_hh_;
     std::vector<at::Tensor> device_up_weights_;
+    std::vector<at::Tensor> device_up_weights_scale_;
     std::vector<at::Tensor> device_up_bias_;
 #endif
 

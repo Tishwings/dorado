@@ -16,7 +16,7 @@ namespace dorado::config {
 static const std::unordered_map<std::string, SublayerType> sublayer_map = {
         {"clamp", SublayerType::CLAMP},
         {"convolution", SublayerType::CONVOLUTION},
-        {"flstm", SublayerType::FLSTM},
+        {"flstm_softout", SublayerType::FLSTM_SOFTOUT},
         {"linear", SublayerType::LINEAR},
         {"linearcrfencoder", SublayerType::LINEAR_CRF_ENCODER},
         {"lstm", SublayerType::LSTM},
@@ -56,6 +56,7 @@ ConvParams parse_conv_params(const toml::value &segment, const bool clamp) {
     params.size = toml::find<int>(segment, "size");
     params.winlen = toml::find<int>(segment, "winlen");
     params.stride = toml::find<int>(segment, "stride");
+    params.inner_dim = 0;
 
     const auto &activation = toml::find<std::string>(segment, keys::ACTIVATION);
     if (activation == "swish") {

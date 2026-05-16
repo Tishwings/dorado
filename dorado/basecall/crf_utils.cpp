@@ -5,16 +5,20 @@
 #include "model/TxModel.h"
 #include "torch_utils/tensor_utils.h"
 #include "utils/memory_utils.h"
+#include "utils/string_utils.h"
+
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <optional>
+#include <stdexcept>
+#include <thread>
+#include <vector>
 
 #if DORADO_CUDA_BUILD
 #include <c10/cuda/CUDAGuard.h>
 #endif
-
-#include <algorithm>
-#include <cstddef>
-#include <stdexcept>
-#include <thread>
-#include <vector>
 
 namespace dorado::basecall {
 
@@ -24,7 +28,7 @@ using namespace torch::nn;
 using namespace config;
 
 std::vector<torch::Tensor> load_lstm_model_weights(const BasecallModelConfig &cfg) {
-    if (!cfg.is_lstm_model()) {
+    if (!cfg.is_lstm_model() && !cfg.is_flstm_model()) {
         throw std::runtime_error("load_lstm_model_weights expected a lstm model config from: '" +
                                  cfg.model_path.string() + "'");
     }
@@ -208,27 +212,46 @@ ModuleHolder<AnyModule> load_crf_model(const BasecallModelConfig &model_config,
 size_t auto_calculate_num_runners(const BasecallModelConfig &model_config, float memory_fraction) {
     auto model_name = model_config.model_name();
 
+    // Allow force-overriding the number of CPU runners.
+    if (const char *num_runners_str = getenv("DORADO_CPU_RUNNERS"); num_runners_str != nullptr) {
+        auto num_runners = utils::from_chars<size_t>(num_runners_str);
+        if (num_runners) {
+            spdlog::info("Overriding CPU runners to {}", num_runners.value());
+            return num_runners.value();
+        } else {
+            throw std::runtime_error(
+                    fmt::format("Invalid DORADO_CPU_RUNNERS: '{}'", num_runners_str));
+        }
+    }
+
     // very hand-wavy determination
     // these numbers were determined empirically by running 1, 2, 4 and 8 runners for each model
-    auto required_ram_per_runner_GB = 0.f;
-    if (model_name.find("_fast@v") != std::string::npos) {
-        required_ram_per_runner_GB = 1.5;
-    } else if (model_name.find("_hac@v") != std::string::npos) {
-        required_ram_per_runner_GB = 4.5;
-    } else if (model_name.find("_sup@v") != std::string::npos) {
-        required_ram_per_runner_GB = 12.5;
-    } else {
+    std::optional<double> required_ram_per_runner_GB;
+    if (model_config.is_lstm_model()) {
+        if (model_name.find("_fast@v") != std::string::npos) {
+            required_ram_per_runner_GB = 1.5;
+        } else if (model_name.find("_hac@v") != std::string::npos) {
+            required_ram_per_runner_GB = 4.5;
+        } else if (model_name.find("_sup@v") != std::string::npos) {
+            required_ram_per_runner_GB = 12.5;
+        }
+    } else if (model_config.is_flstm_model()) {
+        if (model_name.find("_hac@v") != std::string::npos) {
+            required_ram_per_runner_GB = 10;
+        }
+    }
+    if (!required_ram_per_runner_GB.has_value()) {
         return 1;
     }
 
     // Should have set batch_size to non-zero value if device == cpu
     assert(model_config.basecaller.batch_size() > 0);
     // numbers were determined with a batch_size of 128, assume this just scales
-    required_ram_per_runner_GB *= model_config.basecaller.batch_size() / 128.f;
+    required_ram_per_runner_GB.value() *= model_config.basecaller.batch_size() / 128.f;
 
     const auto free_ram_GB =
             static_cast<size_t>(utils::available_host_memory_GB()) * memory_fraction;
-    const auto num_runners = static_cast<size_t>(free_ram_GB / required_ram_per_runner_GB);
+    const auto num_runners = static_cast<size_t>(free_ram_GB / required_ram_per_runner_GB.value());
     return std::clamp(num_runners, size_t(1), std::size_t(std::thread::hardware_concurrency()));
 }
 

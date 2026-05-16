@@ -21,7 +21,7 @@ LinearCRFImpl::LinearCRFImpl(int insize, int outsize, bool bias_, bool tanh_and_
     }
 };
 
-at::Tensor LinearCRFImpl::forward(const at::Tensor &x) {
+at::Tensor LinearCRFImpl::forward(const at::Tensor x) {
     utils::ScopedProfileRange spr("linear", 2);
     // Input x is [N, T, C], contiguity optional
     auto scores = linear(x);

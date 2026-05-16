@@ -23,7 +23,7 @@ std::string to_string(const Activation& activation);
 enum class SublayerType {
     CLAMP,
     CONVOLUTION,
-    FLSTM,
+    FLSTM_SOFTOUT,
     LINEAR,
     LINEAR_CRF_ENCODER,
     LSTM,
@@ -43,7 +43,7 @@ struct ConvParams {
     int winlen;
     int stride = 1;
     Activation activation;
-    bool flstm = false;
+    int inner_dim;
     std::string to_string() const;
 };
 

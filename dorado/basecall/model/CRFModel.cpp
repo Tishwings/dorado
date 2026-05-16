@@ -2,6 +2,8 @@
 
 #include "config/BasecallModelConfig.h"
 #include "nn/FLSTMStack.h"
+#include "nn/FactorisedLinearLayer.h"
+#include "nn/KoiUtils.h"
 #include "nn/LSTMStack.h"
 #include "torch_utils/gpu_profiling.h"
 #include "torch_utils/module_utils.h"
@@ -41,22 +43,38 @@ CRFModelImpl::CRFModelImpl(const BasecallModelConfig &config) {
     }
 
     if (config.out_features.has_value()) {
+#if DORADO_CUDA_BUILD
+        const bool can_use_koi = koi_can_run_flstm();
+#else
+        const bool can_use_koi = false;
+#endif
+
         // The linear layer is decomposed into 2 matmuls.
         const int decomposition = config.out_features.value();
-        linear1 =
-                register_module("linear1", LinearCRF(lstm_size, decomposition, config.bias, false));
-        linear2 = register_module("linear2",
-                                  LinearCRF(decomposition, config.outsize, false, tanh_x5));
-        clamp1 = Clamp(-5.0, 5.0, config.clamp);
-        encoder = Sequential(convs, rnns, linear1, linear2, clamp1);
+        if (can_use_koi && (lstm_size == 1024) && (decomposition == 128) && tanh_x5) {
+            linear1 = std::static_pointer_cast<LinearLayerImpl>(register_module(
+                    "factorised_linear",
+                    FactorisedLinearLayer(lstm_size, decomposition, config.outsize)));
+            clamp1 = Clamp(-5.0, 5.0, config.clamp);
+            encoder = Sequential(convs, rnns, linear1, clamp1);
+        } else {
+            linear1 = std::static_pointer_cast<LinearLayerImpl>(register_module(
+                    "linear1", LinearCRF(lstm_size, decomposition, config.bias, false)));
+            linear2 = register_module("linear2",
+                                      LinearCRF(decomposition, config.outsize, false, tanh_x5));
+            clamp1 = Clamp(-5.0, 5.0, config.clamp);
+            encoder = Sequential(convs, rnns, linear1, linear2, clamp1);
+        }
     } else if ((config.convs[0].size > 4) && (config.num_features == 1)) {
         // v4.x model without linear decomposition
-        linear1 = register_module("linear1", LinearCRF(lstm_size, config.outsize, false, tanh_x5));
+        linear1 = std::static_pointer_cast<LinearLayerImpl>(
+                register_module("linear1", LinearCRF(lstm_size, config.outsize, false, tanh_x5)));
         clamp1 = Clamp(-5.0, 5.0, config.clamp);
         encoder = Sequential(convs, rnns, linear1, clamp1);
     } else {
         // Pre v4 model
-        linear1 = register_module("linear1", LinearCRF(lstm_size, config.outsize, true, true));
+        linear1 = std::static_pointer_cast<LinearLayerImpl>(
+                register_module("linear1", LinearCRF(lstm_size, config.outsize, true, true)));
         encoder = Sequential(convs, rnns, linear1);
     }
 }

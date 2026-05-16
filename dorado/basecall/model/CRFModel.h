@@ -26,7 +26,8 @@ struct CRFModelImpl : torch::nn::Module {
     at::Tensor forward(const at::Tensor &x, nn::AuxiliaryData *aux /* = nullptr */);
     nn::ConvStack convs{nullptr};
     nn::RNNStack rnns{nullptr};
-    nn::LinearCRF linear1{nullptr}, linear2{nullptr};
+    nn::LinearLayer linear1{nullptr};
+    nn::LinearCRF linear2{nullptr};
     nn::Clamp clamp1{nullptr};
     torch::nn::Sequential encoder{nullptr};
 

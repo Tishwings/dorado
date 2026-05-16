@@ -63,7 +63,9 @@ KoiActivation get_koi_activation(config::Activation act) {
 // - CUBLAS_TNC: a contiguous tensor of size [T + 3, N, C], dtype torch::kF16
 //
 
-TensorLayout get_koi_lstm_input_layout(int layer_size, bool flstm, config::Activation activation) {
+TensorLayout get_koi_lstm_input_layout(const int layer_size,
+                                       const int inner_dim,
+                                       const config::Activation activation) {
     TensorLayout layout = TensorLayout::CUBLAS_TN2C;
     if (koi_can_use_quantised_lstm() && (layer_size == 96 || layer_size == 128)) {
         layout = TensorLayout::NTC;
@@ -86,9 +88,14 @@ TensorLayout get_koi_lstm_input_layout(int layer_size, bool flstm, config::Activ
         }
     }
 
+    const bool flstm = (inner_dim > 0);
     if (flstm) {  // cannot be overriden
         if (koi_can_use_cutlass() && ((layer_size % 128) == 0)) {
-            layout = TensorLayout::CUTLASS_TNC_F16;
+            if (koi_can_run_flstm() && (layer_size == 1024) && (inner_dim == 128)) {
+                layout = TensorLayout::CUTLASS_TNC_I8;
+            } else {
+                layout = TensorLayout::CUTLASS_TNC_F16;
+            }
         } else {
             layout = TensorLayout::CUBLAS_TNC;
         }
@@ -120,10 +127,11 @@ void ConvStackImpl::reserve_working_memory(WorkingMemory &wm,
         throw std::runtime_error("Empty Koi convolution stack.");
     }
     auto &last = layers.back();
-    last.output_layout = output_layout.has_value()
-                                 ? output_layout.value()
-                                 : get_koi_lstm_input_layout(last.params.size, last.params.flstm,
-                                                             last.params.activation);
+    last.output_layout =
+            output_layout.has_value()
+                    ? output_layout.value()
+                    : get_koi_lstm_input_layout(last.params.size, last.params.inner_dim,
+                                                last.params.activation);
 
     last.cutlass_conv = utils::get_dev_opt<bool>("cutlass_conv", true) &&
                         (last.output_layout == TensorLayout::CUTLASS_TNC_I8 ||
@@ -254,17 +262,35 @@ void ConvStackImpl::ConvLayer::run_koi(WorkingMemory &wm, const AuxiliaryData *c
             wm.next_TC(T_out, C_out, output_layout);
             out_ntc = wm.get_current_NTC_view();
         }
-        auto res = host_linear(stream, KOI_F16, get_koi_activation(params.activation), out_type,
-                               aux ? 1 : wm.N, T_out, C_in * params.winlen, C_out,
-                               int(in.stride(0)), params.stride * C_in, int(out_ntc.stride(0)),
-                               int(out_ntc.stride(1)), in.data_ptr(), w_device.data_ptr(),
-                               out_ntc.data_ptr(), out_layout, nullptr, b_device.data_ptr());
+        const bool try_fast_conv = utils::get_dev_opt<bool>("koi_conv", true);
+        int res = -1;
+        if (try_fast_conv) {
+            utils::ScopedProfileRange spr3("host_convolution", 4);
+            const bool use_f32_accum = utils::get_dev_opt<bool>("koi_conv_f32", false);
+            const int N = aux ? 1 : wm.N;
+            res = host_convolution(stream, N, T_in, C_in, C_out, params.winlen, params.stride,
+                                   padding, int(in.stride(0)), int(out_ntc.stride(0)),
+                                   int(out_ntc.stride(1)),
+                                   in.slice(1, padding, torch::indexing::None).data_ptr(),
+                                   out_ntc.data_ptr(), out_layout, w_device.data_ptr(),
+                                   b_device.data_ptr(), get_koi_activation(params.activation),
+                                   KOI_F16, out_type, use_f32_accum ? KOI_F32 : KOI_F16);
+        }
+        if (res != KOI_SUCCESS) {
+            utils::ScopedProfileRange spr3("host_linear", 4);
+            res = host_linear(stream, KOI_F16, get_koi_activation(params.activation), out_type,
+                              aux ? 1 : wm.N, T_out, C_in * params.winlen, C_out, int(in.stride(0)),
+                              params.stride * C_in, int(out_ntc.stride(0)), int(out_ntc.stride(1)),
+                              in.data_ptr(), w_device.data_ptr(), out_ntc.data_ptr(), out_layout,
+                              nullptr, b_device.data_ptr());
+        }
         if (res != KOI_SUCCESS) {
             throw std::runtime_error(
                     std::string("Koi convolution (host_linear) failed with in size ") +
                     std::to_string(params.insize));
         }
         if (aux) {
+            utils::ScopedProfileRange spr3("host_convolution_postprocess", 4);
             res = host_convolution_postprocess(
                     stream, get_koi_activation(params.activation), out_type,
                     aux->chunk_sizes().size(), C_in, C_out, aux->device_chunk_intervals.data_ptr(),
