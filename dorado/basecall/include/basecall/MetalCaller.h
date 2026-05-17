@@ -72,7 +72,7 @@ protected:
     NS::SharedPtr<MTL::Device> m_device;
 };
 
-class MetalLSTMCaller : public MetalCaller {
+class MetalLSTMCaller final : public MetalCaller {
 public:
     MetalLSTMCaller(const config::BasecallModelConfig &model_config, float memory_limit_fraction);
     ~MetalLSTMCaller();
@@ -119,7 +119,7 @@ private:
     NS::SharedPtr<MTL::ComputePipelineState> m_bwd_scan_cps, m_fwd_scan_add_softmax_cps;
 };
 
-class MetalTxCaller : public MetalCaller {
+class MetalTxCaller final : public MetalCaller {
 public:
     MetalTxCaller(const config::BasecallModelConfig &model_config);
     ~MetalTxCaller();
