@@ -10,6 +10,8 @@ Make sure that the integration Cram tests were updated to test run those models 
     - "dna_r10.4.1_e8.2_400bps_hac@v5.2.0_polish_rl_mv"
     - "dna_r10.4.1_e8.2_400bps_sup@v5.2.0_polish_rl"
     - "dna_r10.4.1_e8.2_400bps_sup@v5.2.0_polish_rl_mv"
+    - "dna_r10.4.1_e8.2_400bps_hac@v6.0.0_polish_rl"
+    - "dna_r10.4.1_e8.2_400bps_hac@v6.0.0_polish_rl_mv"
     - "dna_r10.4.1_e8.2_400bps_polish_bacterial_methylation_v5.0.0"
     - "dna_r10.4.1_e8.2_400bps_hac@v4.2.0_polish"
     - "dna_r10.4.1_e8.2_400bps_sup@v4.2.0_polish"
