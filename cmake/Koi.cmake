@@ -1,5 +1,3 @@
-OPTION(BUILD_KOI_FROM_SOURCE OFF)
-
 function(get_best_compatible_koi_version KOI_CUDA)
     if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
         # Koi provides binaries for these cuda versions when targeting aarch64
@@ -40,13 +38,8 @@ endfunction()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
 
     set(KOI_VERSION 0.7.1)
-    if(BUILD_KOI_FROM_SOURCE)
-        set(KOI_DIR "${DORADO_3RD_PARTY_SOURCE}/koi")
-        if(NOT EXISTS ${KOI_DIR})
-            set(KOI_DIR "${DORADO_3RD_PARTY_DOWNLOAD}/koi")
-        endif()
+    if(DEFINED KOI_DIR)
         message(STATUS "Building Koi from source: ${KOI_DIR}")
-
         if(NOT EXISTS ${KOI_DIR})
             if(DEFINED GITLAB_CI_TOKEN)
                 message("Cloning Koi using CI token")
@@ -73,8 +66,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32)
                 COMMAND_ERROR_IS_FATAL ANY
             )
         endif()
-        add_subdirectory(${KOI_DIR})
-
+        # force the koi build into the binary directory
+        # this allows KOI_DIR to be out-of-tree
+        add_subdirectory(${KOI_DIR} ${CMAKE_BINARY_DIR}/koi)
     else()
         find_package(CUDAToolkit REQUIRED)
         get_best_compatible_koi_version(KOI_CUDA)
