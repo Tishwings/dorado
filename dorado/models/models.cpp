@@ -1875,11 +1875,19 @@ namespace small_variant_caller {
 
 const std::vector<ModelInfo> models = {
         ModelInfo{
-                "dna_r10.4.1_e8.2_400bps_hac@v5.0.0_variant_mv@v1.0",
-                "e6843189aed9c9ce2b55e58209031599113287c0b26193fecdba9624c1b29d9e",
+                "dna_r10.4.1_e8.2_400bps_hac@v5.2.0_smallvar@v1.0",
+                "c65337cc306498d9651f22a0e03224c2626ddc75dad3f14dd133700817ab5f38",
                 CC::DNA_R10_4_1_E8_2_400BPS_5KHZ,
                 ModelType::VARIANT,
-                ModelVariantPair{ModelVariant::HAC, VV::v5_0_0},
+                ModelVariantPair{ModelVariant::HAC, VV::v5_2_0},
+                ModsVariantPair{},
+        },
+        ModelInfo{
+                "dna_r10.4.1_e8.2_400bps_hac@v6.0.0_smallvar@v1.0",
+                "322ec5812bd54c116abff9a6145d7dd78e90021cc5f1e69993b242a6036b44f5",
+                CC::DNA_R10_4_1_E8_2_400BPS_5KHZ,
+                ModelType::VARIANT,
+                ModelVariantPair{ModelVariant::HAC, VV::v6_0_0},
                 ModsVariantPair{},
         },
 };
