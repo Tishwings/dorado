@@ -290,7 +290,7 @@ pre-commit:
 build:linux:x86:noble_koi_from_source:
   image: ${DORADO_DOCKER_ROOT}/dorado-24.04-cuda-${CUDA}.0:1.1
   variables:
-    BUILD_OPTIONS: "-DBUILD_KOI_FROM_SOURCE=ON -DGITLAB_CI_TOKEN=${CI_JOB_TOKEN} -DONT_MM2_EXE=ON"
+    BUILD_OPTIONS: "-DKOI_DIR=koi -DGITLAB_CI_TOKEN=${CI_JOB_TOKEN} -DONT_MM2_EXE=ON"
     ONT_PYTHON_URL: ${ONT_PYTHON_URL_PREFIX}/${ONT_PYTHON_FILENAME_LINUX_X86_313}
   extends:
     - .linux_build_dependencies
@@ -467,7 +467,7 @@ build:windows_koi_from_source:
     - .on_nightly_or_manual
   before_script:
     - !reference ["build:windows", before_script]
-    - export BUILD_OPTIONS="${BUILD_OPTIONS} -DBUILD_KOI_FROM_SOURCE=ON -DGITLAB_CI_TOKEN=${CI_JOB_TOKEN} -G ${WIN_CMAKE_GENERATOR}"
+    - export BUILD_OPTIONS="${BUILD_OPTIONS} -DKOI_DIR=koi -DGITLAB_CI_TOKEN=${CI_JOB_TOKEN} -G ${WIN_CMAKE_GENERATOR}"
   artifacts: null
   timeout: 1h 30m
 

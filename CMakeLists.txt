@@ -20,7 +20,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Allow targets with no side effects to be built in parallel when using Makefiles.
 # Koi uses OBJECT targets which are (currently) incompatible with this.
 # See https://gitlab.kitware.com/cmake/cmake/-/issues/24058.
-if (NOT BUILD_KOI_FROM_SOURCE)
+if (NOT KOI_DIR)
     set(CMAKE_OPTIMIZE_DEPENDENCIES ON)
 endif()
 
