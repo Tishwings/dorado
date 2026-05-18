@@ -518,6 +518,7 @@ const std::unordered_map<std::string, std::string> lut_basecaller_to_polish_mode
     {"dna_r10.4.1_e8.2_400bps_sup@v5.0.0", "dna_r10.4.1_e8.2_400bps_sup@v5.0.0_polish_rl"},
     {"dna_r10.4.1_e8.2_400bps_hac@v5.2.0", "dna_r10.4.1_e8.2_400bps_hac@v5.2.0_polish_rl"},
     {"dna_r10.4.1_e8.2_400bps_sup@v5.2.0", "dna_r10.4.1_e8.2_400bps_sup@v5.2.0_polish_rl"},
+    {"dna_r10.4.1_e8.2_400bps_hac@v6.0.0", "dna_r10.4.1_e8.2_400bps_hac@v6.0.0_polish_rl"},
 };
 // Look-up table from a basecaller model to a bacterial model name.
 const std::unordered_map<std::string, std::string> lut_basecaller_to_bacterial_model{
@@ -529,6 +530,7 @@ const std::unordered_map<std::string, std::string> lut_basecaller_to_bacterial_m
     {"dna_r10.4.1_e8.2_400bps_sup@v5.0.0", "dna_r10.4.1_e8.2_400bps_polish_bacterial_methylation_v5.0.0"},
     {"dna_r10.4.1_e8.2_400bps_hac@v5.2.0", "dna_r10.4.1_e8.2_400bps_polish_bacterial_methylation_v5.0.0"},
     {"dna_r10.4.1_e8.2_400bps_sup@v5.2.0", "dna_r10.4.1_e8.2_400bps_polish_bacterial_methylation_v5.0.0"},
+    {"dna_r10.4.1_e8.2_400bps_hac@v6.0.0", "dna_r10.4.1_e8.2_400bps_polish_bacterial_methylation_v5.0.0"},
 };
 const std::unordered_set<std::string> legacy_basecaller_models{
     "dna_r10.4.1_e8.2_400bps_hac@v4.2.0",
@@ -542,6 +544,7 @@ const std::unordered_set<std::string> all_basecaller_models{
     "dna_r10.4.1_e8.2_400bps_hac@v4.3.0", "dna_r10.4.1_e8.2_400bps_sup@v4.3.0",
     "dna_r10.4.1_e8.2_400bps_hac@v5.0.0", "dna_r10.4.1_e8.2_400bps_sup@v5.0.0",
     "dna_r10.4.1_e8.2_400bps_hac@v5.2.0", "dna_r10.4.1_e8.2_400bps_sup@v5.2.0",
+    "dna_r10.4.1_e8.2_400bps_hac@v6.0.0",
 };
 // Look-up table of basecaller model compatibilities for the bacterial models.
 // E.g. bacterial model for `dna_r10.4.1_e8.2_400bps_hac@v5.2.0` is fully compatible (and at the moment
@@ -557,6 +560,7 @@ const std::unordered_map<std::string, std::unordered_set<std::string>> lut_compa
     {"dna_r10.4.1_e8.2_400bps_sup@v5.0.0", all_basecaller_models},
     {"dna_r10.4.1_e8.2_400bps_hac@v5.2.0", all_basecaller_models},
     {"dna_r10.4.1_e8.2_400bps_sup@v5.2.0", all_basecaller_models},
+    {"dna_r10.4.1_e8.2_400bps_hac@v6.0.0", all_basecaller_models},
 };
 // clang-format on
 
