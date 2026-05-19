@@ -2,6 +2,51 @@
 
 All notable changes to Dorado will be documented in this file.
 
+# [2.0.0] (20 May 2026)
+
+This major release of Dorado includes new v6.0 basecalling models for DNA and RNA, state-of-the-art small variant calling capabilities with Dorado `smallvar` (formerly Dorado `variant`), and a range of other performance, usability, and stability improvements. This release introduces:
+* New v6.0 basecalling models
+  * A more accurate basecalling model (HAC v6.0) for DNA
+    * High single-molecule accuracy with improvements in short tandem repeat expansions, homopolymers, and low-complexity regions
+    * Improved accuracy in bacterial methylation motifs, enabling polished assemblies comparable to SUP v5.2
+    * Updated modified base models for 5mC/5hmC, 4mC/5mC, and 6mA, with substantial improvements in modified base accuracy
+  * Updated fast, HAC, and SUP models for RNA basecalling
+    * Improved headline single-molecule accuracy, particularly for HAC basecalling
+    * Updated models for RNA modifications, including substantial gains for HAC pseU, HAC m6A/inosine, and SUP m5C/2OmeC
+  * Updated models for Dorado `polish`
+    * New polishing model for v6.0 HAC added
+    * Bacterial polishing model now also supports v6.0 HAC input data
+* New Dorado `smallvar` tool replacing Dorado `variant` for SNP and INDEL calling
+  * Dorado `smallvar` is significantly faster than Dorado `variant` through a novel model architecture, highly optimised GPU execution, and scalability across multiple GPU devices
+  * Dorado `smallvar` is significantly faster than Dorado `variant` through highly optimised GPU execution and scalability across multiple GPU devices
+
+Other fixes and improvements have been implemented in Dorado `aligner`, `demux`, `summary`, and more, with the full list of changes below.
+
+* eba46abd179ebd857f607733574b555630d90b49 - Add v6.0 DNA and RNA basecalling, modified base, and Dorado `polish` models, including new HAC basecall model architecture
+* 0d519ea1b94e587a916d745ced4a640368531648 - Replace Dorado `variant` with Dorado `smallvar`
+* 23e04b85edf507489a4615916690b382257c2cb2 - Dorado `smallvar` support for v6.0 and v5.2 HAC models
+* aa90f446f7710e3e152aba6ad370f6349c420161 - Replace `--model` with `--models-directory` and `--model-override` in Dorado `smallvar`
+* cb4197910771d07291a4e3ebc8de6081f1d4b5c3 - Add a `--model-override` option to Dorado `polish`
+* 0f5e090b84d7bb507c408a869b409ea8939eac56 - Dorado `polish` now processes only the draft sequences from the input BAM file header
+* f3090554fc9714f5c1d8c61fc064af41bca370a3 - Enable the `-eqx` minimap2 option in Dorado `aligner`
+* ad3f0747156acde00eccd0a015799ee5d7d6358e - Prevent excessive memory usage when running alignment
+* eb1efa84d9b5f70e77b1847df467b9d218f69f23 - Prevent over-splitting of RNA reads
+* 49e9f07639fc7ff3c730b34d6aa343165ee5bab3 - Improve speed of Dorado `summary`
+* 2ed0f1130b9d2216cf7aa209efeb5e2638a98948 - Fix summary file output to better match results from Dorado basecall server and SAM specification
+* 0fce0e0c420a2595d958cfc7ebab3f67f9e1eadf - Initial support for custom barcoding arrangements with dual barcodes
+* ae2a8b685b2be81abf9199c230fc8042afdb5508 - Improve handling of inconsistent read group data in Dorado `demux` and `aligner`
+* 0edb926b365cee6086fce54762d4d0f8d38d40fc - Remove support for consuming stdin for Dorado `demux`
+* 23f944a47e0207930875dc0560d4e92603381c73 - Fix Dorado `demux` crash when running on previously demultiplexed files
+* ef3835f3f5d6def7d06f1ddcc1c54580837f366e - Fix Dorado `demux` crash when processing previously unclassified read groups with `--no-trim` flag
+* d68d51d5121e79644f73e975a4daed58f5198f2d - Include `tm:Z` tag in output file `RG` lines to indicate trim conditions
+* b47e64d5862e997b8a5484e82d4c9def86d90223 - Prevent Dorado `basecaller` crash when no `sample_id` in POD5 file
+* 757b2503ba90d61cc410c0a76cb222f94f9ad2e1 - Fix output folder paths to include experiment ID when processing POD5s that were converted from .fast5
+* f3758e1c19bb83b432045606a88deadc55822319 - Increase minimum supported CUDA version to 12.8 (or 12.6 on Linux ARM)
+* 4a4ca7a152900864a996b94495585ae90e78d075 - Update to OpenSSL 3.5.5
+* 9bb7296020552b52e2d839f36bdef736d7b368a4 - Update to pod5 0.3.39
+* 4e39b86cafa76c913d77c3f16555e3f376910f4a - Dorado `correct` now defaults to CPU mode on macOS but allows a user-specified `--device metal`
+* ceb4ba838cc1571b57711c3b7f4d299210f3b2f9 - Add pre-computed batch size benchmarks for RTX PRO 6000 Workstation cards
+
 # [1.1.2] (1 May 2026)
 
 This release of Dorado introduces minor updates to RNA read splitting and poly(A) estimation configuration.
