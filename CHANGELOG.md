@@ -17,8 +17,8 @@ This major release of Dorado includes new v6.0 basecalling models for DNA and RN
     * New polishing model for v6.0 HAC added
     * Bacterial polishing model now also supports v6.0 HAC input data
 * New Dorado `smallvar` tool replacing Dorado `variant` for SNP and INDEL calling
+  * Dorado `smallvar` provides state-of-the-art variant calling accuracy from data basecalled with DNA HAC v6.0 and HAC v5.2 models
   * Dorado `smallvar` is significantly faster than Dorado `variant` through a novel model architecture, highly optimised GPU execution, and scalability across multiple GPU devices
-  * Dorado `smallvar` is significantly faster than Dorado `variant` through highly optimised GPU execution and scalability across multiple GPU devices
 
 Other fixes and improvements have been implemented in Dorado `aligner`, `demux`, `summary`, and more, with the full list of changes below.
 
