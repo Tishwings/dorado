@@ -28,15 +28,15 @@ namespace dorado::basecall::model {
 using namespace dorado::nn;
 using namespace dorado::config;
 
-CRFModelImpl::CRFModelImpl(const BasecallModelConfig &config) {
+CRFModelImpl::CRFModelImpl(const BasecallModelConfig &config, at::TensorOptions opts) {
     const auto cv = config.convs;
     const auto lstm_size = config.lstm_size;
     const bool tanh_x5 = config.scale == 5.f;
     convs = register_module("convs", ConvStack(cv));
     if (config.is_flstm_model()) {
-        rnns = std::static_pointer_cast<RNNStackImpl>(register_module(
-                "rnns",
-                FLSTMStack(config.lstm_layers, lstm_size, config.lstm_inner_dim.value(), true)));
+        rnns = std::static_pointer_cast<RNNStackImpl>(
+                register_module("rnns", FLSTMStack(config.lstm_layers, lstm_size,
+                                                   config.lstm_inner_dim.value(), true, opts)));
     } else {
         rnns = std::static_pointer_cast<RNNStackImpl>(
                 register_module("rnns", LSTMStack(config.lstm_layers, lstm_size, true)));
@@ -44,7 +44,7 @@ CRFModelImpl::CRFModelImpl(const BasecallModelConfig &config) {
 
     if (config.out_features.has_value()) {
 #if DORADO_CUDA_BUILD
-        const bool can_use_koi = koi_can_run_flstm();
+        const bool can_use_koi = opts.device().is_cuda() && koi_can_run_flstm();
 #else
         const bool can_use_koi = false;
 #endif

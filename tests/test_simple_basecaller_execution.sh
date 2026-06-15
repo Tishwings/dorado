@@ -12,13 +12,13 @@ fi
 
 test_dir=$(dirname $0)
 dorado_bin=$(cd "$(dirname $1)"; pwd -P)/$(basename $1)
-model_name_5k=${2:-dna_r10.4.1_e8.2_400bps_hac@v5.0.0}
+model_name_5k=${2:-dna_r10.4.1_e8.2_400bps_hac@v6.0.0}
 batch=${3:-384}
 model_name_5k_v43=${4:-dna_r10.4.1_e8.2_400bps_hac@v4.3.0}
-model_name_rna004=${5:-rna004_130bps_hac@v3.0.1}
+model_name_rna004=${5:-rna004_hac@v6.0.0}
 
 model_speed=${6:-"hac"}
-version=${7:-"v5.0.0"}
+version=${7:-"v6.0.0"}
 model_complex="${model_speed}@${version}"
 
 data_dir=${test_dir}/data
@@ -94,11 +94,14 @@ $dorado_bin basecaller ${model_5k} $pod5_data -b ${batch} --emit-fastq > $output
 if [[ "${VALIDATE_FASTQ}" -eq "1" ]]; then
     $PYTHON ${test_dir}/validate_fastq.py $output_dir/ref.fq $SPECIFICATION_FILE
 fi
-$dorado_bin basecaller ${model_5k} $pod5_data ${models_directory_arg} -b ${batch} --modified-bases 5mCG_5hmCG --emit-moves > $output_dir/calls.bam
+$dorado_bin basecaller ${model_5k} $pod5_data ${models_directory_arg} -b ${batch} --modified-bases 5mC_5hmC --modified-bases-threshold 0.1 --emit-moves > $output_dir/calls.bam
 dorado_check_bam_not_empty
 $dorado_bin basecaller ${model_5k} $pod5_data/ ${models_directory_arg} -x cpu --modified-bases 5mCG_5hmCG -vv > $output_dir/calls.bam
 dorado_check_bam_not_empty
 
+# Test basecaller with "latest" version
+$dorado_bin basecaller $model_speed,5mCG_5hmCG $pod5_data/ ${models_directory_arg} -b ${batch} --emit-moves > $output_dir/calls.bam
+# Test basecaller with specific requested version
 $dorado_bin basecaller $model_complex,5mCG_5hmCG $pod5_data/ ${models_directory_arg} -b ${batch} --emit-moves > $output_dir/calls.bam
 
 # Check that the read group has the required model info in its header
@@ -184,7 +187,7 @@ dorado_align_eqx() {
 
     $dorado_bin basecaller ${model_5k} ${pod5_single} ${models_directory_arg} -b ${batch} --reference "${ref_fasta}" --mm2-opts "--eqx" --skip-model-compatibility-check > "${bam_eqx}"
     dorado_check_bam_not_empty "${bam_eqx}"
-    
+
     $dorado_bin summary ${bam_eqx} > ${summary_eqx}
     $dorado_bin summary ${bam_out} > ${summary_out}
     if ! diff "${summary_eqx}" "${summary_out}" > "$diff_out"; then
@@ -225,7 +228,7 @@ dorado_emit_cram_iupac_reference
 title dorado basecaller mixed model complex and --modified-bases
 $dorado_bin basecaller $model_complex $pod5_data/ ${models_directory_arg} -b ${batch} --modified-bases 5mCG_5hmCG -vv > $output_dir/calls.bam
 if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
-    samtools view -h $output_dir/calls.bam | grep "ML:B:C,"
+    samtools view -h $output_dir/calls.bam | grep "ML:B:C"
     samtools view -h $output_dir/calls.bam | grep "MM:Z:C+h"
     samtools view -h $output_dir/calls.bam | grep "MN:i:"
 fi
@@ -297,6 +300,51 @@ title redirecting stderr to stdout: check output is still valid
 # The debug layer prints to stderr to say that it's enabled, so disable it for this test.
 env -u MTL_DEBUG_LAYER $dorado_bin basecaller ${model_5k} $pod5_data/ -b ${batch} --modified-bases 5mCG_5hmCG --emit-moves > $output_dir/calls.bam 2>&1
 dorado_check_bam_not_empty
+
+
+dorado_aligner_pg_header_test() {
+    title "dorado basecaller and aligner PG headers"
+
+    local ref_fasta=$data_dir/aligner_test/na24385_reduced.fasta
+    local pod5_single=$data_dir/pod5/single_na24385.pod5
+    local out_unaligned_sam=$output_dir/pg_unaligned.sam
+    local out_basecaller_aln_sam=$output_dir/pg_basecaller.sam
+    local out_aligner_sam=$output_dir/pg_aligner.sam
+    local out_unaligned_pg=$output_dir/pg_unaligned.txt
+    local out_basecaller_aln_pg=$output_dir/pg_basecaller.txt
+    local out_aligner_pg=$output_dir/pg_aligner.txt
+
+    extract_aligner_pg() {
+        grep -E $'^@PG\t' "$1" | grep -F $'\tID:aligner' | grep -F $'\tPN:dorado' | sed -E $'s/\tPP:[^\t]*//g' || true
+    }
+
+    $dorado_bin basecaller ${model_5k} ${pod5_single} ${models_directory_arg} -b ${batch} -n 1 --emit-sam --skip-model-compatibility-check > "${out_unaligned_sam}"
+    $dorado_bin basecaller ${model_5k} ${pod5_single} ${models_directory_arg} -b ${batch} -n 1 --emit-sam --reference "${ref_fasta}" --skip-model-compatibility-check > "${out_basecaller_aln_sam}"
+    $dorado_bin aligner --emit-sam "${ref_fasta}" "${out_unaligned_sam}" > "${out_aligner_sam}"
+
+    extract_aligner_pg "${out_unaligned_sam}" > "${out_unaligned_pg}"
+    extract_aligner_pg "${out_basecaller_aln_sam}" > "${out_basecaller_aln_pg}"
+    extract_aligner_pg "${out_aligner_sam}" > "${out_aligner_pg}"
+
+    if [[ $(wc -l < "${out_unaligned_pg}" | tr -d '[:space:]') -ne 0 ]]; then
+        echo "dorado basecaller emitted an aligner @PG line without alignment."
+        exit 1
+    fi
+    if [[ $(wc -l < "${out_basecaller_aln_pg}" | tr -d '[:space:]') -ne 1 ]]; then
+        echo "dorado basecaller did not emit exactly one aligner @PG line with ID:aligner and PN:dorado."
+        exit 1
+    fi
+    if [[ $(wc -l < "${out_aligner_pg}" | tr -d '[:space:]') -ne 1 ]]; then
+        echo "dorado aligner did not emit exactly one @PG line with ID:aligner and PN:dorado."
+        exit 1
+    fi
+    if ! diff -u "${out_basecaller_aln_pg}" "${out_aligner_pg}"; then
+        echo "dorado basecaller and dorado aligner aligner @PG lines differ after removing PP tags."
+        exit 1
+    fi
+}
+
+dorado_aligner_pg_header_test
 
 
 title dorado aligner test stage
@@ -534,8 +582,55 @@ if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
     dorado_aligner_realigning_and_unmapped
 fi
 
+dorado_duplex_aligner_pg_header_test() {
+    title "dorado duplex and aligner PG headers"
+
+    local ref_fasta=$output_dir/duplex_pg_ref.fasta
+    local duplex_pod5=$data_dir/duplex/pod5
+    local pairs_file=$data_dir/duplex/pairs.txt
+    local out_unaligned_sam=$output_dir/duplex_pg_unaligned.sam
+    local out_duplex_aln_sam=$output_dir/duplex_pg_aligned.sam
+    local out_aligner_sam=$output_dir/duplex_pg_aligner.sam
+    local out_unaligned_pg=$output_dir/duplex_pg_unaligned.txt
+    local out_duplex_aln_pg=$output_dir/duplex_pg_aligned.txt
+    local out_aligner_pg=$output_dir/duplex_pg_aligner.txt
+
+    extract_aligner_pg() {
+        grep -E $'^@PG\t' "$1" | grep -F $'\tID:aligner' | grep -F $'\tPN:dorado' | sed -E $'s/\tPP:[^\t]*//g' || true
+    }
+
+    printf ">ref\nACGTA\n" > "${ref_fasta}"
+
+    $dorado_bin duplex ${model_5k} "${duplex_pod5}" ${models_directory_arg} --pairs "${pairs_file}" --emit-sam > "${out_unaligned_sam}"
+    $dorado_bin duplex ${model_5k} "${duplex_pod5}" ${models_directory_arg} --pairs "${pairs_file}" --emit-sam --reference "${ref_fasta}" > "${out_duplex_aln_sam}"
+    $dorado_bin aligner --emit-sam "${ref_fasta}" "${out_unaligned_sam}" > "${out_aligner_sam}"
+
+    extract_aligner_pg "${out_unaligned_sam}" > "${out_unaligned_pg}"
+    extract_aligner_pg "${out_duplex_aln_sam}" > "${out_duplex_aln_pg}"
+    extract_aligner_pg "${out_aligner_sam}" > "${out_aligner_pg}"
+
+    if [[ $(wc -l < "${out_unaligned_pg}" | tr -d '[:space:]') -ne 0 ]]; then
+        echo "dorado duplex emitted an aligner @PG line without alignment."
+        exit 1
+    fi
+    if [[ $(wc -l < "${out_duplex_aln_pg}" | tr -d '[:space:]') -ne 1 ]]; then
+        echo "dorado duplex did not emit exactly one aligner @PG line with ID:aligner and PN:dorado."
+        exit 1
+    fi
+    if [[ $(wc -l < "${out_aligner_pg}" | tr -d '[:space:]') -ne 1 ]]; then
+        echo "dorado aligner did not emit exactly one @PG line with ID:aligner and PN:dorado."
+        exit 1
+    fi
+    if ! diff -u "${out_duplex_aln_pg}" "${out_aligner_pg}"; then
+        echo "dorado duplex and dorado aligner aligner @PG lines differ after removing PP tags."
+        exit 1
+    fi
+}
+
 # Duplex tests.
 if true; then
+    dorado_duplex_aligner_pg_header_test
+
     title dorado duplex basespace test stage
     $dorado_bin duplex basespace $data_dir/basespace/pairs.bam ${models_directory_arg} --threads 1 --pairs $data_dir/basespace/pairs.txt > $output_dir/calls.bam
 
@@ -584,7 +679,18 @@ if true; then
     fi
 
     title dorado in-line modbase duplex from model complex
-    $dorado_bin duplex ${model_complex},5mCG_5hmCG $data_dir/duplex/pod5 ${models_directory_arg} > $output_dir/duplex_calls_mods.bam
+    $dorado_bin duplex ${model_complex},5mC_5hmC $data_dir/duplex/pod5 ${models_directory_arg} --modified-bases-threshold 0.1 > $output_dir/duplex_calls_mods.bam
+    if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
+        samtools quickcheck -u $output_dir/duplex_calls_mods.bam
+        num_duplex_reads=$(samtools view $output_dir/duplex_calls_mods.bam | grep dx:i:1 | wc -l | awk '{print $1}')
+        if [[ $num_duplex_reads -ne "2" ]]; then
+            echo "Duplex basecalling missing reads - mods"
+            exit 1
+        fi
+    fi
+
+    title dorado in-line modbase duplex from model complex without version
+    $dorado_bin duplex ${model_speed},5mC_5hmC $data_dir/duplex/pod5 ${models_directory_arg} --modified-bases-threshold 0.1 > $output_dir/duplex_calls_mods.bam
     if [[ -z "$SAMTOOLS_UNAVAILABLE" ]]; then
         samtools quickcheck -u $output_dir/duplex_calls_mods.bam
         num_duplex_reads=$(samtools view $output_dir/duplex_calls_mods.bam | grep dx:i:1 | wc -l | awk '{print $1}')

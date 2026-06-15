@@ -99,10 +99,6 @@ std::optional<int64_t> retrieve_ioreg_prop(const std::string &service_class,
         return std::nullopt;
     }
 
-#if TARGET_OS_OSX && MAC_OS_X_VERSION_MIN_REQUIRED < 120000 /* MAC_OS_VERSION_12_0 */
-    // These are the same variable, just renamed in macOS 12+.
-    const mach_port_t kIOMainPortDefault = kIOMasterPortDefault;
-#endif
     // IOServiceGetMatchingService consumes a reference to matching_dict, so we don't need
     // to release it ourselves.
     io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, matching_dict);
@@ -270,13 +266,14 @@ struct MTLAllocator : at::Allocator {
         if (n == 0) {
             return at::DataPtr(nullptr, at::DeviceType::CPU);
         } else if (n >= (size_t(1) << 32)) {
-            return at::DataPtr(new char[n], at::DeviceType::CPU);
+            void *data = new char[n];
+            return at::DataPtr(data, data, delete_allocation, at::DeviceType::CPU);
         }
         auto buffer = mtl_device->newBuffer(n, MTL::ResourceStorageModeShared);
-        return at::DataPtr(buffer->contents(), buffer, &deleter, at::DeviceType::CPU);
+        return at::DataPtr(buffer->contents(), buffer, delete_buffer, at::DeviceType::CPU);
     }
-
-    static void deleter(void *ptr) { ((MTL::Buffer *)ptr)->release(); }
+    static void delete_allocation(void *ptr) { delete[] (char *)ptr; }
+    static void delete_buffer(void *ptr) { ((MTL::Buffer *)ptr)->release(); }
 
     void copy_data(void *dest, const void *src, std::size_t count) const override {
         default_copy_data(dest, src, count);

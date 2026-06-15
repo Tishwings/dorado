@@ -63,7 +63,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <vector>
 
 // HACK: DynamicProgress uses magic to move around in the terminal but assumes
@@ -119,7 +118,7 @@ struct BasecallerOptions {
     int min_qscore;
     int run_for;
     std::optional<int> modified_bases_batchsize;
-    std::optional<int> modified_bases_threshold;
+    std::optional<float> modified_bases_threshold;
 
     bool enable_read_splitting;
     bool estimate_poly_a;
@@ -574,7 +573,7 @@ struct PipelineWorkers {
     explicit PipelineWorkers(const utils::ThreadAllocations& thread_allocations)
             : aligner_executor(thread_allocations.aligner_threads),
               barcode_pool(thread_allocations.barcoder_threads),
-              polya_pool(std::thread::hardware_concurrency()) {}
+              polya_pool(thread_allocations.polya_threads) {}
 
     SimpleExecutor<AlignerNode> aligner_executor;
     SimpleExecutor<BarcodeClassifierNode> barcode_pool;
@@ -838,6 +837,7 @@ void update_headers(std::span<std::string_view> args,
             // At present, header output file header writing relies on direct node method calls
             // rather than the pipeline framework - because we must guarantee that the header is set
             // BEFORE we write any reads.
+            cli::add_aligner_pg_hdr(hdr);
             const auto& aligner_ref = pipeline.get_node_ref<AlignerNode>(aligner_idx);
             utils::add_sq_hdr(hdr, aligner_ref.get_sequence_records_for_header());
         }
@@ -959,7 +959,8 @@ void run(const BasecallerOptions& options,
             (adapter_info && (adapter_info->trim_adapters || adapter_info->trim_primers));
     const auto thread_allocations = utils::default_thread_allocations(
             int(num_devices), !modbase_runners.empty() ? int(modbase_params.threads) : 0,
-            enable_aligner, barcoding_info != nullptr, adapter_trimming_enabled);
+            enable_aligner, barcoding_info != nullptr, adapter_trimming_enabled,
+            options.estimate_poly_a);
 
     const hts_writer::SummaryFileWriter::FieldFlags writer_flags =
             hts_writer::SummaryFileWriter::BASECALLING_FIELDS |
@@ -1149,18 +1150,7 @@ int basecaller(int argc, char* argv[]) {
     }
 
     Models models = load_basecaller_models(parser, pod5_folder_info, "basecaller");
-    const std::string device = [&] {
-        auto dev = cli::parse_device(parser);
-#if DORADO_METAL_BUILD
-        // Always use the CPU for FLSTM models in metal builds until we have a caller to support them.
-        const auto& config = models.get_simplex_config();
-        if (dev == "metal" && config.is_flstm_model()) {
-            spdlog::warn("Falling back to CPU for FLSTM model: {}", config.model_name());
-            dev = "cpu";
-        }
-#endif
-        return dev;
-    }();
+    const std::string device = cli::parse_device(parser);
     models.set_basecaller_batch_params(cli::get_batch_params(parser), device);
 
     if (auto ret = load_and_generate_benchmarks(models, parser, pod5_folder_info, device);
@@ -1196,7 +1186,7 @@ int basecaller(int argc, char* argv[]) {
                 .min_qscore = parser.get<int>("--min-qscore"),
                 .run_for = run_for_arg,
                 .modified_bases_batchsize = parser.present<int>("--modified-bases-batchsize"),
-                .modified_bases_threshold = parser.present<int>("--modified-bases-threshold"),
+                .modified_bases_threshold = parser.present<float>("--modified-bases-threshold"),
                 .enable_read_splitting = !parser.get<bool>("--disable-read-splitting"),
                 .estimate_poly_a = estimate_poly_a,
                 .variable_chunk_sizes = !parser.get<bool>("--disable-variable-chunk-sizes"),

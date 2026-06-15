@@ -28,6 +28,8 @@ public:
 
     void get_sequence_md5(MD5Hex& hex, const std::string& sequence);
 
+    static std::string fast_sequence_transform(std::string_view sequence);
+
 private:
     hts_md5_context* m_ctx;
 };
